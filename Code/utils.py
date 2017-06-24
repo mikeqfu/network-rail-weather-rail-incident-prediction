@@ -207,7 +207,7 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
 
 
 # Convert actual year to Network Rail's financial year ===============================================================
-def get_financial_year(date):
+def get_nr_financial_year(date):
     """
     :param date:
     :return: financial year
@@ -238,14 +238,7 @@ def find_match(x, lookup):
 
 
 # ====================================================================================================================
-def finding(x, lookup):
-    for i in lookup:
-        if re.findall(x, i, re.IGNORECASE):
-            return i
-
-
-# ====================================================================================================================
-def find_nearest_a(vector, target):
+def find_nearest(vector, target):
     my_array = np.array(vector)
     diff = my_array - target
     mask = np.ma.less_equal(diff, 0)
@@ -264,31 +257,17 @@ def contains_digits(string):
 
 
 #
-def nearest_date(dates_list, date):
+def find_nearest_date(dates_list, date):
     return min(dates_list, key=lambda x: abs(x - date))
 
 
 #
-def find_nearest(np_array, target_value):
-    idx = (abs(np_array - target_value)).argmin()
-    return np_array[idx]
-
-
-#
-def pctl(n):
-    def percentile_(x):
+def percentile(n):
+    def np_percentile(x):
         return np.percentile(x, n)
 
-    percentile_.__name__ = 'percentile_%s' % n
-    return percentile_
-
-
-#
-def create_weather_stats_variables(weather_variables):
-    stats_names = ['_min', '_max', '_avg']
-    variable_names = [var + x for var in weather_variables for x in stats_names]
-    stats_functions = [np.min, np.max, np.mean] * len(variable_names)
-    return dict(zip(variable_names, stats_functions))
+    np_percentile.__name__ = 'percentile_%s' % n
+    return np_percentile
 
 
 #
@@ -354,7 +333,7 @@ def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     return colorbar
 
 
-# Get upper and lower bounds for removing extreme outliers
+# Get upper and lower bounds for removing extreme outliers ===========================================================
 def get_bounds_extreme_outliers(data_set, k=1.5):
     q1, q3 = np.percentile(data_set, 25), np.percentile(data_set, 75)
     iqr = q3 - q1
