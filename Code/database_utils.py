@@ -78,7 +78,7 @@ def get_table_names(db_name, schema='dbo', table_type='TABLE'):
     """
     :param db_name: [str] name of the database queried (also the catalog name)
     :param schema: [str] name of schema, e.g. 'dbo', 'sys'
-    :param table_type: [str] type of tables
+    :param table_type: [str] table type
     :return: [list] a list of names of the tables in the queried database
 
     This function gets a list of names of tables in a database, given a specific table type.
@@ -117,9 +117,9 @@ def get_table_colnames(db_name, table_name):
 def get_table_primary_keys(db_name, table_name=None, schema='dbo', table_type='TABLE'):
     """
     :param db_name: [str] name of a database
-    :param table_name: [str]
+    :param table_name: [str] name of a queried table from the given database
     :param schema: [str]
-    :param table_type: [str]
+    :param table_type: [str] table type
     :return: [dict] {table_name: primary keys}
     """
     p_str = windows_authentication() + database_driver() + database_server()
