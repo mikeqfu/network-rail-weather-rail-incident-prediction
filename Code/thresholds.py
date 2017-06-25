@@ -10,6 +10,7 @@ Adverse or Extreme. Note that the 'Alert' interval is inside the 'Normal' range.
 
 """
 import os
+
 import pandas as pd
 
 from utils import cdd, cdd_schedule8, save_pickle, load_pickle
