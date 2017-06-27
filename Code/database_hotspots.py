@@ -293,7 +293,7 @@ def convert_svg_to_emf(path_to_svg, path_to_emf):
 # Plot base map and associated features ==============================================================================
 def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_landuse_forest=True,
                        add_osm_natural_tree=False, show_nr_hazardous_trees=True,
-                       legend_loc=(1.05, 0.85), save_as=".svg", dpi=None):
+                       legend_loc=(1.05, 0.85), save_as=".png", dpi=None):
     # Plot basemap
     fig, base_map = plot_base_map(projection='tmerc', legend_loc=legend_loc)
 
@@ -492,7 +492,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
                            show_metex_weather_cells=False,
                            show_osm_landuse_forest=False,
                            show_nr_hazardous_trees=False,
-                           save_as=".svg", dpi=None):
+                           save_as=".png", dpi=None):
     # Get data
     data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
     try:
@@ -576,7 +576,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
                     show_metex_weather_cells=False,
                     show_osm_landuse_forest=False,
                     show_nr_hazardous_trees=False,
-                    save_as=".svg", dpi=None):
+                    save_as=".png", dpi=None):
     # Get hotspots data
     sort_by = ['DelayMinutes', 'IncidentCount', 'DelayCost']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -663,7 +663,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                        show_metex_weather_cells=False,
                        show_osm_landuse_forest=False,
                        show_nr_hazardous_trees=False,
-                       save_as=".svg", dpi=None):
+                       save_as=".png", dpi=None):
     # Get data
     sort_by = ['IncidentCount', 'DelayCost', 'DelayMinutes']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -742,7 +742,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
                   show_metex_weather_cells=False,
                   show_osm_landuse_forest=False,
                   show_nr_hazardous_trees=False,
-                  save_as=".svg", dpi=None):
+                  save_as=".png", dpi=None):
     # Get data
     sort_by = ['DelayCost', 'IncidentCount', 'DelayMinutes']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -826,7 +826,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
                                  show_metex_weather_cells=False,
                                  show_osm_landuse_forest=False,
                                  show_nr_hazardous_trees=False,
-                                 save_as=".svg", dpi=None):
+                                 save_as=".png", dpi=None):
     # Get data
     hotspots_data = get_schedule8_incident_hotspots(route, weather, None, update)
     hotspots_data['DelayMinutesPerIncident'] = hotspots_data.DelayMinutes.div(hotspots_data.IncidentCount)
@@ -900,59 +900,44 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
 
 #
 def plotting_hotspots(update=False):
-    if confirmed():
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".png", dpi=1200)
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg", dpi=None)
 
+    import settings
+    settings.mpl_preferences(use_cambria=True, reset=False)
+    settings.np_preferences(reset=False)
+    settings.pd_preferences(reset=False)
+
+    if confirmed():
         plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".tif", dpi=600)
         plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".tif", dpi=600)
         plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".tif", dpi=600)
         plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tif", dpi=600)
-        # plot_base_map_plus('ANGLIA', False, True, False, False, (1.05, 0.85), ".tif", dpi=600)
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg", dpi=None)
 
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".png", dpi=1200)
+        # Delays yearly
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
         hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg", dpi=None)
         hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tif", dpi=600)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, False, ".svg", dpi=None)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, False, False, ".svg", dpi=None)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, True, False, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".tif", dpi=600)
 
         # Delays
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".png", dpi=1200)
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".svg", dpi=None)
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg", dpi=None)
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tif", dpi=600)
-        # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, False, ".svg", dpi=None)
-        # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, False, False, ".svg", dpi=None)
-        # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, True, False, ".svg", dpi=None)
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".svg", dpi=None)
 
         # Cost
-        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".png", dpi=1200)
+        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".svg", dpi=None)
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".svg", dpi=None)
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".tif", dpi=600)
-        # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, False, ".svg", dpi=None)
-        # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, False, False, ".svg", dpi=None)
-        # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, True, False, ".svg", dpi=None)
-        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".svg", dpi=None)
 
         # Frequency
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".png", dpi=1200)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, False, False, ".svg", dpi=None)
         hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".svg", dpi=None)
         hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".tif", dpi=600)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, False, ".svg", dpi=None)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, False, False, ".svg", dpi=None)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, True, False, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, False, False, ".svg", dpi=None)
 
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".png", dpi=1200)
+        # Delay minutes per incident
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".svg", dpi=None)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tif", dpi=600)
-        # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, False, ".svg", dpi=None)
-        # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, False, False, ".svg", dpi=None)
-        # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, True, False, ".svg", dpi=None)
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
+
     else:
         pass
 
