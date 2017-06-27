@@ -100,7 +100,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     print("Plotting the base map ... ", end="")
     plt.style.use('ggplot')  # Default, 'classic'; matplotlib.style.available gives the list of available styles
     fig = plt.figure(figsize=(11, 9))  # fig = plt.subplots(figsize=(11, 9))
-    plt.subplots_adjust(left=0.003, bottom=0.000, right=0.600, top=1.000)
+    plt.subplots_adjust(left=0.001, bottom=0.000, right=0.6035, top=1.000)
 
     # Plot basemap
     base_map = Basemap(llcrnrlon=-0.565409,  # ll[0] - 0.06 * width,
@@ -173,7 +173,7 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
         ur_x, ur_y = base_map(data.ur_Longitude[i], data.ur_Latitude[i])
         lr_x, lr_y = base_map(data.lr_lon[i], data.lr_lat[i])
         xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.4)
+        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.6)
         plt.gca().add_patch(p)
 
     # Add labels
@@ -462,6 +462,7 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
 """ Plot 'hotspots' """
 
 
+#
 def save_fig(fig, key_word, show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi):
     """
     :param fig:
@@ -483,6 +484,89 @@ def save_fig(fig, key_word, show_metex_weather_cells, show_osm_landuse_forest, s
         print("Done.")
         if save_as == ".svg":
             convert_svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
+
+
+# ====================================================================================================================
+def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
+                           cmap_name='Set1',
+                           show_metex_weather_cells=False,
+                           show_osm_landuse_forest=False,
+                           show_nr_hazardous_trees=False,
+                           save_as=".svg", dpi=None):
+    # Get data
+    data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
+    try:
+        hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
+    except FileNotFoundError:
+        schedule8_data = dbm.get_schedule8_costs_by_datetime_location(route, weather, update)
+        group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
+                          'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
+        schedule8_data = schedule8_data.groupby(group_features).aggregate(
+            {'DelayMinutes': pd.np.sum, 'DelayCost': pd.np.sum, 'IncidentCount': pd.np.sum}).reset_index()
+        hotspots = get_schedule8_incident_hotspots(route, weather)
+        hotspots_data = schedule8_data.merge(
+            hotspots[group_features[1:] + ['MidLatitude', 'MidLongitude']], how='left', on=group_features[1:])
+        hotspots_data.sort_values(by=['DelayMinutes', 'DelayCost', 'IncidentCount'], ascending=False, inplace=True)
+        save(hotspots_data, dbm.cdd_metex_db_views(data_filename))
+
+    yearly_cost = hotspots_data.groupby('FinancialYear').aggregate(
+        {'DelayMinutes': pd.np.sum, 'DelayCost': pd.np.sum, 'IncidentCount': pd.np.sum})
+
+    # Labels
+    years = [str(y) for y in yearly_cost.index]
+    fyears = ['/'.join([y0, str(y1)[-2:]]) for y0, y1 in zip(years, pd.np.array(yearly_cost.index) + pd.np.array([1]))]
+
+    dlabel = ["%s  (%s min." % (fy, format(int(d), ",")) for fy, d in zip(fyears, yearly_cost.DelayMinutes)]
+    clabel = ["  / £%.2f" % round(c * 1e-6, 2) + "M)" for c in yearly_cost.DelayCost]
+    label = [l for l in reversed([d + c for d, c in zip(dlabel, clabel)])]
+
+    cmap = plt.get_cmap(cmap_name)
+    colours = cmap(pd.np.linspace(start=0, stop=1, num=9))
+    colours = [c for c in reversed(colours)]
+
+    # Plot basemap (with railway tracks)
+    fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
+
+    top_hotspots = []
+    for y, fy in zip(years, fyears):
+        plot_data = hotspots_data[hotspots_data.FinancialYear == int(y)][0:20]
+        top_hotspots.append(fy + ':  ' + plot_data.StanoxSection.iloc[0])
+        for i in plot_data.index:
+            mid_lat = plot_data.MidLatitude[i]
+            mid_lon = plot_data.MidLongitude[i]
+            mid_x, mid_y = base_map(mid_lon, mid_lat)
+            base_map.plot(mid_x, mid_y, zorder=3, marker='o', color=colours[years.index(y)], alpha=0.9,
+                          markersize=26, markeredgecolor='w')
+
+    # Add a colour bar
+    cb = colorbar_index(no_of_colours=len(label), cmap_param=cmap, shrink=0.4, labels=label, pad=0.068)
+    for t in cb.ax.yaxis.get_ticklabels():
+        t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
+    cb.ax.tick_params(labelsize=14)
+    cb.set_alpha(1.0)
+    cb.draw_all()
+
+    cb.ax.text(0 + 1.5, 1.02, "Annual total delays and cost",
+               ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
+
+    #
+    cb.ax.text(0, 0 - 0.18, "Locations with longest delays:",
+               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
+    cb.ax.text(0, 0 - 0.75, "\n".join(top_hotspots),
+               ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
+
+    if show_metex_weather_cells:
+        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
+
+    if show_osm_landuse_forest:
+        plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
+
+    if show_nr_hazardous_trees:
+        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
+
+    save_fig(fig, "annual_delays_cost",
+             show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots of delay minutes =====================================================================================
@@ -515,13 +599,13 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
     jenks_labels = [label % (format(int(b), ','), c) for b, c in bins_counts]
 
     cmap = plt.get_cmap(cmap_name)  # 'OrRd', 'RdPu', 'Oranges', 'YlOrBr'
-    colour_array = pd.np.linspace(0, 1., len(jenks_labels) + 1)[0:-1]
+    colour_array = pd.np.linspace(0, 1., len(jenks_labels))
     colours = cmap(colour_array)
     marker_size = pd.np.linspace(1, 2.2, len(jenks_labels)) * 12
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
-    fig.subplots_adjust(left=0.002, bottom=0.002, right=0.769, top=0.999)
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
 
     bins = list(breaks.bins)
     for b in range(len(bins)):
@@ -600,7 +684,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
-    fig.subplots_adjust(left=0.002, bottom=0.002, right=0.769, top=0.999)
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
 
     bins = list(breaks.bins)
     for b in range(len(bins)):
@@ -683,7 +767,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.90))
-    fig.subplots_adjust(left=0.002, bottom=0.002, right=0.769, top=0.999)
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
 
     bins = [pd.np.nan] + list(breaks.bins)
     for b in range(len(bins)):
@@ -764,7 +848,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
-    fig.subplots_adjust(left=0.002, bottom=0.002, right=0.769, top=0.999)
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
 
     bins = list(breaks.bins)
     for b in range(len(bins)):
@@ -814,133 +898,61 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
              show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
-# ====================================================================================================================
-def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
-                           cmap_name='Set1',
-                           show_metex_weather_cells=False,
-                           show_osm_landuse_forest=False,
-                           show_nr_hazardous_trees=False,
-                           save_as=".svg", dpi=None):
-    # Get data
-    data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
-    try:
-        hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
-    except FileNotFoundError:
-        schedule8_data = dbm.get_schedule8_costs_by_datetime_location(route, weather, update)
-        group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
-                          'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
-        schedule8_data = schedule8_data.groupby(group_features).aggregate(
-            {'DelayMinutes': pd.np.sum, 'DelayCost': pd.np.sum, 'IncidentCount': pd.np.sum}).reset_index()
-        hotspots = get_schedule8_incident_hotspots(route, weather)
-        hotspots_data = schedule8_data.merge(
-            hotspots[group_features[1:] + ['MidLatitude', 'MidLongitude']], how='left', on=group_features[1:])
-        hotspots_data.sort_values(by=['DelayMinutes', 'DelayCost', 'IncidentCount'], ascending=False, inplace=True)
-        save(hotspots_data, dbm.cdd_metex_db_views(data_filename))
-
-    yearly_cost = hotspots_data.groupby('FinancialYear').aggregate(
-        {'DelayMinutes': pd.np.sum, 'DelayCost': pd.np.sum, 'IncidentCount': pd.np.sum})
-
-    # Labels
-    years = [str(y) for y in yearly_cost.index]
-    fyears = ['/'.join([y0, str(y1)[-2:]]) for y0, y1 in zip(years, pd.np.array(yearly_cost.index) + pd.np.array([1]))]
-
-    dlabel = ["%s  (%s min." % (fy, format(int(d), ",")) for fy, d in zip(fyears, yearly_cost.DelayMinutes)]
-    clabel = ["  / £%.2f" % round(c * 1e-6, 2) + "M)" for c in yearly_cost.DelayCost]
-    label = [l for l in reversed([d + c for d, c in zip(dlabel, clabel)])]
-
-    cmap = plt.get_cmap(cmap_name)
-    colours = cmap(pd.np.linspace(start=0, stop=1, num=9))
-    colours = [c for c in reversed(colours)]
-
-    # Plot basemap (with railway tracks)
-    fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
-    fig.subplots_adjust(left=0.002, bottom=0.002, right=0.769, top=0.999)
-
-    top_hotspots = []
-    for y, fy in zip(years, fyears):
-        plot_data = hotspots_data[hotspots_data.FinancialYear == int(y)][0:20]
-        top_hotspots.append(fy + ':  ' + plot_data.StanoxSection.iloc[0])
-        for i in plot_data.index:
-            mid_lat = plot_data.MidLatitude[i]
-            mid_lon = plot_data.MidLongitude[i]
-            mid_x, mid_y = base_map(mid_lon, mid_lat)
-            base_map.plot(mid_x, mid_y, zorder=3, marker='o', color=colours[years.index(y)], alpha=0.9,
-                          markersize=26, markeredgecolor='w')
-
-    # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(label), cmap_param=cmap, shrink=0.4, labels=label, pad=0.068)
-    for t in cb.ax.yaxis.get_ticklabels():
-        t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
-    cb.ax.tick_params(labelsize=14)
-    cb.set_alpha(1.0)
-    cb.draw_all()
-
-    cb.ax.text(0 + 1.5, 1.02, "Annual total delays and cost",
-               ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
-
-    #
-    cb.ax.text(0, 0 - 0.18, "Locations with longest delays:",
-               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
-    cb.ax.text(0, 0 - 0.75, "\n".join(top_hotspots),
-               ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
-
-    if show_metex_weather_cells:
-        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
-
-    if show_osm_landuse_forest:
-        plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
-
-    if show_nr_hazardous_trees:
-        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
-
-    save_fig(fig, "annual_delays_cost",
-             show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
-
-
 #
 def plotting_hotspots(update=False):
     if confirmed():
         plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".png", dpi=1200)
         plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg", dpi=None)
-        # plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".svg", dpi=None)
-        # plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".svg", dpi=None)
-        # plot_base_map_plus('ANGLIA', False, True, False, False, (1.05, 0.85), ".svg", dpi=None)
-        # plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".svg", dpi=None)
 
+        plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".tif", dpi=600)
+        plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".tif", dpi=600)
+        plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".tif", dpi=600)
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tif", dpi=600)
+        # plot_base_map_plus('ANGLIA', False, True, False, False, (1.05, 0.85), ".tif", dpi=600)
+
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".png", dpi=1200)
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg", dpi=None)
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tif", dpi=600)
+        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, False, ".svg", dpi=None)
+        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, False, False, ".svg", dpi=None)
+        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, True, False, ".svg", dpi=None)
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".tif", dpi=600)
+
+        # Delays
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".png", dpi=1200)
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg", dpi=None)
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tif", dpi=600)
         # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, False, ".svg", dpi=None)
         # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, False, False, ".svg", dpi=None)
         # hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, True, False, ".svg", dpi=None)
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".svg", dpi=None)
 
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".png", dpi=1200)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".svg", dpi=None)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, False, ".svg", dpi=None)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, False, False, ".svg", dpi=None)
-        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, True, False, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, False, False, ".svg", dpi=None)
-
+        # Cost
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".png", dpi=1200)
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".svg", dpi=None)
+        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".tif", dpi=600)
         # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, False, ".svg", dpi=None)
         # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, False, False, ".svg", dpi=None)
         # hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, True, False, ".svg", dpi=None)
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".svg", dpi=None)
 
+        # Frequency
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".png", dpi=1200)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".svg", dpi=None)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".tif", dpi=600)
+        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, False, ".svg", dpi=None)
+        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, False, False, ".svg", dpi=None)
+        # hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, True, False, ".svg", dpi=None)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, False, False, ".svg", dpi=None)
+
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".png", dpi=1200)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".svg", dpi=None)
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tif", dpi=600)
         # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, False, ".svg", dpi=None)
         # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, False, False, ".svg", dpi=None)
         # hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, True, False, ".svg", dpi=None)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
-
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".png", dpi=1200)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg", dpi=None)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, False, ".svg", dpi=None)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, False, False, ".svg", dpi=None)
-        # hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, True, False, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
     else:
         pass
 
