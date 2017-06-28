@@ -1,5 +1,3 @@
-""" Ref: http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii """
-
 import subprocess
 from math import sqrt, pi, sin, cos, tan, atan2, floor
 
@@ -7,7 +5,7 @@ import measurement.measures
 import pandas as pd
 
 
-# Convert british national grid (OSBG36) to latitude and longitude (WGS84)
+# Convert british national grid (OSBG36) to latitude and longitude (WGS84)(Reference: http://www.hannahfry.co.uk)
 def osgb36_to_wgs84(easting, northing):
     """
     :param easting: X
@@ -15,6 +13,8 @@ def osgb36_to_wgs84(easting, northing):
     :return:
 
     'easting' and 'northing' are the British national grid coordinates
+
+    Reference: http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii
 
     """
     # The Airy 180 semi-major and semi-minor axes used for OSGB36 (m)
@@ -110,7 +110,7 @@ def osgb36_to_wgs84(easting, northing):
     return lon, lat
 
 
-# Convert latitude and longitude (WGS84) to british national grid (OSBG36)
+# Convert latitude and longitude (WGS84) to british national grid (OSBG36) (Reference: http://www.hannahfry.co.uk)
 def wgs84_to_osgb36(latitude, longitude):
     """
     :param latitude:
@@ -119,9 +119,11 @@ def wgs84_to_osgb36(latitude, longitude):
 
     This function converts lat lon (WGS84) to british national grid (OSBG36)
 
+    Reference: http://www.hannahfry.co.uk/blog/2012/02/01/converting-latitude-and-longitude-to-british-national-grid
+
     """
     # First convert to radians. These are on the wrong ellipsoid currently: GRS80. (Denoted by _1)
-    long_1, lat_1 = longitude * pi / 180, latitude * pi / 180
+    lon_1, lat_1 = longitude * pi / 180, latitude * pi / 180
 
     # Want to convert to the Airy 1830 ellipsoid, which has the following:
     # The GSR80 semi-major and semi-minor axes used for WGS84(m)
@@ -131,8 +133,8 @@ def wgs84_to_osgb36(latitude, longitude):
 
     # First convert to cartesian from spherical polar coordinates
     h = 0  # Third spherical coord.
-    x_1 = (nu_1 + h) * cos(lat_1) * cos(long_1)
-    y_1 = (nu_1 + h) * cos(lat_1) * sin(long_1)
+    x_1 = (nu_1 + h) * cos(lat_1) * cos(lon_1)
+    y_1 = (nu_1 + h) * cos(lat_1) * sin(lon_1)
     z_1 = ((1 - e2_1) * nu_1 + h) * sin(lat_1)
 
     # Perform Helmut transform (to go between GRS80 (_1) and Airy 1830 (_2))
@@ -175,16 +177,16 @@ def wgs84_to_osgb36(latitude, longitude):
     lon0 = -2 * pi / 180
     # Northing & easting of true origin (m)
     n0, e0 = -100000, 400000
-    n = (a - b) / (a + b)
+    y = (a - b) / (a + b)
 
     # meridional radius of curvature
     rho = a * f0 * (1 - e2) * (1 - e2 * sin(latitude) ** 2) ** (-1.5)
     eta2 = nu * f0 / rho - 1
 
-    m1 = (1 + n + (5 / 4) * n ** 2 + (5 / 4) * n ** 3) * (latitude - lat0)
-    m2 = (3 * n + 3 * n ** 2 + (21 / 8) * n ** 3) * sin(latitude - lat0) * cos(latitude + lat0)
-    m3 = ((15 / 8) * n ** 2 + (15 / 8) * n ** 3) * sin(2 * (latitude - lat0)) * cos(2 * (latitude + lat0))
-    m4 = (35 / 24) * n ** 3 * sin(3 * (latitude - lat0)) * cos(3 * (latitude + lat0))
+    m1 = (1 + y + (5 / 4) * y ** 2 + (5 / 4) * y ** 3) * (latitude - lat0)
+    m2 = (3 * y + 3 * y ** 2 + (21 / 8) * y ** 3) * sin(latitude - lat0) * cos(latitude + lat0)
+    m3 = ((15 / 8) * y ** 2 + (15 / 8) * y ** 3) * sin(2 * (latitude - lat0)) * cos(2 * (latitude + lat0))
+    m4 = (35 / 24) * y ** 3 * sin(3 * (latitude - lat0)) * cos(3 * (latitude + lat0))
 
     # meridional arc
     m = b * f0 * (m1 - m2 + m3 - m4)
@@ -198,11 +200,28 @@ def wgs84_to_osgb36(latitude, longitude):
     vi = nu * f0 * cos(latitude) ** 5 * (
         5 - 18 * tan(latitude) ** 2 + tan(latitude) ** 4 + 14 * eta2 - 58 * eta2 * tan(latitude) ** 2) / 120
 
-    n = i + ii * (longitude - lon0) ** 2 + iii * (longitude - lon0) ** 4 + iii_a * (longitude - lon0) ** 6
-    e = e0 + iv * (longitude - lon0) + v * (longitude - lon0) ** 3 + vi * (longitude - lon0) ** 5
+    y = i + ii * (longitude - lon0) ** 2 + iii * (longitude - lon0) ** 4 + iii_a * (longitude - lon0) ** 6
+    x = e0 + iv * (longitude - lon0) + v * (longitude - lon0) ** 3 + vi * (longitude - lon0) ** 5
 
-    # Job's a good'n.
-    return e, n
+    return x, y
+
+
+# Convert "miles.chains" to Network Rail mileages
+def miles_chains_to_mileage(miles_chains):
+    """
+    :param miles_chains: [str] 'miles.chains'
+    :return: [str] 'miles.yards'
+
+    Note on the 'ELRs and mileages' web page that 'mileages' are given in the form 'miles.chains'.
+
+    """
+    if not pd.isnull(miles_chains):
+        miles, chains = str(miles_chains).split('.')
+        yards = measurement.measures.Distance(chain=chains).yd
+        networkrail_mileage = '%.4f' % (int(miles) + round(yards / (10 ** 4), 4))
+    else:
+        networkrail_mileage = miles_chains
+    return networkrail_mileage
 
 
 # Convert str type mileage to numerical type

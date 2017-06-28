@@ -220,6 +220,19 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
 """ Misc """
 
 
+# Check if a, say str, is float
+def is_float(text):
+    try:
+        float(text)
+        return True
+    except ValueError:
+        try:
+            float(re.sub('[()~]', '', text))
+            return True
+        except ValueError:
+            return False
+
+
 # Reset double indexes
 def reset_double_indexes(data_frame):
     levels = list(data_frame.columns)
