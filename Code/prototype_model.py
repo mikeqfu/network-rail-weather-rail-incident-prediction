@@ -29,7 +29,11 @@ settings.np_preferences(reset=False)
 settings.pd_preferences(reset=False)
 
 
-# Change directory to "Data\\Modelling" and sub-directories ==========================================================
+# ====================================================================================================================
+""" Change directory """
+
+
+# Change directory to "Data\\Modelling" and sub-directories
 def cdd_mod_dat(*directories):
     path = cdd("Modelling", "dat")
     for directory in directories:
@@ -37,7 +41,7 @@ def cdd_mod_dat(*directories):
     return path
 
 
-# Change directory to "Modelling\\Trial_" and sub-directories ========================================================
+# Change directory to "Modelling\\Trial_" and sub-directories
 def cdd_mod_trial(trial_id=0, *directories):
     path = cdd("Modelling", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
@@ -46,11 +50,11 @@ def cdd_mod_trial(trial_id=0, *directories):
     return path
 
 
-# ===================================
+# ====================================================================================================================
 """ Calculations for weather data """
 
 
-# Specify the statistics that need to be computed ====================================================================
+# Specify the statistics that need to be computed
 def specify_weather_stats_calculations():
     weather_stats_computations = {'Temperature': (np.max, np.min, np.average),
                                   'RelativeHumidity': np.max,
@@ -61,7 +65,7 @@ def specify_weather_stats_calculations():
     return weather_stats_computations
 
 
-# Get all weather variable names =====================================================================================
+# Get all weather variable names
 def weather_variable_names():
     # var_names = db.colnames_db_table('NR_METEX', table_name='Weather')[2:]
     weather_stats_computations = specify_weather_stats_calculations()
@@ -72,7 +76,7 @@ def weather_variable_names():
     return agg_colnames + wind_speed_variables
 
 
-# Calculate average wind speed and direction =========================================================================
+# Calculate average wind speed and direction
 def calculate_wind_averages(wind_speeds, wind_directions):
     # component u, the zonal velocity
     u = - wind_speeds * np.sin(np.radians(wind_directions))
@@ -96,7 +100,7 @@ def calculate_wind_averages(wind_speeds, wind_directions):
     return average_wind_speed, average_wind_direction
 
 
-# Compute the statistics for all the weather variables (except wind) =================================================
+# Compute the statistics for all the weather variables (except wind)
 def calculate_weather_variables_stats(weather_data):
     """
     Note: to get the n-th percentitle, use percentile(n)
@@ -117,7 +121,7 @@ def calculate_weather_variables_stats(weather_data):
     return stats_info
 
 
-# Get TRUST and the relevant weather data for each location ==========================================================
+# Get TRUST and the relevant weather data for each location
 def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                   subset_weather_for_nip=False, update=False):
     """
@@ -235,11 +239,11 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
     return iwdata
 
 
-# ======================================
+# ====================================================================================================================
 """ Calculations for vegetation data """
 
 
-# Get Schedule 8 costs (minutes & cost) aggregated for each STANOX section ===========================================
+# Get Schedule 8 costs (minutes & cost) aggregated for each STANOX section
 def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None):
     """
     :param route:
@@ -282,7 +286,7 @@ def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None
         return incident_locations_diff_elr
 
 
-# Get the ELR & mileage data of furlong locations ====================================================================
+# Get the ELR & mileage data of furlong locations
 def get_furlongs_info_from_veg_db(location_data_only=False, update=False):
     """
     :param location_data_only:
@@ -330,7 +334,7 @@ def get_furlongs_info_from_veg_db(location_data_only=False, update=False):
     return furlongs
 
 
-# Get adjusted Start and End mileages ================================================================================
+# Get adjusted Start and End mileages
 def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
     """
     :param furlongs: 
@@ -424,7 +428,7 @@ def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
         veg_furlongs.index.tolist()
 
 
-# Get furlongs data of incident locations each identified by the same ELRs ===========================================
+# Get furlongs data of incident locations each identified by the same ELRs
 def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yards_same_elr=220, update=False):
     """
     :param route:
@@ -475,7 +479,7 @@ def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yard
     return incident_location_furlongs_same_elr
 
 
-#
+# Get furlongs data by the same ELRs
 def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_elr=220, update=False):
     filename = dbm.make_filename("incident_furlongs_same_elr", route, weather, shift_yards_same_elr)
     path_to_file = cdd_mod_dat(filename)
@@ -505,7 +509,7 @@ def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_el
     return incident_furlongs_same_elr
 
 
-# Get information of connecting points for different ELRs ============================================================
+# Get information of connecting points for different ELRs
 def get_connecting_nodes(route=None, update=False):
     filename = dbm.make_filename("connecting_nodes_between_ELRs", route, weather=None)
     path_to_file = cdd_mod_dat(filename)
@@ -545,7 +549,7 @@ def get_connecting_nodes(route=None, update=False):
     return connecting_nodes
 
 
-# Get furlongs data of incident locations each identified by different ELRs ==========================================
+# Get furlongs data of incident locations each identified by different ELRs
 def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
     filename = dbm.make_filename("incident_location_furlongs_diff_ELRs", route, weather, shift_yards_diff_elr)
     path_to_file = cdd_mod_dat(filename)
@@ -652,7 +656,7 @@ def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yard
     return incident_location_furlongs_diff_elr
 
 
-#
+# Get furlongs data by different ELRS
 def get_incident_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
     filename = dbm.make_filename("incident_furlongs_diff_ELRs", route, weather, shift_yards_diff_elr)
     path_to_file = cdd_mod_dat(filename)
@@ -685,7 +689,7 @@ def get_incident_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_el
     return incid_furlongs_diff_elr
 
 
-# Combine the incident furlong data of both of the above =============================================================
+# Combine the incident furlong data of both of the above
 def get_incident_location_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
     filename = dbm.make_filename("incident_location_furlongs", route, None, shift_yards_same_elr, shift_yards_diff_elr)
     path_to_file = cdd_mod_dat(filename)
@@ -713,7 +717,7 @@ def get_incident_location_furlongs(route=None, shift_yards_same_elr=220, shift_y
     return incident_location_furlongs
 
 
-# Combine the incident furlong data of both of the above =============================================================
+# Combine the incident furlong data of both of the above
 def get_incident_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
     filename = dbm.make_filename("incident_furlongs", route, None, shift_yards_same_elr, shift_yards_diff_elr)
     path_to_file = cdd_mod_dat(filename)
@@ -743,7 +747,7 @@ def get_incident_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff
     return incident_furlongs
 
 
-# Specify the statistics that need to be computed ====================================================================
+# Specify the statistics that need to be computed
 def specify_vegetation_stats_calculations(features):
     # "CoverPercent..."
     cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
@@ -775,7 +779,7 @@ def specify_vegetation_stats_calculations(features):
     return cover_percents, hazard_rest, veg_stats_calc
 
 
-# Get vegetation conditions for incident locations ===================================================================
+# Get vegetation conditions for incident locations
 def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220,
                                      hazard_pctl=50, update=False):
     """
@@ -898,7 +902,7 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
     return ivdata
 
 
-# Categorise wind directions into four quadrants =====================================================================
+# Categorise wind directions into four quadrants
 def categorise_wind_directions(direction_degree):
     if 0 <= direction_degree < 90:
         return 1
@@ -910,7 +914,7 @@ def categorise_wind_directions(direction_degree):
         return 4
 
 
-# Integrate the weather and vegetation conditions for incident locations =============================================
+# Integrate the weather and vegetation conditions for incident locations
 def get_incident_data_with_weather_and_vegetation(route=None, weather='Wind',
                                                   ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-24,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
@@ -950,11 +954,11 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather='Wind',
     return mdata
 
 
-# ==================
+# ====================================================================================================================
 """ Model trials """
 
 
-# Get data for specified season(s) ===================================================================================
+# Get data for specified season(s)
 def get_data_by_season(mdata, season):
     """
     :param mdata:
@@ -999,7 +1003,7 @@ def get_data_by_season(mdata, season):
         return seasonal_data
 
 
-# Specify the explanatory variables considered in this prototype model ===============================================
+# Specify the explanatory variables considered in this prototype model
 def specify_explanatory_variables():
     return [
         # 'WindSpeed_max',
@@ -1053,7 +1057,7 @@ def specify_explanatory_variables():
     ]
 
 
-# Describe basic statistics about the main explanatory variables =====================================================
+# Describe basic statistics about the main explanatory variables
 def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     fig = plt.figure(figsize=(12, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
@@ -1131,7 +1135,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
 #     info_0, info_1 = info.iloc[:, :2].set_index(0), info.iloc[:, 2:].set_index(2)
 
 
-# Fit a primer model =================================================================================================
+# Fit a primer model
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Wind',
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -1374,7 +1378,7 @@ def logistic_regression_model(trial_id=0,
     return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold
 
 
-# Evaluate the primer model for different settings ===================================================================
+# Evaluate the primer model for different settings
 def evaluate_prototype_model(season=None):
     start_time = time.time()
 
