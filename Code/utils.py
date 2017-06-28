@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 
+# Type to confirm whether to proceed or not
 def confirmed(prompt=None, resp=False):
     """
     Reference: http://code.activestate.com/recipes/541096-prompt-the-user-for-confirmation/
@@ -44,7 +45,11 @@ def confirmed(prompt=None, resp=False):
         return False
 
 
-# Change directory ===================================================================================================
+# ====================================================================================================================
+""" Change directories """
+
+
+# Change directory
 def cd(*directories):
     # Current working directory
     path = os.getcwd()
@@ -53,7 +58,7 @@ def cd(*directories):
     return path
 
 
-# Change to data directory ===========================================================================================
+# Change directory to "Data"
 def cdd(*directories):
     path = os.path.join(os.getcwd(), "Data")
     for directory in directories:
@@ -61,7 +66,7 @@ def cdd(*directories):
     return path
 
 
-# Change to "RailwayCode" directory ==================================================================================
+# Change directory to "RailwayCode"
 def cdd_rc(*directories):
     path = cdd("Network", "Railway Codes")
     for directory in directories:
@@ -69,7 +74,7 @@ def cdd_rc(*directories):
     return path
 
 
-# Change to "Schedule 8 incidents" directory =========================================================================
+# Change directory to "Schedule 8 incidents"
 def cdd_schedule8(*directories):
     path = cdd("METEX", "Schedule 8 incidents")
     for directory in directories:
@@ -77,6 +82,7 @@ def cdd_schedule8(*directories):
     return path
 
 
+# Change directory to "Delay attribution"
 def cdd_delay_attr(*directories):
     path = cdd("METEX", "Delay attribution")
     for directory in directories:
@@ -84,7 +90,11 @@ def cdd_delay_attr(*directories):
     return path
 
 
-# Save pickles =======================================================================================================
+# ====================================================================================================================
+""" Save and Load files """
+
+
+# Save pickles
 def save_pickle(pickle_data, path_to_pickle):
     """
     :param pickle_data: any object that could be dumped by the 'pickle' package
@@ -103,7 +113,7 @@ def save_pickle(pickle_data, path_to_pickle):
         print("failed due to {}.".format(e))
 
 
-# Load pickles =======================================================================================================
+# Load pickles
 def load_pickle(path_to_pickle):
     """
     :param path_to_pickle: [str] local file path
@@ -115,7 +125,7 @@ def load_pickle(path_to_pickle):
     return data
 
 
-# Save json file =====================================================================================================
+# Save json file
 def save_json(json_data, path_to_json):
     """
     :param json_data: any object that could be dumped by the 'json' package
@@ -134,7 +144,7 @@ def save_json(json_data, path_to_json):
         print("failed due to {}.".format(e))
 
 
-# Load json file =====================================================================================================
+# Load json file
 def load_json(path_to_json):
     """
     :param path_to_json: [str] local file path
@@ -146,7 +156,7 @@ def load_json(path_to_json):
     return data
 
 
-# Save Excel workbook ================================================================================================
+# Save Excel workbook
 def save_workbook(excel_data, path_to_excel, sep, sheet_name, engine='xlsxwriter'):
     """
     :param excel_data: any [DataFrame] that could be dumped saved as a Excel workbook, e.g. '.csv', '.xlsx'
@@ -174,7 +184,7 @@ def save_workbook(excel_data, path_to_excel, sep, sheet_name, engine='xlsxwriter
         print("failed due to {}.".format(e))
 
 
-# Save data locally (.pickle, .csv or .xlsx) =========================================================================
+# Save data locally (.pickle, .csv or .xlsx)
 def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details', deep_copy=True):
     """
     :param data: any object that could be dumped
@@ -206,17 +216,11 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
         save_pickle(dat, path_to_file)
 
 
-# Convert actual year to Network Rail's financial year ===============================================================
-def get_nr_financial_year(date):
-    """
-    :param date:
-    :return: financial year
-    """
-    financial_date = date + pd.DateOffset(months=-3)
-    return financial_date.year
+# ====================================================================================================================
+""" Misc """
 
 
-# Reset double indexes ===============================================================================================
+# Reset double indexes
 def reset_double_indexes(data_frame):
     levels = list(data_frame.columns)
     column_names = []
@@ -227,7 +231,7 @@ def reset_double_indexes(data_frame):
     return data_frame.reset_index()
 
 
-# Find from a list the closest, case-insensitive, string to the given one ============================================
+# Find from a list the closest, case-insensitive, string to the given one
 def find_match(x, lookup):
     if x is '' or x is None:
         return None
@@ -237,7 +241,7 @@ def find_match(x, lookup):
                 return y
 
 
-# ====================================================================================================================
+#
 def find_nearest(vector, target):
     my_array = np.array(vector)
     diff = my_array - target
@@ -251,7 +255,7 @@ def find_nearest(vector, target):
         return masked_diff.argmin()
 
 
-# Check whether a string contains digits =============================================================================
+# Check whether a string contains digits
 def contains_digits(string):
     return bool(re.compile('\d').search(string))
 
@@ -284,7 +288,7 @@ def get_variable_names(*var):
     return variable_list
 
 
-# A function for working with colour ramps ===========================================================================
+# A function for working with colour ramps
 def cmap_discretize(cmap_param, no_of_colours):
     """
     :param cmap_param: colormap instance, e.g. cm.jet
@@ -308,7 +312,7 @@ def cmap_discretize(cmap_param, no_of_colours):
     return matplotlib.colors.LinearSegmentedColormap(cmap_param.name + '_%d' % no_of_colours, cdict, 1024)
 
 
-# A function for working with colour color bars ======================================================================
+# A function for working with colour color bars
 def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     """
     :param no_of_colours: number of colors
@@ -333,7 +337,7 @@ def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     return colorbar
 
 
-# Get upper and lower bounds for removing extreme outliers ===========================================================
+# Get upper and lower bounds for removing extreme outliers
 def get_bounds_extreme_outliers(data_set, k=1.5):
     q1, q3 = np.percentile(data_set, 25), np.percentile(data_set, 75)
     iqr = q3 - q1

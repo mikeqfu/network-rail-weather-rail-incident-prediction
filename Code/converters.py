@@ -1,15 +1,13 @@
-"""
-Reference:
-http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii
-"""
+""" Ref: http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii """
 
+import subprocess
 from math import sqrt, pi, sin, cos, tan, atan2, floor
 
 import measurement.measures
 import pandas as pd
 
 
-# Convert british national grid (OSBG36) to latitude and longitude (WGS84) ==========================================
+# Convert british national grid (OSBG36) to latitude and longitude (WGS84)
 def osgb36_to_wgs84(easting, northing):
     """
     :param easting: X
@@ -102,18 +100,17 @@ def osgb36_to_wgs84(easting, northing):
     lon = atan2(y_2, x_2)
     # h = p / cos(lat) - nu_2
 
-    # Uncomment this line if you want to print the results
+    # Print the results
     # print([(lat - lat_1) * 180 / pi, (lon - lon_1) * 180 / pi])
 
     # Convert to degrees
-    lat = lat * 180 / pi
     lon = lon * 180 / pi
+    lat = lat * 180 / pi
 
-    # Job's a good'n.
-    return lat, lon
+    return lon, lat
 
 
-# Convert latitude and longitude (WGS84) to british national grid (OSBG36) ===========================================
+# Convert latitude and longitude (WGS84) to british national grid (OSBG36)
 def wgs84_to_osgb36(latitude, longitude):
     """
     :param latitude:
@@ -208,29 +205,17 @@ def wgs84_to_osgb36(latitude, longitude):
     return e, n
 
 
-# Convert columns ====================================================================================================
-def ne_to_latlon(easting_col, northing_col):
-    latitudes = []
-    longitudes = []
-    n, e = northing_col, easting_col
-    for i in range(len(n)):
-        lat, lon = osgb36_to_wgs84(e.iloc[i], n.iloc[i])
-        latitudes.append(lat)
-        longitudes.append(lon)
-    return pd.DataFrame({'Latitude': latitudes, 'Longitude': longitudes})
-
-
-# ====================================================================================================================
+# Convert str type mileage to numerical type
 def str_to_num_mileage(x):
     return '' if x == '' else round(float(x), 4)
 
 
-# ====================================================================================================================
+# Convert mileage to str type
 def mileage_to_str(x):
     return '%.4f' % round(float(x), 4)
 
 
-# Convert yards to Network Rail mileages =============================================================================
+# Convert yards to Network Rail mileages
 def yards_to_mileage(yards):
     yd = measurement.measures.Distance(yd=yards)
     mileage_mi = floor(yd.mi)
@@ -240,7 +225,7 @@ def yards_to_mileage(yards):
     return mileage
 
 
-# Convert Network Rail mileages to yards =============================================================================
+# Convert Network Rail mileages to yards
 def mileage_to_yards(mileage):
     if isinstance(mileage, float):
         mileage = str('%.4f' % mileage)
@@ -252,14 +237,7 @@ def mileage_to_yards(mileage):
     return yards
 
 
-# ====================================================================================================================
-def num_mileage_shifting(mileage, shift_yards):
-    yards = mileage_to_yards(mileage) + shift_yards
-    str_mileage = yards_to_mileage(yards)
-    return str_to_num_mileage(str_mileage)
-
-
-# Convert miles to Network Rail mileages =============================================================================
+# Convert miles to Network Rail mileages
 def miles_chains_to_mileage(miles_chains):
     if miles_chains is '':
         return miles_chains
@@ -271,7 +249,14 @@ def miles_chains_to_mileage(miles_chains):
         return '%.4f' % (miles + round(yards / (10 ** 4), 4))
 
 
-# Convert calendar year to Network Rail financial year ===============================================================
-def get_financial_year(date):
+# Convert calendar year to Network Rail financial year
+def year_to_financial_year(date):
     financial_date = date + pd.DateOffset(months=-3)
     return financial_date.year
+
+
+# Convert a .svg file to, and save locally, a .emf file
+def svg_to_emf(path_to_svg, path_to_emf):
+    print('Converting ".svg" to ".emf" ... ', end="")
+    subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_svg, '-M', path_to_emf])
+    print("Done.")

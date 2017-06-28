@@ -143,7 +143,7 @@ def read_table_by_query(db_name, sql_query):
     """
     :param db_name: [str] name of a database
     :param sql_query: [str] SQL query to get data from the given database
-    :return:[DataFrame] the queried data as a DataFrame
+    :return:[pandas.DataFrame] the queried data as a DataFrame
     """
     # Connect to the queried database
     conn_db = sqlalchemy_connectable(db_name)
@@ -161,7 +161,7 @@ def read_table_by_name(db_name, table_name, schema='dbo'):
     :param db_name: [str] name of a database
     :param table_name: [str] name of a queried table from the given database
     :param schema: [str] default 'dbo'
-    :return: [DataFrame] the queried table as a DataFrame
+    :return: [pandas.DataFrame] the queried table as a DataFrame
     """
     # Connect to the queried database
     conn_db = sqlalchemy_connectable(db_name)
@@ -208,7 +208,7 @@ def read_table_by_part(
     :param save_as: [NoneType] or [str]
     :param save_by_chunk: [str]
     :param save_by_value: [str] ext of file which the queried df is saved as
-    :return:[DataFrame] the queried data as a DataFrame
+    :return:[pandas.DataFrame] the queried data as a DataFrame
 
     This function is used to read a table chunk-wise from a database,
     when the table might be too large for pd.read_sql to process once.
@@ -272,7 +272,7 @@ def read_metex_table(table_name, schema='dbo', index_col=None, route=None, weath
     :param weather: [str] name of the specific weather category
     :param save_as: [str]
     :param update:
-    :return: [DataFrame] the queried data as a DataFrame
+    :return: [pandas.DataFrame] the queried data as a DataFrame
     """
     table = schema + '.' + table_name
     # Connect to the queried database
@@ -301,13 +301,13 @@ def read_metex_table(table_name, schema='dbo', index_col=None, route=None, weath
 # Read tables available in NR_VEG database ===========================================================================
 def read_veg_table(table_name, schema='dbo', index_col=None, route=None, save_as=None, update=False):
     """
-    :param table_name:
-    :param schema:
-    :param index_col:
-    :param route:
-    :param save_as:
-    :param update:
-    :return:
+    :param table_name: [str]
+    :param schema: [str]
+    :param index_col: [str] or None
+    :param route: [str] or None
+    :param save_as: [str] or None
+    :param update: [bool]
+    :return: [pandas.DataFrame]
     """
     table = schema + '.' + table_name
     # Make a direct connection to the queried database

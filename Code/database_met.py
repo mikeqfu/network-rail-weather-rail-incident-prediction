@@ -16,8 +16,11 @@ import railwaycodes_utils as rc
 from converters import yards_to_mileage
 from utils import cd, cdd_rc, cdd_delay_attr, save, save_pickle, load_pickle, save_json, load_json, find_match
 
+# ====================================================================================================================
+""" Change directories """
 
-# Change directory to "Data\\METEX\\Database\\Tables" and sub-directorie =============================================
+
+# Change directory to "Data\\METEX\\Database\\Tables" and sub-directorie
 def cdd_metex_db_tables(*directories):
     path = db.cdd_metex_db("Tables")
     os.makedirs(path, exist_ok=True)
@@ -26,7 +29,7 @@ def cdd_metex_db_tables(*directories):
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Views" and sub-directorie ==============================================
+# Change directory to "Data\\METEX\\Database\\Views" and sub-directorie
 def cdd_metex_db_views(*directories):
     path = db.cdd_metex_db("Views")
     os.makedirs(path, exist_ok=True)
@@ -35,7 +38,7 @@ def cdd_metex_db_views(*directories):
     return path
 
 
-# Change directory to "METEX\\Database\\Figures" and sub-directories =================================================
+# Change directory to "METEX\\Database\\Figures" and sub-directories
 def cdd_metex_db_fig(*directories):
     path = db.cdd_metex_db("Figures")
     os.makedirs(path, exist_ok=True)
@@ -44,7 +47,7 @@ def cdd_metex_db_fig(*directories):
     return path
 
 
-# Change directory to "Publications\\Journal\\Figures" and sub-directories ===========================================
+# Change directory to "Publications\\Journal\\Figures" and sub-directories
 def cdd_metex_db_fig_pub(pid, *directories):
     path = cd("Publications", "Journals", pid, "Figures")
     for directory in directories:
@@ -52,71 +55,13 @@ def cdd_metex_db_fig_pub(pid, *directories):
     return path
 
 
-# Get primary keys of a table in database NR_METEX ===================================================================
-def metex_pk(table_name):
-    pri_key = db.get_pri_keys(db_name="NR_METEX", table_name=table_name)
-    return pri_key
+# ====================================================================================================================
+""" Special utils """
 
 
-# Get Performance Event Code =========================================================================================
-def get_performance_event_code(update=False):
-    filename = "performance_event_code"
-    path_to_file = cdd_delay_attr(filename + ".pickle")
-    if os.path.isfile(path_to_file) and not update:
-        performance_event_code = load_pickle(path_to_file)
-    else:
-        try:
-            performance_event_code = pd.read_excel(cdd_delay_attr("Historic delay attribution glossary.xlsx"),
-                                                   sheetname="Performance Event Code")
-            # Rename columns
-            performance_event_code.columns = [x.replace(' ', '') for x in performance_event_code.columns]
-            # Set an index
-            performance_event_code.set_index('PerformanceEventCode', inplace=True)
-            # Save the data as .pickle
-            save_pickle(performance_event_code, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
-            performance_event_code = None
-
-    return performance_event_code
-
-
-# Get Performance Event Code =========================================================================================
-def get_incident_reason_info_ref(update=False):
-    path_to_file = cdd_delay_attr("incident_reason_info.pickle")
-    if os.path.isfile(path_to_file) and not update:
-        incident_reason_info = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data from the original glossary file
-            path_to_file0 = cdd_delay_attr("Historic delay attribution glossary.xlsx")
-            incident_reason_info = pd.read_excel(path_to_file0, sheetname="Incident Reason")
-            incident_reason_info.columns = [x.replace(' ', '') for x in incident_reason_info.columns]
-            incident_reason_info.set_index('IncidentReason', inplace=True)
-            # Save the data
-            save_pickle(incident_reason_info, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format("incident_reason_info_ref", e))
-            incident_reason_info = None
-    return incident_reason_info
-
-
-# Transform a DataFrame to dictionary ===========================================
-def group_items(data_frame, by, to_group, group_name, level=None, as_dict=False):
-    # Create a dictionary
-    temp_obj = data_frame.groupby(by, level=level)[to_group]
-    d = {group_name: {k: list(v) for k, v in temp_obj}}
-    if as_dict:
-        return d
-    else:
-        d_df = pd.DataFrame(d)
-        d_df.index.name = by
-        return d_df
-
-
-# =============================================
-def create_loc_name_replacement_dict(key=None):
-    loc_name_replacement_dict = {
+# Create a dict for replace location names
+def create_loc_name_replacement_dict(k=None):
+    loc_repl_dict = {
         '"Tyndrum Upper" (Upper Tyndrum)': 'Upper Tyndrum',
         '"Wigston South" (South Wigston)': 'South Wigston',
         '03405': 'Stirling Sidings', 'AND008': 'Andover Signal 8',
@@ -269,15 +214,15 @@ def create_loc_name_replacement_dict(key=None):
         'Wilsdn Yd': 'Willesden Yard CTT Forwardings',
         'Woodhouse Junc Sdgs (Fhh)': 'Woodhouse Junction Sidings Freightliner Heavy Haul',
         'Yarmouth [Great Yarmouth]': 'Yarmouth'}
-    if key:
-        return {key: loc_name_replacement_dict}
+    if k:
+        return {k: loc_repl_dict}
     else:
-        return loc_name_replacement_dict
+        return loc_repl_dict
 
 
-# ====================================================
-def create_loc_name_regexp_replacement_dict(key=None):
-    loc_name_regexp_replacement_dict = {
+# Create a regex dict for replace location names
+def create_loc_name_regexp_replacement_dict(k=None):
+    loc_regexp_repl_dict = {
         re.compile('\\['): '(',
         re.compile(']'): ')',
         re.compile(' \\[station]'): '',
@@ -416,13 +361,13 @@ def create_loc_name_regexp_replacement_dict(key=None):
         re.compile(' Wm Csd\\.'): ' West Marina Carriage Servicing Depot',
         re.compile(' Yd '): ' Yard ',
         re.compile(' N\\.R\\.M\\.'): ' National Railway Museum'}
-    if key is not None:
-        return {key: loc_name_regexp_replacement_dict}
+    if k is not None:
+        return {k: loc_regexp_repl_dict}
     else:
-        return loc_name_regexp_replacement_dict
+        return loc_regexp_repl_dict
 
 
-# =================================================
+# Compare the difference between two columns and replace items if appropriate
 def compare_and_replace(loc, to_replace, with_col):
     # Given length
     temp = loc[[to_replace, with_col]].applymap(len)
@@ -430,10 +375,77 @@ def compare_and_replace(loc, to_replace, with_col):
     loc[to_replace][replace_list] = loc[with_col][replace_list]
 
 
+# ====================================================================================================================
 """ Get table data from the NR_METEX database """
 
 
-# Get IMDM ===========================================================================================================
+# Get primary keys of a table in database NR_METEX
+def metex_pk(table_name):
+    pri_key = db.get_pri_keys(db_name="NR_METEX", table_name=table_name)
+    return pri_key
+
+
+# Get Performance Event Code
+def get_performance_event_code(update=False):
+    filename = "performance_event_code"
+    path_to_file = cdd_delay_attr(filename + ".pickle")
+    if os.path.isfile(path_to_file) and not update:
+        performance_event_code = load_pickle(path_to_file)
+    else:
+        try:
+            performance_event_code = pd.read_excel(cdd_delay_attr("Historic delay attribution glossary.xlsx"),
+                                                   sheetname="Performance Event Code")
+            # Rename columns
+            performance_event_code.columns = [x.replace(' ', '') for x in performance_event_code.columns]
+            # Set an index
+            performance_event_code.set_index('PerformanceEventCode', inplace=True)
+            # Save the data as .pickle
+            save_pickle(performance_event_code, path_to_file)
+        except Exception as e:
+            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
+            performance_event_code = None
+
+    return performance_event_code
+
+
+# Get Performance Event Code
+def get_incident_reason_info_ref(update=False):
+    path_to_file = cdd_delay_attr("incident_reason_info.pickle")
+    if os.path.isfile(path_to_file) and not update:
+        incident_reason_info = load_pickle(path_to_file)
+    else:
+        try:
+            # Get data from the original glossary file
+            path_to_file0 = cdd_delay_attr("Historic delay attribution glossary.xlsx")
+            incident_reason_info = pd.read_excel(path_to_file0, sheetname="Incident Reason")
+            incident_reason_info.columns = [x.replace(' ', '') for x in incident_reason_info.columns]
+            incident_reason_info.set_index('IncidentReason', inplace=True)
+            # Save the data
+            save_pickle(incident_reason_info, path_to_file)
+        except Exception as e:
+            print("Getting '{}' ... failed due to '{}'.".format("incident_reason_info_ref", e))
+            incident_reason_info = None
+    return incident_reason_info
+
+
+# Transform a DataFrame to dictionary
+def group_items(data_frame, by, to_group, group_name, level=None, as_dict=False):
+    # Create a dictionary
+    temp_obj = data_frame.groupby(by, level=level)[to_group]
+    d = {group_name: {k: list(v) for k, v in temp_obj}}
+    if as_dict:
+        return d
+    else:
+        d_df = pd.DataFrame(d)
+        d_df.index.name = by
+        return d_df
+
+
+# ====================================================================================================================
+""" Get table data from the NR_METEX database """
+
+
+# Get IMDM
 def get_imdm(as_dict=False, update=False):
     table_name = 'IMDM'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -460,7 +472,7 @@ def get_imdm(as_dict=False, update=False):
     return imdm
 
 
-# Get ImdmAlias ======================================================================================================
+# Get ImdmAlias
 def get_imdm_alias(as_dict=False, update=False):
     table_name = 'ImdmAlias'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -486,7 +498,7 @@ def get_imdm_alias(as_dict=False, update=False):
     return imdm_alias
 
 
-# Get IMDMWeatherCellMap =============================================================================================
+# Get IMDMWeatherCellMap
 def get_imdm_weather_cell_map(grouped=False, update=False):
     table_name = 'IMDMWeatherCellMap'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -512,7 +524,7 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
     return weather_cell_map
 
 
-# Get IncidentReasonInfo =============================================================================================
+# Get IncidentReasonInfo
 def get_incident_reason_info(database_plus=True, update=False):
     table_name = 'IncidentReasonInfo'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -546,7 +558,7 @@ def get_incident_reason_info(database_plus=True, update=False):
     return incident_reason_info
 
 
-# Get WeatherCategoryLookup ==========================================================================================
+# Get WeatherCategoryLookup
 def get_weather_category_lookup(as_dict=False, update=False):
     table_name = 'WeatherCategoryLookup'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -573,7 +585,7 @@ def get_weather_category_lookup(as_dict=False, update=False):
     return weather_category_lookup
 
 
-# Get IncidentRecord and fill 'None' value with NaN ==================================================================
+# Get IncidentRecord and fill 'None' value with NaN
 def get_incident_record(update=False):
     table_name = 'IncidentRecord'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -603,7 +615,7 @@ def get_incident_record(update=False):
     return incident_record
 
 
-# Get Location =======================================================================================================
+# Get Location
 def get_location(update=False):
     table_name = 'Location'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -629,7 +641,7 @@ def get_location(update=False):
     return location
 
 
-# Get PfPI (Process for Performance Improvement) =====================================================================
+# Get PfPI (Process for Performance Improvement)
 def get_pfpi(update=False):
     table_name = 'PfPI'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -658,7 +670,7 @@ def get_pfpi(update=False):
     return pfpi
 
 
-# Get Route (Note that there is only one column in the original table) ===============================================
+# Get Route (Note that there is only one column in the original table)
 def get_route(update=False):
     table_name = "Route"
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -679,7 +691,7 @@ def get_route(update=False):
     return route
 
 
-# Get StanoxLocation =================================================================================================
+# Get StanoxLocation
 def get_stanox_location(nr_mileage_format=True, update=False):
     table_name = 'StanoxLocation'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -733,11 +745,11 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             loc.drop('STANOX', axis=1, inplace=True)
 
             # Thirdly, use loc_name_replacement_dict -------------------------------
-            loc_name_replacement_dict = create_loc_name_replacement_dict('Location')
+            loc_name_replacement_dict = create_loc_name_replacement_dict(k='Location')
             loc.replace(loc_name_replacement_dict, inplace=True)
 
             # Fourthly, use an extra dictionary ------------------------------------------------------
-            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict(key='Location')
+            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict(k='Location')
             loc.replace(loc_name_regexp_replacement_dict, regex=True, inplace=True)
             loc.drop(['Location_full_1', 'LocationAlias_upper', 'Location_full_2'], axis=1, inplace=True)
 
@@ -771,7 +783,7 @@ def get_stanox_location(nr_mileage_format=True, update=False):
     return stanox_location
 
 
-# Get StanoxSection ==================================================================================================
+# Get StanoxSection
 def get_stanox_section(update=False):
     table_name = 'StanoxSection'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -829,7 +841,7 @@ def get_stanox_section(update=False):
     return stanox_section
 
 
-# Get TrustIncident ==================================================================================================
+# Get TrustIncident
 def get_trust_incident(financial_years_06_14=True, update=False):
     table_name = 'TrustIncident'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -863,7 +875,7 @@ def get_trust_incident(financial_years_06_14=True, update=False):
     return trust_incident
 
 
-# Get Weather ========================================================================================================
+# Get Weather
 def get_weather(update=False):
     table_name = 'Weather'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -903,7 +915,7 @@ def get_weather(update=False):
     return weather_data
 
 
-# Get Weather data in a chunk-wise way ===============================================================================
+# Get Weather data in a chunk-wise way
 def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chunk=False, save_by_value=False):
     """
     Note that it might be too large for pd.read_sql to read with low memory. Instead, we may read the 'Weather' table
@@ -923,7 +935,7 @@ def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chu
     return weather
 
 
-# Get WeatherCell ====================================================================================================
+# Get WeatherCell
 def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_as=".png", dpi=600):
     table_name = 'WeatherCell'
     path_to_file = cdd_metex_db_tables(table_name + ".pickle")
@@ -1033,7 +1045,7 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
     return weather_cell_map
 
 
-# Get the lower-left and upper-right boundaries of weather cells =====================================================
+# Get the lower-left and upper-right boundaries of weather cells
 def get_weather_cell_map_boundary(route=None, adjusted=(0.285, 0.255)):
     # Get weather cell
     weather_cell = get_weather_cell()
@@ -1077,7 +1089,11 @@ get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as="
 """
 
 
-# Finalise the required data given 'route' and 'weather' =============================================================
+# ====================================================================================================================
+""" Utils for creating views """
+
+
+# Finalise the required data given 'route' and 'weather'
 def subset(data, route=None, weather=None, reset_index=False):
     route_lookup = get_route()
     weather_category_lookup = get_weather_category_lookup()
@@ -1097,7 +1113,7 @@ def subset(data, route=None, weather=None, reset_index=False):
     return dat
 
 
-# Calculate the DelayMinutes and DelayCosts for grouped data =========================================================
+# Calculate the DelayMinutes and DelayCosts for grouped data
 def agg_pfpi_stats(dat, selected_features, sort_by=None):
     data = dat.groupby(selected_features[1:-2]).aggregate({
         # 'IncidentId_and_CreateDate': {'IncidentCount': np.count_nonzero},
@@ -1120,7 +1136,7 @@ def agg_pfpi_stats(dat, selected_features, sort_by=None):
     return data
 
 
-# Form a file name in terms of specific 'Route' and 'weather' category ===============================================
+# Form a file name in terms of specific 'Route' and 'weather' category
 def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
     if route is not None:
         route_lookup = get_route()
@@ -1133,10 +1149,11 @@ def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle")
     return filename
 
 
-""" Merge different data sets - Views """
+# ====================================================================================================================
+""" Get views based on the NR_METEX data """
 
 
-# Retrieve the TRUST =================================================================================================
+# Retrieve the TRUST
 def merge_schedule8_data(save_as=".pickle"):
     pfpi = get_pfpi()  # Get PfPI (260645, 6)
     incident_record = get_incident_record()  # (233452, 4)
@@ -1349,7 +1366,7 @@ def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12
     return data
 
 
-# Get TRUST based on incident location and weather category
+# Get Schedule 8 data by incident location and weather category
 def get_schedule8_costs_by_location(route=None, weather=None, update=False):
     """
     :param route: 
@@ -1389,7 +1406,7 @@ def get_schedule8_costs_by_location(route=None, weather=None, update=False):
     return data
 
 
-# Get TRUST based on datetime and weather category
+# Get Schedule 8 data by datetime and weather category
 def get_schedule8_costs_by_datetime(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime", route, weather)
     path_to_file = cdd_metex_db_views(filename)
@@ -1420,7 +1437,7 @@ def get_schedule8_costs_by_datetime(route=None, weather=None, update=False):
     return data
 
 
-#
+# Get Schedule 8 data by datetime and location
 def get_schedule8_costs_by_datetime_location(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location", route, weather)
     path_to_file = cdd_metex_db_views(filename)
@@ -1456,7 +1473,7 @@ def get_schedule8_costs_by_datetime_location(route=None, weather=None, update=Fa
     return data
 
 
-# Get TRUST based on datetime and weather
+# Get Schedule 8 data by datetime, location and weather
 def get_schedule8_costs_by_datetime_location_weather(route=None, weather=None, ip_start=-12, ip_end=12, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location_weather", route, weather)
     add_suffix = [str(s) for s in (ip_start, ip_end)]
@@ -1493,8 +1510,8 @@ def get_schedule8_costs_by_datetime_location_weather(route=None, weather=None, i
     return data
 
 
-#
-def get_schedule8_costs_by_reason(route=None, weather=None, update=False):
+# Get Schedule 8 cost by incident reason
+def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_reason", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1527,8 +1544,8 @@ def get_schedule8_costs_by_reason(route=None, weather=None, update=False):
     return data
 
 
-#
-def get_schedule8_costs_by_location_reason(route=None, weather=None, update=False):
+# Get Schedule 8 cost by location and incident reason
+def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_location_reason", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1563,8 +1580,8 @@ def get_schedule8_costs_by_location_reason(route=None, weather=None, update=Fals
     return data
 
 
-#
-def get_schedule8_costs_by_datetime_location_reason(route=None, weather=None, update=False):
+# Get Schedule 8 cost by datetime, location and incident reason
+def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location_reason", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1603,8 +1620,8 @@ def get_schedule8_costs_by_datetime_location_reason(route=None, weather=None, up
     return data
 
 
-# Schedule8WeatherCost
-def get_schedule8_costs_by_weathercategory(route=None, weather=None, update=False):
+# Get Schedule 8 cost by weather category
+def get_schedule8_cost_by_weathercategory(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_weathercategory", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1638,8 +1655,8 @@ get_schedule8_costs_by_location(route, weather, update=update)
 get_schedule8_costs_by_datetime(route, weather, update=update)
 get_schedule8_costs_by_datetime_location(route, weather, update=update)
 get_schedule8_costs_by_datetime_location_weather(route, weather, -12, 12, update=update)
-get_schedule8_costs_by_reason(route, weather, update=update)
-get_schedule8_costs_by_location_reason(route, weather, update=update)
-get_schedule8_costs_by_datetime_location_reason(route, weather, update=update)
-get_schedule8_costs_by_weathercategory(route, weather, update=update)
+get_schedule8_cost_by_reason(route, weather, update=update)
+get_schedule8_cost_by_location_reason(route, weather, update=update)
+get_schedule8_cost_by_datetime_location_reason(route, weather, update=update)
+get_schedule8_cost_by_weathercategory(route, weather, update=update)
 """

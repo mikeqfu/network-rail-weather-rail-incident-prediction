@@ -10,8 +10,11 @@ import converters
 import database_utils as db
 from utils import save, save_pickle, load_pickle, find_match, reset_double_indexes
 
+# ====================================================================================================================
+""" Change directories """
 
-# Change directory to "Data\\Vegetation\\Database\\Tables" ===========================================================
+
+# Change directory to "Data\\Vegetation\\Database\\Tables"
 def cdd_veg_db_tables(*directories):
     path = db.cdd_veg_db("Tables")
     os.makedirs(path, exist_ok=True)
@@ -20,7 +23,7 @@ def cdd_veg_db_tables(*directories):
     return path
 
 
-# Change directory to "Data\\Vegetation\\Database\\Tables" ===========================================================
+# Change directory to "Data\\Vegetation\\Database\\Views"
 def cdd_veg_db_views(*directories):
     path = db.cdd_veg_db("Views")
     os.makedirs(path, exist_ok=True)
@@ -29,7 +32,7 @@ def cdd_veg_db_views(*directories):
     return path
 
 
-# Route names dictionary =============================================================================================
+# Route names dictionary
 def get_route_names_dict(reverse=False):
     # title_case = sorted(get_furlong_location()['Route'].unique().tolist())
     title_cases = [
@@ -46,16 +49,17 @@ def get_route_names_dict(reverse=False):
     return route_names_dict
 
 
-# Get primary keys of a table in database 'NR_VEG' ===================================================================
+# ====================================================================================================================
+""" Get table data from the NR_VEG database """
+
+
+# Get primary keys of a table in database 'NR_VEG'
 def veg_pk(table_name):
     pri_key = db.get_pri_keys(db_name='NR_VEG', table_name=table_name)
     return pri_key
 
 
-""" Get table data from the NR_VEG database """
-
-
-# Get 'AdverseWind' ==================================================================================================
+# Get AdverseWind
 def get_adverse_wind(update=False):
     table_name = 'AdverseWind'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -74,7 +78,7 @@ def get_adverse_wind(update=False):
     return adverse_wind
 
 
-# Get 'CuttingAngleClass' ============================================================================================
+# Get CuttingAngleClass
 def get_cutting_angle_class(update=False):
     table_name = 'CuttingAngleClass'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -93,7 +97,7 @@ def get_cutting_angle_class(update=False):
     return cutting_angle
 
 
-# Get 'CuttingDepthClass' ============================================================================================
+# Get CuttingDepthClass
 def get_cutting_depth_class(update=False):
     table_name = 'CuttingDepthClass'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -112,7 +116,7 @@ def get_cutting_depth_class(update=False):
     return cutting_depth
 
 
-# Get 'DUList' =======================================================================================================
+# Get DUList
 def get_du_list(index=True, update=False):
     table_name = 'DUList'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -133,7 +137,7 @@ def get_du_list(index=True, update=False):
     return du_list
 
 
-# Get 'PathRoute' ====================================================================================================
+# Get PathRoute
 def get_path_route(update=False):
     table_name = 'PathRoute'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -152,7 +156,7 @@ def get_path_route(update=False):
     return path_route
 
 
-# Get 'Routes' =======================================================================================================
+# Get Routes
 def get_du_route(update=False):
     table_name = 'Routes'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -178,7 +182,7 @@ def get_du_route(update=False):
     return routes
 
 
-# Get 'S8Data' =======================================================================================================
+# Get S8Data
 def get_s8data_from_db_veg(update=False):
     table_name = 'S8Data'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -197,7 +201,7 @@ def get_s8data_from_db_veg(update=False):
     return s8data
 
 
-# Get 'TreeAgeClass' =================================================================================================
+# Get TreeAgeClass
 def get_tree_age_class(update=False):
     table_name = 'TreeAgeClass'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -216,7 +220,7 @@ def get_tree_age_class(update=False):
     return tree_age_class
 
 
-# Get 'TreeSizeClass' ================================================================================================
+# Get TreeSizeClass
 def get_tree_size_class(update=False):
     table_name = 'TreeSizeClass'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -235,7 +239,7 @@ def get_tree_size_class(update=False):
     return tree_size_class
 
 
-# Get 'TreeType' =====================================================================================================
+# Get TreeType
 def get_tree_type(update=False):
     table_name = 'TreeType'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -254,7 +258,7 @@ def get_tree_type(update=False):
     return tree_type
 
 
-# Get 'FellingType' ==================================================================================================
+# Get FellingType
 def get_felling_type(update=False):
     table_name = 'FellingType'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -273,7 +277,7 @@ def get_felling_type(update=False):
     return felling_type
 
 
-# Get 'AreaWorkType' =================================================================================================
+# Get AreaWorkType
 def get_area_work_type(update=False):
     table_name = 'AreaWorkType'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -292,7 +296,7 @@ def get_area_work_type(update=False):
     return area_work_type
 
 
-# Get 'ServiceDetail' ================================================================================================
+# Get ServiceDetail
 def get_service_detail(update=False):
     table_name = 'ServiceDetail'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -311,7 +315,7 @@ def get_service_detail(update=False):
     return service_detail
 
 
-# Get 'ServicePath' ==================================================================================================
+# Get ServicePath
 def get_service_path(update=False):
     table_name = 'ServicePath'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -330,7 +334,7 @@ def get_service_path(update=False):
     return service_path
 
 
-# Get 'Supplier' =====================================================================================================
+# Get Supplier
 def get_supplier(update=False):
     table_name = 'Supplier'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -349,7 +353,7 @@ def get_supplier(update=False):
     return supplier
 
 
-# Get 'SupplierCosts' ================================================================================================
+# Get SupplierCosts
 def get_supplier_costs(update=False):
     table_name = 'SupplierCosts'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -368,7 +372,7 @@ def get_supplier_costs(update=False):
     return supplier_costs
 
 
-# Get 'SupplierCostsArea' ============================================================================================
+# Get SupplierCostsArea
 def get_supplier_costs_area(update=False):
     table_name = 'SupplierCostsArea'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -387,7 +391,7 @@ def get_supplier_costs_area(update=False):
     return costs_area
 
 
-# Get 'SupplierCostsSimple' ==========================================================================================
+# Get SupplierCostsSimple
 def get_supplier_cost_simple(update=False):
     table_name = 'SupplierCostsSimple'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -406,7 +410,7 @@ def get_supplier_cost_simple(update=False):
     return costs_simple
 
 
-# Get 'TreeActionFractions' ==========================================================================================
+# Get TreeActionFractions
 def get_tree_action_fractions(update=False):
     table_name = 'TreeActionFractions'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -425,7 +429,7 @@ def get_tree_action_fractions(update=False):
     return tree_action_fractions
 
 
-# Get 'VegSurvTypeClass' =============================================================================================
+# Get VegSurvTypeClass
 def get_veg_surv_type_class(update=False):
     table_name = 'VegSurvTypeClass'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -444,7 +448,7 @@ def get_veg_surv_type_class(update=False):
     return veg_surv_type_class
 
 
-# Get 'WBFactors' ====================================================================================================
+# Get WBFactors
 def get_wb_factors(update=False):
     table_name = 'WBFactors'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -463,7 +467,7 @@ def get_wb_factors(update=False):
     return wb_factors
 
 
-# Get 'Weedspray' ====================================================================================================
+# Get Weedspray
 def get_weed_spray(update=False):
     table_name = 'Weedspray'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -482,7 +486,7 @@ def get_weed_spray(update=False):
     return weed_spray
 
 
-# Get 'WorkHours' ====================================================================================================
+# Get WorkHours
 def get_work_hours(update=False):
     table_name = 'WorkHours'
     path_to_file = cdd_veg_db_tables(table_name + ".pickle")
@@ -501,7 +505,7 @@ def get_work_hours(update=False):
     return work_hours
 
 
-# Get 'FurlongData' ==================================================================================================
+# Get FurlongData
 def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
     """
     Equipment Class: VL ('VEGETATION - 1/8 MILE SECTION')
@@ -608,7 +612,7 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
     return furlong_data
 
 
-# Get 'FurlongLocation' ==============================================================================================
+# Get FurlongLocation
 def get_furlong_location(useful_columns_only=True, update=False):
     """
     Note: One ELR&mileage may have multiple 'FurlongID's.
@@ -655,7 +659,7 @@ def get_furlong_location(useful_columns_only=True, update=False):
     return furlong_location
 
 
-# Get 'HazardTree' ===================================================================================================
+# Get HazardTree
 def get_hazard_tree(set_index=False, update=False):
     """
     :param set_index: 
@@ -732,9 +736,8 @@ def get_hazard_tree(set_index=False, update=False):
 
             # Add two columns of Latitudes and Longitudes corresponding to the
             # Easting and Northing coordinates
-            lat_lon = hazard_tree[['Easting', 'Northing']].apply(
+            hazard_tree[['Longitude', 'Latitude']] = hazard_tree[['Easting', 'Northing']].apply(
                 lambda x: converters.osgb36_to_wgs84(x.Easting, x.Northing), axis=1)
-            hazard_tree[['Latitude', 'Longitude']] = pd.DataFrame(list(lat_lon))
 
             save_pickle(hazard_tree, path_to_file)
 
@@ -783,7 +786,8 @@ get_furlong_location(useful_columns_only=True, update=update)
 get_hazard_tree(set_index=False, update=update)
 """
 
-""" Get information from the NR_VEG database """
+# ====================================================================================================================
+""" Get views based on the NR_VEG data """
 
 
 def make_filename(base_name, route, *extra_suffixes, save_as=".pickle"):
@@ -803,7 +807,7 @@ def make_filename(base_name, route, *extra_suffixes, save_as=".pickle"):
     return filename
 
 
-# Get vegetation data (75247, 44) ====================================================================================
+# Get vegetation data (75247, 44)
 def get_furlong_vegetation_coverage(route=None, update=False):
     """
     :param route: 
@@ -864,7 +868,7 @@ def get_furlong_vegetation_coverage(route=None, update=False):
     return furlong_vegetation_coverage
 
 
-# Get data of hazardous tress (22180, 66) ============================================================================
+# Get data of hazardous tress (22180, 66)
 def get_hazardous_trees(route=None, update=False):
     """
     :param route: 
@@ -922,7 +926,7 @@ def get_hazardous_trees(route=None, update=False):
     return hazardous_trees_data
 
 
-# Get vegetation data as well as hazardous trees information (75247, 57) =============================================
+# Get vegetation data as well as hazardous trees information (75247, 57)
 def get_furlong_vegetation_conditions(route=None, update=False):
     """
     :param route: 

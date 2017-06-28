@@ -6,13 +6,12 @@ import math
 import os
 import re
 import shutil
-import subprocess
 
 import PIL.Image
 import fiona
 import geopandas as gpd
-import matplotlib.patches
 import matplotlib.font_manager
+import matplotlib.patches
 import matplotlib.pyplot as plt
 import pandas as pd
 from mpl_toolkits.basemap import Basemap
@@ -23,10 +22,11 @@ from shapely.ops import nearest_points
 import database_met as dbm
 import database_veg as dbv
 import osm_utils
+from converters import svg_to_emf
 from utils import cdd, save, save_pickle, load_pickle, colorbar_index, confirmed
 
 
-# =====================================
+# Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
 def create_boundary_polygon(bounds):
     """
     :param bounds: [tuple] (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
@@ -40,7 +40,7 @@ def create_boundary_polygon(bounds):
     return boundary_polygon
 
 
-#
+# Get the path to .shp file for basemap loading ======================================================================
 def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None, update=False):
     try:
         path_to_original_shp = osm_utils.fetch_osm_file(subregion, layer, feature, file_format=".shp")[0]
@@ -89,7 +89,11 @@ def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None,
     return new_path_to_shp
 
 
-# Get the basemap ready ==============================================================================================
+# ====================================================================================================================
+""" Prep base maps """
+
+
+# Get the basemap ready
 def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(1.05, 0.85)):
     """
     :param projection: [str]
@@ -252,7 +256,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     print("Done.")
 
 
-# Show hazardous trees on the map ====================================================================================
+# Show hazardous trees on the map
 def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab790a', legend_loc=(1.05, 0.85)):
     """
     :param base_map: 
@@ -283,14 +287,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
     print("Done.")
 
 
-# Convert a .svg file to a .emf file ===============
-def convert_svg_to_emf(path_to_svg, path_to_emf):
-    print('Converting ".svg" to ".emf" ... ', end="")
-    subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_svg, '-M', path_to_emf])
-    print("Done.")
-
-
-# Plot base map and associated features ==============================================================================
+# Plot base map and associated features
 def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_landuse_forest=True,
                        add_osm_natural_tree=False, show_nr_hazardous_trees=True,
                        legend_loc=(1.05, 0.85), save_as=".png", dpi=None):
@@ -326,14 +323,15 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
         fig.savefig(dbm.cdd_metex_db_fig_pub("01", fig_filename + save_as), dpi=dpi)
         print("Done.")
         if save_as == ".svg":
-            convert_svg_to_emf(dbm.cdd_metex_db_fig_pub("01", fig_filename + save_as),
-                               dbm.cdd_metex_db_fig_pub("01", fig_filename + ".emf"))
+            svg_to_emf(dbm.cdd_metex_db_fig_pub("01", fig_filename + save_as),
+                       dbm.cdd_metex_db_fig_pub("01", fig_filename + ".emf"))
 
 
+# ====================================================================================================================
 """ Get 'hotspot' data """
 
 
-# Midpoint of two GPS points =========================================================================================
+# Midpoint of two GPS points
 def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
     """
     :param x_long:
@@ -362,19 +360,19 @@ def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
     return midpoint
 
 
-#
+# Get midpoint between two points (given longitude and latitude)
 def get_midpoint(start_point, end_point, as_geom=True):
     """
     :param start_point: [shapely.geometry.point.Point]
     :param end_point: [shapely.geometry.point.Point]
-    :param as_geom: 
+    :param as_geom: [bool]
     :return: 
     """
     midpoint = (start_point.x + end_point.x) / 2, (start_point.y + end_point.y) / 2
     return Point(midpoint) if as_geom else midpoint
 
 
-#
+# Get coordinates of points from a .shp file, by subregion, layer and feature
 def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
     """
     :param subregion: [str]
@@ -402,7 +400,7 @@ def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
     return point_coords
 
 
-# Get the data for plotting ==========================================================================================
+# Get the data for plotting
 def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, update=False):
     """
     :param route: [NoneType] or [str]
@@ -459,31 +457,32 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
     return hotspots_data
 
 
+# ====================================================================================================================
 """ Plot 'hotspots' """
 
 
-#
-def save_fig(fig, key_word, show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi):
+# A function for saving the plots
+def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi):
     """
-    :param fig:
-    :param key_word:
-    :param show_metex_weather_cells:
-    :param show_osm_landuse_forest:
-    :param show_nr_hazardous_trees:
-    :param save_as:
-    :param dpi:
+    :param fig: [matplotlib.figure.Figure]
+    :param keyword: [str] a keyword for specifying the filename
+    :param show_metex_weather_cells: [bool]
+    :param show_osm_landuse_forest: [bool]
+    :param show_nr_hazardous_trees: [bool]
+    :param save_as: [str]
+    :param dpi: [int] or None
     :return:
     """
     if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
         print("Saving the figure ... ", end="")
         fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                       ['cell', 'veg', 'haz'])
-        filename = '_'.join(["Hotspots", key_word] + [v for s, v in fsuffix if s is True])
+        filename = '_'.join(["Hotspots", keyword] + [v for s, v in fsuffix if s is True])
         path_to_file = dbm.cdd_metex_db_fig_pub("01", filename + save_as)
         plt.savefig(path_to_file, dpi=dpi)
         print("Done.")
         if save_as == ".svg":
-            convert_svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
+            svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
 
 
 # ====================================================================================================================
@@ -900,7 +899,6 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
 
 #
 def plotting_hotspots(update=False):
-
     import settings
     settings.mpl_preferences(use_cambria=True, reset=False)
     settings.np_preferences(reset=False)
@@ -940,6 +938,5 @@ def plotting_hotspots(update=False):
 
     else:
         pass
-
 
 # plotting_hotspots(update=False)
