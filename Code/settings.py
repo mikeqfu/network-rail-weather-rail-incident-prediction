@@ -1,11 +1,11 @@
 """ Settings """
 
 import matplotlib.pyplot
-import numpy
+import numpy.core.arrayprint
 import pandas
 
 
-# Set preferences for plotting =======================================================================================
+# Set preferences for plotting
 def mpl_preferences(use_cambria=False, reset=False):
     """
     Get a list of supported file formats for matplotlib savefig() function
@@ -29,7 +29,7 @@ def mpl_preferences(use_cambria=False, reset=False):
         matplotlib.pyplot.style.use('classic')
 
 
-# Set preferences for displaying results =============================================================================
+# Set preferences for displaying results
 def np_preferences(reset=False):
     if not reset:
         numpy.core.arrayprint._line_width = 120
@@ -37,7 +37,7 @@ def np_preferences(reset=False):
         numpy.core.arrayprint._line_width = 80  # 75
 
 
-# Set preferences for displaying results =============================================================================
+# Set preferences for displaying results
 def pd_preferences(reset=False):
     if not reset:
         pandas.set_option('expand_frame_repr', False)  # Set the representation of DataFrame NOT to wrap
