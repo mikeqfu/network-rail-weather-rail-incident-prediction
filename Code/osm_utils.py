@@ -35,17 +35,17 @@ def cdd_osm(*directories):
     return path
 
 
-# Change directory to "Generic\\Data\\osm-util\\dat0" and sub-directories
-def cdd_osm_dat0(*directories):
-    path = cdd_osm('dat0')
+# Change directory to "Generic\\Data\\osm-util\\dat" and sub-directories
+def cdd_osm_dat(*directories):
+    path = cdd_osm('dat')
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Generic\\Data\\osm-util\\dat" and sub-directories
-def cdd_osm_dat(*directories):
-    path = cdd_osm('dat')
+# Change directory to "Generic\\Data\\osm-util\\dat_GeoFabrik" and sub-directories
+def cdd_osm_dat_geofabrik(*directories):
+    path = cdd_osm('dat_GeoFabrik')
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -168,13 +168,13 @@ def scrape_available_subregion_indices():
             subregion_url_tables = list(subregion_url_tables_1)
 
         # Save a list of available subregions locally
-        save_pickle(avail_subregions, cdd_osm_dat0("subregion-index.pickle"))
+        save_pickle(avail_subregions, cdd_osm_dat("subregion-index.pickle"))
 
         # Subregion index - {Subregion: URL}
         subregion_url_index = dict(zip(avail_subregions, avail_subregion_urls))
         # Save subregion_index to local disk
-        save_pickle(subregion_url_index, cdd_osm_dat0("subregion-url-index.pickle"))
-        save_json(subregion_url_index, cdd_osm_dat0("subregion-url-index.json"))
+        save_pickle(subregion_url_index, cdd_osm_dat("subregion-url-index.pickle"))
+        save_json(subregion_url_index, cdd_osm_dat("subregion-url-index.json"))
 
         # All available URLs for downloading
         home_subregion_url_table = get_subregion_url_table(home_url)
@@ -183,8 +183,8 @@ def scrape_available_subregion_indices():
         subregion_downloads_index.drop_duplicates(inplace=True)
 
         # Save subregion_index_downloads to loacal disk
-        save_pickle(subregion_downloads_index, cdd_osm_dat0("subregion-downloads-index.pickle"))
-        subregion_downloads_index.set_index('Subregion').to_json(cdd_osm_dat0("subregion-downloads-index.json"))
+        save_pickle(subregion_downloads_index, cdd_osm_dat("subregion-downloads-index.pickle"))
+        subregion_downloads_index.set_index('Subregion').to_json(cdd_osm_dat("subregion-downloads-index.json"))
 
     except Exception as e:
         print(e)
@@ -205,8 +205,8 @@ def get_subregion_index(index_filename="subregion-index", update=False):
         indices_filename = ["subregion-index.pickle",
                             "subregion-url-index.pickle", "subregion-url-index.json",
                             "subregion-downloads-index.pickle", "subregion-downloads-index.json"]
-        paths_to_files_exist = [os.path.isfile(cdd_osm_dat0(f)) for f in indices_filename]
-        path_to_index_file = cdd_osm_dat0(index_filename + ".pickle")
+        paths_to_files_exist = [os.path.isfile(cdd_osm_dat(f)) for f in indices_filename]
+        path_to_index_file = cdd_osm_dat(index_filename + ".pickle")
         if all(paths_to_files_exist) and not update:
             index = load_pickle(path_to_index_file)
         else:
@@ -243,7 +243,7 @@ def fetch_osm_file(subregion, layer, feature=None, file_format=".shp", update=Fa
     subregion = subregion_name.lower().replace(" ", "-")
     osm_file_path = []
 
-    for dirpath, dirnames, filenames in os.walk(cdd_osm_dat()):
+    for dirpath, dirnames, filenames in os.walk(cdd_osm_dat_geofabrik()):
         if feature is None:
             for fname in [f for f in filenames
                           if (layer + "_a" in f or layer + "_free" in f) and f.endswith(file_format)]:
@@ -283,7 +283,7 @@ def make_file_path(download_url):
     :return: 
     """
     parsed_path = os.path.normpath(urllib.request.urlparse(download_url).path)
-    directory = cdd_osm_dat() + os.path.dirname(parsed_path)  # .title()
+    directory = cdd_osm_dat_geofabrik() + os.path.dirname(parsed_path)  # .title()
     filename = os.path.basename(parsed_path)
 
     if not os.path.exists(directory):
