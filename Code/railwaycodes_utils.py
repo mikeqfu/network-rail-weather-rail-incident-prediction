@@ -19,15 +19,15 @@ from utils import save_pickle, load_pickle, is_float
 """ Change directories """
 
 
-# Change directory to "Generic\\Data\\railwaycodes-util" and sub-directories
+# Change directory to "[2017-04] RailwayCodes-pyutils" and sub-directories
 def cdd_rc(*directories):
-    path = os.path.join(os.path.dirname(os.getcwd()), 'Generic\\Data\\railwaycodes-pyutils')
+    path = os.path.join(os.path.dirname(os.getcwd()), "[2017-04] RailwayCodes-pyutils")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Generic\\Data\\railwaycodes-util\\dat" and sub-directories
+# Change directory to "[2017-04] RailwayCodes-pyutils\\dat" and sub-directories
 def cdd_rc_dat(*directories):
     path = cdd_rc('dat')
     for directory in directories:

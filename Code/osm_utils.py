@@ -27,15 +27,15 @@ from utils import cdd, save_pickle, load_pickle, save_json
 """ Change directory """
 
 
-# Change directory to "Generic\\Data\\osm-util" and sub-directories
+# Change directory to "[2017-03] OSM-pyutils" and sub-directories
 def cdd_osm(*directories):
-    path = os.path.join(os.path.dirname(os.getcwd()), "Generic\\Data\\osm-pyutils")
+    path = os.path.join(os.path.dirname(os.getcwd()), "[2017-03] OSM-pyutils")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Generic\\Data\\osm-util\\dat" and sub-directories
+# Change directory to "[2017-03] OSM-pyutils\\dat" and sub-directories
 def cdd_osm_dat(*directories):
     path = cdd_osm('dat')
     for directory in directories:
@@ -43,7 +43,7 @@ def cdd_osm_dat(*directories):
     return path
 
 
-# Change directory to "Generic\\Data\\osm-util\\dat_GeoFabrik" and sub-directories
+# Change directory to "[2017-03] OSM-pyutils\\dat_GeoFabrik" and sub-directories
 def cdd_osm_dat_geofabrik(*directories):
     path = cdd_osm('dat_GeoFabrik')
     for directory in directories:

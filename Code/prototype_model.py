@@ -21,7 +21,7 @@ import database_veg as dbv
 import railwaycodes_utils as rc_utils
 import settings
 from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yards_to_mileage
-from utils import cdd, load_pickle, save_pickle, find_match, get_variable_names
+from utils import cdd, load_pickle, save_pickle, find_match
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(use_cambria=True, reset=False)
@@ -33,17 +33,17 @@ settings.pd_preferences(reset=False)
 """ Change directory """
 
 
-# Change directory to "Data\\Modelling" and sub-directories
+# Change directory to "Data\\Model" and sub-directories
 def cdd_mod_dat(*directories):
-    path = cdd("Modelling", "dat")
+    path = cdd("Model", "dat")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Modelling\\Trial_" and sub-directories
+# Change directory to "Model\\Trial_" and sub-directories
 def cdd_mod_trial(trial_id=0, *directories):
-    path = cdd("Modelling", "Trial_{}".format(trial_id))
+    path = cdd("Model", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -1022,8 +1022,6 @@ def specify_explanatory_variables():
         'Snowfall_max',
         'TotalPrecipitation_max',
         # 'Electrified',
-        # 'CoverPercentOpenSpace',
-        'CoverPercentOther',
         'CoverPercentAlder',
         'CoverPercentAsh',
         'CoverPercentBeech',
@@ -1038,6 +1036,8 @@ def specify_explanatory_variables():
         'CoverPercentSweetChestnut',
         'CoverPercentSycamore',
         'CoverPercentWillow',
+        # 'CoverPercentOpenSpace',
+        'CoverPercentOther',
         # 'CoverPercentVegetation',
         # 'CoverPercentDiff',
         # 'TreeDensity',
@@ -1106,7 +1106,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Weather-related variables" + save_as)), dpi=dpi)
+    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Variables", "Weather-related variables" + save_as)), dpi=dpi)
 
     #
     fig_veg = plt.figure(figsize=(12, 5))
@@ -1124,7 +1124,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
     ax.yaxis.set_label_coords(0, 1.02)
     plt.tight_layout()
-    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Vegetation-related variables" + save_as)), dpi=dpi)
+    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Variables", "Vegetation-related variables" + save_as)), dpi=dpi)
 
 
 # def save_result_to_excel(result, writer):
@@ -1254,7 +1254,7 @@ def logistic_regression_model(trial_id=0,
         odds_ratios = pd.DataFrame(np.exp(result.params), columns=['OddsRatio'])
         if verbose:
             print("\nOdds ratio:")
-            print(np.exp(result.params))
+            print(odds_ratios)
 
         # Prediction
         test_set['incident_prob'] = result.predict(test_set[explanatory_variables])
@@ -1367,13 +1367,14 @@ def logistic_regression_model(trial_id=0,
         result = e
         mod_acc, incid_acc, threshold = np.nan, np.nan, np.nan
 
-    repo = locals()
-    resources = {k: repo[k]
-                 for k in get_variable_names(mdata, train_set, test_set, result, mod_acc, incid_acc, threshold)}
-    filename = dbm.make_filename("data", route, weather,
-                                 ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                 shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    save_pickle(resources, cdd_mod_trial(trial_id, filename))
+    # from utils import get_variable_names
+    # repo = locals()
+    # resources = {k: repo[k]
+    #              for k in get_variable_names(mdata, train_set, test_set, result, mod_acc, incid_acc, threshold)}
+    # filename = dbm.make_filename("data", route, weather,
+    #                              ip_start_hrs, ip_end_hrs, nip_start_hrs,
+    #                              shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    # save_pickle(resources, cdd_mod_trial(trial_id, filename))
 
     return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold
 
