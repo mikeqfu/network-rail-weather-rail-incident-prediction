@@ -177,7 +177,7 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
         ur_x, ur_y = base_map(data.ur_Longitude[i], data.ur_Latitude[i])
         lr_x, lr_y = base_map(data.lr_lon[i], data.lr_lat[i])
         xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.6)
+        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.6, zorder=2)
         plt.gca().add_patch(p)
 
     # Add labels
@@ -535,7 +535,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
             mid_lat = plot_data.MidLatitude[i]
             mid_lon = plot_data.MidLongitude[i]
             mid_x, mid_y = base_map(mid_lon, mid_lat)
-            base_map.plot(mid_x, mid_y, zorder=3, marker='o', color=colours[years.index(y)], alpha=0.9,
+            base_map.plot(mid_x, mid_y, zorder=2, marker='o', color=colours[years.index(y)], alpha=0.9,
                           markersize=26, markeredgecolor='w')
 
     # Add a colour bar
@@ -619,7 +619,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
 
         for i in plotting_data.index:
             mid_x, mid_y = base_map(plotting_data.MidLongitude[i], plotting_data.MidLatitude[i])
-            base_map.plot(mid_x, mid_y, zorder=3,
+            base_map.plot(mid_x, mid_y, zorder=2,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
@@ -658,7 +658,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
 # Plot hotspots in terms of incident frequency =======================================================================
 def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                        seed=123,
-                       cmap_name='YlOrBr',
+                       cmap_name='PuRd',
                        show_metex_weather_cells=False,
                        show_osm_landuse_forest=False,
                        show_nr_hazardous_trees=False,
@@ -702,7 +702,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
             mid_lat = plotting_data.MidLatitude[i]
             mid_lon = plotting_data.MidLongitude[i]
             x_mid_pt, y_mid_pt = base_map(mid_lon, mid_lat)
-            base_map.plot(x_mid_pt, y_mid_pt, zorder=3,
+            base_map.plot(x_mid_pt, y_mid_pt, zorder=2,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
@@ -717,7 +717,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest frequency, in descending order
-    cb.ax.text(0., 0 - 0.16, "Highest incident-prone locations: ",
+    cb.ax.text(0., 0 - 0.16, "Most incident-prone locations: ",
                ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
     cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
@@ -785,7 +785,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
             mid_lat = plotting_data.MidLatitude[i]
             mid_lon = plotting_data.MidLongitude[i]
             x_mid_pt, y_mid_pt = base_map(mid_lon, mid_lat)
-            base_map.plot(x_mid_pt, y_mid_pt, zorder=3,
+            base_map.plot(x_mid_pt, y_mid_pt, zorder=2,
                           marker='o', color=colours[b], alpha=0.9,
                           markersize=marker_size[b], markeredgecolor='w', markeredgewidth=1)
 
@@ -863,7 +863,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
             mid_lat = plotting_data.MidLatitude[i]
             mid_lon = plotting_data.MidLongitude[i]
             mid_x, mid_y = base_map(mid_lon, mid_lat)
-            base_map.plot(mid_x, mid_y, zorder=3,
+            base_map.plot(mid_x, mid_y, zorder=2,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
@@ -927,14 +927,14 @@ def plotting_hotspots(update=False):
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".tif", dpi=600)
 
         # Frequency
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', False, False, False, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'YlOrBr', True, True, True, ".tif", dpi=600)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', False, False, False, ".svg", dpi=None)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".svg", dpi=None)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".tif", dpi=600)
 
         # Delay minutes per incident
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".svg", dpi=None)
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tif", dpi=600)
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tiff", dpi=600)
 
     else:
         pass
