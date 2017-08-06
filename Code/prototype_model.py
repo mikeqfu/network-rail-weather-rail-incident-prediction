@@ -1296,6 +1296,7 @@ def logistic_regression_model(trial_id=0,
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
             plt.savefig(cdd_mod_trial(trial_id, "ROC.tif"), dpi=600)
+            plt.savefig(dbm.cdd_metex_db_fig_pub("01", "Prediction", "ROC.tif"), dpi=600)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -1316,6 +1317,7 @@ def logistic_regression_model(trial_id=0,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             plt.savefig(cdd_mod_trial(trial_id, "Predicted-likelihood.tif"), dpi=600)
+            plt.savefig(dbm.cdd_metex_db_fig_pub("01", "Prediction", "Predicted-likelihood.tif"), dpi=600)  # Fig. 5.
 
         # ===================================================================================
         # if dig_deeper:

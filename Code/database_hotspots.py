@@ -150,12 +150,12 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
 
 
 # Show weather cells on the map ======================================================================================
-def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#99ccff', legend_loc=(1.05, 0.85)):
+def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#add6ff', legend_loc=(1.05, 0.85)):
     """
     :param base_map: [mpl_toolkits.basemap.Basemap] basemap object
     :param update: [bool]
     :param route: [str] Route
-    :param weather_cell_colour: [str] default '#fff68f'; alternative '#99ccff', '#add6ff
+    :param weather_cell_colour: [str] default '#add6ff'; alternative '#99ccff', '#fff68f
     :param legend_loc [tuple]
     :return:
     """
@@ -177,11 +177,11 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
         ur_x, ur_y = base_map(data.ur_Longitude[i], data.ur_Latitude[i])
         lr_x, lr_y = base_map(data.lr_lon[i], data.lr_lat[i])
         xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.6, zorder=2)
+        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.5, zorder=2)
         plt.gca().add_patch(p)
 
     # Add labels
-    plt.plot([], 's', label="Weather cell", ms=25, color=weather_cell_colour, markeredgecolor='#433f3f', alpha=.4)
+    plt.plot([], 's', label="Weather cell", ms=25, color=weather_cell_colour, markeredgecolor='#433f3f', alpha=.5)
 
     # Show legend  # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
     font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
@@ -908,18 +908,19 @@ def plotting_hotspots(update=False):
         plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".tif", dpi=600)
         plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".tif", dpi=600)
         plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".tif", dpi=600)
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tif", dpi=600)
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tif", dpi=600)  # Fig. 1.
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".pdf", dpi=600)  # Fig. 1.
         plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg", dpi=None)
 
         # Delays yearly
         hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
         hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tif", dpi=600)
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tif", dpi=600)  # Fig. 2.
 
         # Delays
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".svg", dpi=None)
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg", dpi=None)
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tif", dpi=600)
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tif", dpi=600)  # Fig. 3.
 
         # Cost
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".svg", dpi=None)
@@ -934,7 +935,7 @@ def plotting_hotspots(update=False):
         # Delay minutes per incident
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".svg", dpi=None)
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tiff", dpi=600)
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tif", dpi=600)
 
     else:
         pass
