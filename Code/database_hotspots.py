@@ -485,7 +485,7 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
             svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
 
 
-# ====================================================================================================================
+# Plot hotspots of delays for every financial year (2006/07-2014/15) =================================================
 def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
                            cmap_name='Set1',
                            show_metex_weather_cells=False,
@@ -734,7 +734,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
     save_fig(fig, "frequency", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
-# ====================================================================================================================
+# Plot hotspots of delay cost ========================================================================================
 def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
                   seed=123,
                   cmap_name='YlGnBu',
@@ -818,7 +818,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
     save_fig(fig, "cost", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
-# ====================================================================================================================
+# Plot hotspots in terms of delay minutes per incident ===============================================================
 def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
                                  seed=123,
                                  cmap_name='BrBG',
