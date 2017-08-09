@@ -837,7 +837,7 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
 
                     # Specify further calculations
                     calc_further.update({'AssetNumber': np.sum})
-                    calc_further.update({'DateOfMeasure': lambda y: tuple(itertools.chain(*y))})
+                    calc_further.update(dict(DateOfMeasure=lambda y: tuple(itertools.chain(*y))))
                     calc_further.update({k: lambda y: tuple(y) for k in cover_percents})
                     veg_stats_calc_further = veg_stats_calc.copy()
                     veg_stats_calc_further.update(calc_further)
