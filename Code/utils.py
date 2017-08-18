@@ -74,14 +74,6 @@ def cdd_rc(*directories):
     return path
 
 
-# Change directory to "Schedule 8 incidents"
-def cdd_schedule8(*directories):
-    path = cdd("METEX", "Schedule 8 incidents")
-    for directory in directories:
-        path = os.path.join(path, directory)
-    return path
-
-
 # Change directory to "Delay attribution"
 def cdd_delay_attr(*directories):
     path = cdd("METEX", "Delay attribution")

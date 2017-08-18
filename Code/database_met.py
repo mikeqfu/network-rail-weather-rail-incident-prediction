@@ -1095,21 +1095,24 @@ get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as="
 
 # Finalise the required data given 'route' and 'weather'
 def subset(data, route=None, weather=None, reset_index=False):
-    route_lookup = get_route()
-    weather_category_lookup = get_weather_category_lookup()
-    # Select data for a specific route and weather category
-    if not route and not weather:
-        dat = data.copy(deep=True)
-    elif route and not weather:
-        dat = data[data.Route == find_match(route, route_lookup.Route)]
-    elif not route and weather:
-        dat = data[data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory)]
+    if data is None:
+        dat = None
     else:
-        dat = data[(data.Route == find_match(route, route_lookup.Route)) &
-                   (data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory))]
-    # Reset index
-    if reset_index:
-        dat.reset_index(inplace=True)  # dat.index = range(len(dat))
+        route_lookup = get_route()
+        weather_category_lookup = get_weather_category_lookup()
+        # Select data for a specific route and weather category
+        if not route and not weather:
+            dat = data.copy(deep=True)
+        elif route and not weather:
+            dat = data[data.Route == find_match(route, route_lookup.Route)]
+        elif not route and weather:
+            dat = data[data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory)]
+        else:
+            dat = data[(data.Route == find_match(route, route_lookup.Route)) &
+                       (data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory))]
+        # Reset index
+        if reset_index:
+            dat.reset_index(inplace=True)  # dat.index = range(len(dat))
     return dat
 
 

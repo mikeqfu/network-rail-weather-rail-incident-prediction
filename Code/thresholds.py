@@ -13,7 +13,15 @@ import os
 
 import pandas as pd
 
-from utils import cdd, cdd_schedule8, save_pickle, load_pickle
+from utils import cdd, save_pickle, load_pickle
+
+
+# Change directory to "Schedule 8 incidents"
+def cdd_schedule8(*directories):
+    path = cdd("METEX", "Schedule 8 incidents")
+    for directory in directories:
+        path = os.path.join(path, directory)
+    return path
 
 
 #
