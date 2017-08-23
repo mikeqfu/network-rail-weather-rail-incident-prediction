@@ -103,6 +103,10 @@ def read_thresholds_from_workbook(update=False):
         try:
             thresholds = pd.read_excel(cdd_schedule8("Reports", "S8_Weather 02_06_2006 - 31-03-2014.xlsm"),
                                        sheetname="Thresholds", parse_cols="A:F")
+            thresholds.dropna(inplace=True)
+            thresholds.index = range(len(thresholds))
+            thresholds.columns = [col.replace(' ', '') for col in thresholds.columns]
+            thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
             save_pickle(thresholds, path_to_file)
         except Exception as e:
             print("Reading weather thresholds from the workbook ... failed due to '{}'.".format(e))

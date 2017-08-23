@@ -799,7 +799,7 @@ def get_stanox_section(update=False):
             stanox_section.index.name = 'StanoxSectionId'
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             stanox_loc = get_stanox_location(nr_mileage_format=True)
-            stanox_dict_1 = stanox_loc['Location'].to_dict()
+            stanox_dict_1 = stanox_loc.Location.to_dict()
             stanox_dict_2 = rc.get_location_dictionary('STANOX', drop_duplicates=False)
             # Processing 'StartStanox'
             stanox_section['StartStanox_loc'] = stanox_section.StartStanox.replace(stanox_dict_1).replace(stanox_dict_2)
@@ -820,8 +820,8 @@ def get_stanox_section(update=False):
                 replace(loc_name_replacement_dict).replace(loc_name_regexp_replacement_dict)
             # Create 'STANOX' sections
             start_end = stanox_section.StartStanox_loc + ' - ' + stanox_section.EndStanox_loc
-            ploc_idx = stanox_section.StartStanox_loc == stanox_section.EndStanox_loc
-            start_end[ploc_idx] = stanox_section.StartStanox_loc[ploc_idx]
+            point_idx = stanox_section.StartStanox_loc == stanox_section.EndStanox_loc
+            start_end[point_idx] = stanox_section.StartStanox_loc[point_idx]
             stanox_section['StanoxSection'] = start_end
             # Finalising the cleaning process
             stanox_section.drop('Description', axis=1, inplace=True)  # Drop original
