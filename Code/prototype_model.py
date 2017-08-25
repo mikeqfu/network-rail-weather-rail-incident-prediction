@@ -252,7 +252,7 @@ def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None
     :return:
     """
     # Load Schedule 8 costs data aggregated by financial year and STANOX section
-    s8data = dbm.get_schedule8_costs_by_location(route, weather).loc[:, 'Route':]
+    s8data = dbm.get_schedule8_cost_by_location(route, weather).loc[:, 'Route':]
 
     # Aggregate the data for each STANOX section
     incident_locations = s8data.groupby(list(s8data.columns)[:-3]).agg(np.sum)

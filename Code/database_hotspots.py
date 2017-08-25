@@ -415,7 +415,7 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
         hotspots_data = load_pickle(path_to_file)
     else:
         # Get TRUST (by incident location, i.e. by STANOX section)
-        schedule8_costs_by_location = dbm.get_schedule8_costs_by_location(route=None, weather=None)
+        schedule8_costs_by_location = dbm.get_schedule8_cost_by_location(route=None, weather=None)
         schedule8_costs_by_location['StartPoint'] = [
             Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.StartLongitude, schedule8_costs_by_location.StartLatitude)]
@@ -497,7 +497,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     try:
         hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
     except FileNotFoundError:
-        schedule8_data = dbm.get_schedule8_costs_by_datetime_location(route, weather, update)
+        schedule8_data = dbm.get_schedule8_cost_by_datetime_location(route, weather, update)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                           'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data = schedule8_data.groupby(group_features).aggregate(

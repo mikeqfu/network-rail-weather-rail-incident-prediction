@@ -11,7 +11,7 @@ import pandas as pd
 
 import database_met as dbm
 import database_veg as dbv
-from railwaycodes_utils import get_location_dictionary
+import railwaycodes_utils as rc
 from utils import cdd, save, load_pickle
 
 
@@ -23,7 +23,7 @@ def cdd_schedule8(*directories):
     return path
 
 
-# ==============================================================================
+# ====================================================================================================================
 """ Schedule8WeatherCostReport.xlsx """
 
 
@@ -404,13 +404,13 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             stanox_section.EndLocation.fillna(stanox_section.StartLocation, inplace=True)
 
             stanox_dict_1 = dbm.get_stanox_location().Location.to_dict()
-            stanox_dict_2 = get_location_dictionary('STANOX', drop_duplicates=False)
+            stanox_dict_2 = rc.get_location_dictionary('STANOX', drop_duplicates=False)
 
             stanox_section.StartLocation = stanox_section.StartLocation.replace(stanox_dict_1).replace(stanox_dict_2)
             stanox_section.EndLocation = stanox_section.EndLocation.replace(stanox_dict_1).replace(stanox_dict_2)
 
-            stanme_dict = get_location_dictionary('STANME')
-            tiploc_dict = get_location_dictionary('TIPLOC')
+            stanme_dict = rc.get_location_dictionary('STANME')
+            tiploc_dict = rc.get_location_dictionary('TIPLOC')
             loc_name_replacement_dict = dbm.create_loc_name_replacement_dict()
             loc_name_regexp_replacement_dict = dbm.create_loc_name_regexp_replacement_dict()
             # Processing 'StartStanox'
@@ -433,6 +433,10 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             col_names.insert(col_names.index('StartLocation') + 1, 'EndLocation')
             data = stanox_section.join(data.drop('StanoxSection', axis=1))[col_names]
 
+            incident_reason_description = dbm.get_incident_reason_info_ref()
+            data = pd.merge(data, incident_reason_description.reset_index(),
+                            on=['IncidentReason', 'IncidentCategoryDescription'], how='inner')
+
             # Weather'CategoryLookup'
             weather_category_lookup = workbook.parse(sheetname='CategoryLookup')
             weather_category_lookup.columns = ['WeatherCategoryCode', 'WeatherCategory']
@@ -450,6 +454,10 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
         workbook_data['Data'] = dbm.subset(workbook_data['Data'], route, weather)
 
     return workbook_data
+
+
+# ====================================================================================================================
+""" TRUST """
 
 
 # Get a reference for matching DU with Route
@@ -506,7 +514,7 @@ def get_trust_schedule8_incidents_details(update=False):
             # Get information of Performance Event Code
             prfm_event_code = dbm.get_performance_event_code()
 
-            loc_dict = get_location_dictionary('STANOX', False)
+            loc_dict = rc.get_location_dictionary('STANOX', False)
             # Get location data
             location = dbm.get_location()
             stanox_location = dbm.get_stanox_location()

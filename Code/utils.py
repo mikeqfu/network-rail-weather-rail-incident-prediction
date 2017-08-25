@@ -74,9 +74,9 @@ def cdd_rc(*directories):
     return path
 
 
-# Change directory to "Delay attribution"
+# Change directory to "Historic delay attribution"
 def cdd_delay_attr(*directories):
-    path = cdd("METEX", "Delay attribution")
+    path = cdd("METEX", "Historic delay attribution")
     for directory in directories:
         path = os.path.join(path, directory)
     return path

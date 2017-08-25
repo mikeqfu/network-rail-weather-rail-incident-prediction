@@ -1370,7 +1370,7 @@ def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12
 
 
 # Get Schedule 8 data by incident location and weather category
-def get_schedule8_costs_by_location(route=None, weather=None, update=False):
+def get_schedule8_cost_by_location(route=None, weather=None, update=False):
     """
     :param route: 
     :param weather: 
@@ -1410,7 +1410,7 @@ def get_schedule8_costs_by_location(route=None, weather=None, update=False):
 
 
 # Get Schedule 8 data by datetime and weather category
-def get_schedule8_costs_by_datetime(route=None, weather=None, update=False):
+def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1441,7 +1441,7 @@ def get_schedule8_costs_by_datetime(route=None, weather=None, update=False):
 
 
 # Get Schedule 8 data by datetime and location
-def get_schedule8_costs_by_datetime_location(route=None, weather=None, update=False):
+def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location", route, weather)
     path_to_file = cdd_metex_db_views(filename)
 
@@ -1477,7 +1477,7 @@ def get_schedule8_costs_by_datetime_location(route=None, weather=None, update=Fa
 
 
 # Get Schedule 8 data by datetime, location and weather
-def get_schedule8_costs_by_datetime_location_weather(route=None, weather=None, ip_start=-12, ip_end=12, update=False):
+def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip_start=-12, ip_end=12, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location_weather", route, weather)
     add_suffix = [str(s) for s in (ip_start, ip_end)]
     filename = "_".join([filename] + add_suffix) + ".pickle"
@@ -1488,7 +1488,7 @@ def get_schedule8_costs_by_datetime_location_weather(route=None, weather=None, i
     else:
         try:
             # Get Schedule8_costs_by_datetime_location
-            schedule8_data = get_schedule8_costs_by_datetime_location(route, weather)
+            schedule8_data = get_schedule8_cost_by_datetime_location(route, weather)
             # Create critical start and end datetimes (truncating "month" and "time" parts from datetime)
             schedule8_data['incident_duration'] = \
                 schedule8_data.EndDate - schedule8_data.StartDate
@@ -1654,10 +1654,10 @@ update = True
 get_schedule8_details(route, weather, reset_index=False, update=update)
 get_schedule8_details_pfpi(route, weather, update)
 get_schedule8_details_and_weather(route, weather, -12, 12, update=update)
-get_schedule8_costs_by_location(route, weather, update=update)
-get_schedule8_costs_by_datetime(route, weather, update=update)
-get_schedule8_costs_by_datetime_location(route, weather, update=update)
-get_schedule8_costs_by_datetime_location_weather(route, weather, -12, 12, update=update)
+get_schedule8_cost_by_location(route, weather, update=update)
+get_schedule8_cost_by_datetime(route, weather, update=update)
+get_schedule8_cost_by_datetime_location(route, weather, update=update)
+get_schedule8_cost_by_datetime_location_weather(route, weather, -12, 12, update=update)
 get_schedule8_cost_by_reason(route, weather, update=update)
 get_schedule8_cost_by_location_reason(route, weather, update=update)
 get_schedule8_cost_by_datetime_location_reason(route, weather, update=update)
