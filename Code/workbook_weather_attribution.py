@@ -55,8 +55,8 @@ def get_train_test_data():
     train_data, test_data = data[data.FinancialYear < 2014], data[data.FinancialYear == 2014]
     idx_train, idx_test = train_data.index, test_data.index
 
-    train_set = dict(zip(['word_counter', 'data_frame'], [word_counter[0:max(idx_train) + 1], train_dat]))
-    test_set = dict(zip(['word_counter', 'data_frame'], [word_counter[min(idx_test):], test_dat]))
+    train_set = dict(zip(['word_counter', 'data_frame'], [word_counter[0:max(idx_train) + 1], train_data]))
+    test_set = dict(zip(['word_counter', 'data_frame'], [word_counter[min(idx_test):], test_data]))
 
     return train_set, test_set
 
