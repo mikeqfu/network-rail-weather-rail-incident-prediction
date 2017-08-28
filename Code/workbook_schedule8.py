@@ -30,13 +30,7 @@ def cdd_schedule8(*directories):
 #
 def get_schedule8_weather_cost_report_all_data(route=None, weather=None, update=False):
     """
-
     Summary report for Schedule 8 weather costs covering the UK.
-
-    :param route:
-    :param weather:
-    :param update:
-    :return:
     """
     filename = "Schedule8WeatherCostReport_AllData"
     path_to_file = cdd_schedule8("Reports", filename + ".pickle")
@@ -188,10 +182,6 @@ def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show
 # Read Schedule 8 Weather Incidents data
 def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=False):
     """
-    :param route:
-    :param weather:
-    :param update:
-    :return:
 
     Description:
     "Schedule 8 delay minutes partitioned by DU / Day / Weather Category"
@@ -237,13 +227,6 @@ def summarise_delays(route=None, weather=None, update=False, feature='Year'):
 #
 def plot_schedule8_weather_delays_by_season(route=None, weather=None, update=False, show_title=False, save_as=".png"):
     """
-    :param route:
-    :param weather:
-    :param update:
-    :param show_title:
-    :param save_as:
-    :return:
-
     The meteorological seasons (instead of the astronomical seasons) are defined as
 
     Spring (March, April, May), from March 1 to May 31
@@ -346,11 +329,6 @@ def plot_schedule8_weather_delays_by_season(route=None, weather=None, update=Fal
 
 def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, update=False):
     """
-    :param route:
-    :param weather:
-    :param update:
-    :return:
-
     Description:
     "Details of schedule 8 incidents together with weather leading up to the incident. Although this file contains
     other weather categories, the main focus of this prototype is adhesion.
@@ -433,8 +411,8 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             col_names.insert(col_names.index('StartLocation') + 1, 'EndLocation')
             data = stanox_section.join(data.drop('StanoxSection', axis=1))[col_names]
 
-            incident_reason_description = dbm.get_incident_reason_info_ref()
-            data = pd.merge(data, incident_reason_description.reset_index(),
+            incident_reason_info = dbm.get_incident_reason_info_ref()
+            data = pd.merge(data, incident_reason_info.reset_index(),
                             on=['IncidentReason', 'IncidentCategoryDescription'], how='inner')
 
             # Weather'CategoryLookup'
@@ -494,9 +472,6 @@ def get_du_route_dict(as_dict=True, update=False):
 #
 def get_trust_schedule8_incidents_details(update=False):
     """
-
-    :param update:
-    :return:
 
     Description:
     "Output from TRUST database containing details of Schedule 8 incidents."

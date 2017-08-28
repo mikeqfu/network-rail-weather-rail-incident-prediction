@@ -1088,7 +1088,6 @@ get_weather_category_lookup(as_dict=False, update=update)
 get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as=".png", dpi=600)
 """
 
-
 # ====================================================================================================================
 """ Utils for creating views """
 
@@ -1525,18 +1524,21 @@ def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
             # Get merged data sets
             schedule8_details = get_schedule8_details(route, weather, reset_index=True)
             # Select columns
-            selected_features = [
-                'PfPIId',
-                'FinancialYear',
-                'Route',
-                # 'IMDM',
-                'WeatherCategory',
-                'IncidentCategory',
-                'IncidentCategoryDescription',
-                'IncidentReason',
-                'IncidentReasonName',
-                'IncidentReasonDescription',
-                'PfPIMinutes', 'PfPICosts']
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'Route',
+                                 # 'IMDM',
+                                 'WeatherCategory',
+                                 'IncidentDescription',
+                                 'IncidentCategory',
+                                 'IncidentCategoryDescription',
+                                 'IncidentCategorySuperGroupCode',
+                                 'IncidentCategoryGroupDescription',
+                                 'IncidentReason',
+                                 'IncidentReasonName',
+                                 'IncidentReasonDescription',
+                                 'IncidentJPIPCategory',
+                                 'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
@@ -1557,22 +1559,25 @@ def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False
     else:
         try:
             schedule8_details = get_schedule8_details(route, weather).reset_index()
-            selected_features = [
-                'PfPIId',
-                'FinancialYear',
-                'WeatherCategory',
-                'Route', 'IMDM',
-                'StanoxSection',
-                'StartStanox', 'EndStanox',
-                'StartLocation', 'EndLocation',
-                'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
-                'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
-                'IncidentReason',
-                'IncidentReasonName',
-                'IncidentReasonDescription',
-                'IncidentCategory',
-                'IncidentCategoryDescription',
-                'PfPIMinutes', 'PfPICosts']
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'WeatherCategory',
+                                 'Route', 'IMDM',
+                                 'StanoxSection',
+                                 'StartStanox', 'EndStanox',
+                                 'StartLocation', 'EndLocation',
+                                 'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
+                                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
+                                 'IncidentDescription',
+                                 'IncidentCategory',
+                                 'IncidentCategoryDescription',
+                                 'IncidentCategorySuperGroupCode',
+                                 'IncidentCategoryGroupDescription',
+                                 'IncidentReason',
+                                 'IncidentReasonName',
+                                 'IncidentReasonDescription',
+                                 'IncidentJPIPCategory',
+                                 'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
@@ -1593,26 +1598,27 @@ def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, upd
     else:
         try:
             schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            selected_features = [
-                'PfPIId',
-                'FinancialYear',
-                'StartDate', 'EndDate',
-                'WeatherCategory',
-                'WeatherCell',
-                'Route', 'IMDM',
-                'StanoxSection',
-                'StartLocation', 'EndLocation',
-                'StartStanox', 'EndStanox',
-                'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
-                'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
-                'IncidentReason',
-                'IncidentReasonName',
-                'IncidentReasonDescription',
-                'IncidentCategory',
-                'IncidentCategoryDescription',
-                'IncidentCategoryGroupDescription',
-                'IncidentJPIPCategory',
-                'PfPIMinutes', 'PfPICosts']
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'StartDate', 'EndDate',
+                                 'WeatherCategory',
+                                 'WeatherCell',
+                                 'Route', 'IMDM',
+                                 'StanoxSection',
+                                 'StartLocation', 'EndLocation',
+                                 'StartStanox', 'EndStanox',
+                                 'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
+                                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
+                                 'IncidentDescription',
+                                 'IncidentCategory',
+                                 'IncidentCategoryDescription',
+                                 'IncidentCategorySuperGroupCode',
+                                 'IncidentCategoryGroupDescription',
+                                 'IncidentReason',
+                                 'IncidentReasonName',
+                                 'IncidentReasonDescription',
+                                 'IncidentJPIPCategory',
+                                 'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
