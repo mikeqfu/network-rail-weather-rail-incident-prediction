@@ -349,3 +349,16 @@ def get_bounds_extreme_outliers(data_set, k=1.5):
     lower_bound = np.max([0, q1 - k * iqr])
     upper_bound = q3 + k * iqr
     return lower_bound, upper_bound
+
+
+# Convert compressed sparse matrix to dictionary
+def csr_matrix_to_dict(csr_matrix, vectorizer):
+    features = vectorizer.get_feature_names()
+    dict_data = []
+    for i in range(len(csr_matrix.indptr) - 1):
+        sid, eid = csr_matrix.indptr[i: i + 2]
+        row_feat = [features[x] for x in csr_matrix.indices[sid:eid]]
+        row_data = csr_matrix.data[sid:eid]
+        dict_data.append(dict(zip(row_feat, row_data)))
+
+    return pd.Series(dict_data).to_frame('word_count')
