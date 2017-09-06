@@ -1127,15 +1127,17 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Variables", "Vegetation-related variables" + save_as)), dpi=dpi)
 
 
-# def save_result_to_excel(result, writer):
-#     result_file = dbm.make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
-#                                     shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-#     writer = pd.ExcelWriter(cdd_mod_trial(trial_id, result_file), engine='xlsxwriter')
-#     info, estimates = pd.read_html(result.summary().as_html().replace(':', ''))
-#     info_0, info_1 = info.iloc[:, :2].set_index(0), info.iloc[:, 2:].set_index(2)
+"""
+def save_result_to_excel(result, writer):
+    result_file = dbm.make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    writer = pd.ExcelWriter(cdd_mod_trial(trial_id, result_file), engine='xlsxwriter')
+    info, estimates = pd.read_html(result.summary().as_html().replace(':', ''))
+    info_0, info_1 = info.iloc[:, :2].set_index(0), info.iloc[:, 2:].set_index(2)
+"""
 
 
-# Fit a primer model
+# Fit a prototype model
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Wind',
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
