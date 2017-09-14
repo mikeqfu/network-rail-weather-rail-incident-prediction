@@ -3,14 +3,14 @@
 import os
 import re
 import string
-from urllib.parse import urljoin
+import urllib.parse
 
 import bs4
 import dateutil.parser
+import more_itertools
 import pandas as pd
+import pandas.errors
 import requests
-from more_itertools import unique_everseen
-from pandas.errors import ParserError
 
 from converters import miles_chains_to_mileage
 from utils import save_pickle, load_pickle, is_float
@@ -126,9 +126,9 @@ def parse_tr(header, trs):
                     tbl_lst[idx].insert(i[1] + 1, i[3])
 
     for k in range(len(tbl_lst)):
-        l = len(header) - len(tbl_lst[k])
-        if l > 0:
-            tbl_lst[k].extend(['\xa0'] * l)
+        n = len(header) - len(tbl_lst[k])
+        if n > 0:
+            tbl_lst[k].extend(['\xa0'] * n)
 
     return tbl_lst
 
@@ -365,7 +365,7 @@ def scrape_mileage_file(elr):
         # Request to get connected to the given url
         try:
             mileages = pd.read_table(mileage_file_url)
-        except ParserError:
+        except pandas.errors.ParserError:
             temp = pd.read_csv(mileage_file_url)
             header = temp.columns[0].split('\t')
             data = [v.split('\t', 1) for val in temp.values for v in val]
@@ -644,7 +644,8 @@ def scrape_location_codes(keyword, update=False):
             if any('see note' in crs_note for crs_note in data.CRS_Note):
                 loc_idx = [i for i, crs_note in enumerate(data.CRS_Note) if 'see note' in crs_note]
                 web_page_text = bs4.BeautifulSoup(source.text, 'lxml')
-                note_urls = [urljoin(url, l['href']) for l in web_page_text.find_all('a', href=True, text='note')]
+                note_urls = [urllib.parse.urljoin(url, l['href'])
+                             for l in web_page_text.find_all('a', href=True, text='note')]
                 additional_notes = [parse_additional_note_page(note_url) for note_url in note_urls]
                 additional_note = dict(zip(data.CRS.iloc[loc_idx], additional_notes))
             else:
@@ -693,7 +694,7 @@ def scrape_other_systems(update=False):
             # Get system name
             systems = [k.text for k in web_page_text.find_all('h3')]
             # Get column names for the other systems table
-            headers = list(unique_everseen([h.text for h in web_page_text.find_all('th')]))
+            headers = list(more_itertools.unique_everseen([h.text for h in web_page_text.find_all('th')]))
             # Parse table data for each system
             table_data = web_page_text.find_all('table', {'border': 1})
             tables = [pd.DataFrame(parse_tr(headers, table.find_all('tr')), columns=headers) for table in table_data]

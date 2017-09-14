@@ -256,18 +256,6 @@ def mileage_to_yards(mileage):
     return yards
 
 
-# Convert miles to Network Rail mileages
-def miles_chains_to_mileage(miles_chains):
-    if miles_chains is '':
-        return miles_chains
-    else:
-        miles_chains = str(miles_chains)
-        miles = int(miles_chains.split('.')[0])
-        chains = float(miles_chains.split('.')[1])
-        yards = measurement.measures.Distance(chain=chains).yd
-        return '%.4f' % (miles + round(yards / (10 ** 4), 4))
-
-
 # Convert calendar year to Network Rail financial year
 def year_to_financial_year(date):
     financial_date = date + pd.DateOffset(months=-3)

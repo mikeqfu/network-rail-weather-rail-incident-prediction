@@ -300,6 +300,8 @@ def cmap_discretize(cmap_param, no_of_colours):
     :param no_of_colours: number of colours
     :return: a discrete colormap from the continuous colormap cmap.
 
+    Reference: http://sensitivecities.com/so-youd-like-to-make-a-map-using-python-EN.html#.WbpP0T6GNQB
+
     Example:
         x = np.resize(np.arange(100), (5, 100))
         djet = cmap_discretize(cm.jet, 5)
@@ -325,6 +327,8 @@ def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     :param labels:
     :param kwargs:
     :return:
+
+    Reference: http://sensitivecities.com/so-youd-like-to-make-a-map-using-python-EN.html#.WbpP0T6GNQB
 
     This is a convenience function to stop making off-by-one errors
     Takes a standard colour ramp, and discretizes it, then draws a colour bar with correctly aligned labels
