@@ -14,10 +14,10 @@ import matplotlib.font_manager
 import matplotlib.patches
 import matplotlib.pyplot as plt
 import pandas as pd
+import shapely.geometry
+import shapely.ops
 from mpl_toolkits.basemap import Basemap
 from pysal.esda.mapclassify import Natural_Breaks as NBs
-from shapely.geometry import Point, MultiPoint, Polygon
-from shapely.ops import nearest_points
 
 import database_met as dbm
 import database_veg as dbv
@@ -33,10 +33,10 @@ def create_boundary_polygon(bounds):
     :return:
     """
     llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat = bounds
-    boundary_polygon = Polygon([(llcrnrlon, llcrnrlat),
-                                (llcrnrlon, urcrnrlat),
-                                (urcrnrlon, urcrnrlat),
-                                (urcrnrlon, llcrnrlat)])
+    boundary_polygon = shapely.geometry.Polygon([(llcrnrlon, llcrnrlat),
+                                                 (llcrnrlon, urcrnrlat),
+                                                 (urcrnrlon, urcrnrlat),
+                                                 (urcrnrlon, llcrnrlat)])
     return boundary_polygon
 
 
@@ -126,7 +126,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     base_map.fillcontinents(color='#dcdcdc')  # color='#555555'
 
     # Add a layer for railway tracks
-    boundary_polygon = Polygon(zip(base_map.boundarylons, base_map.boundarylats))
+    boundary_polygon = shapely.geometry.Polygon(zip(base_map.boundarylons, base_map.boundarylats))
     path_to_shp_file = get_shp_file_path_for_basemap('england', 'railways', 'rail', boundary_polygon)
 
     base_map.readshapefile(shapefile=path_to_shp_file,
@@ -207,7 +207,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     print("Plotting the OSM natural/forest ... ", end="")
 
     # OSM - landuse - forest
-    boundary_polygon = Polygon(zip(base_map.boundarylons, base_map.boundarylats))
+    boundary_polygon = shapely.geometry.Polygon(zip(base_map.boundarylons, base_map.boundarylats))
     bounded_landuse_forest_shp = get_shp_file_path_for_basemap('england', 'landuse', 'forest', boundary_polygon)
 
     base_map.readshapefile(bounded_landuse_forest_shp,
@@ -231,7 +231,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     if add_osm_natural_tree:
         bounded_natural_tree_shp = get_shp_file_path_for_basemap('england', 'natural', 'tree', boundary_polygon)
         base_map.readshapefile(bounded_natural_tree_shp, name='osm_natural_tree')
-        natural_tree_points = [Point(p) for p in base_map.osm_natural_tree]
+        natural_tree_points = [shapely.geometry.Point(p) for p in base_map.osm_natural_tree]
         base_map.scatter([geom.x for geom in natural_tree_points], [geom.y for geom in natural_tree_points],
                          marker='o', s=2, facecolor='#008000', label="Tree", alpha=0.5, zorder=3)
 
@@ -272,8 +272,9 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
 
     hazardous_trees = dbv.get_hazardous_trees(route)
 
-    map_points = [Point(base_map(long, lat)) for long, lat in zip(hazardous_trees.Longitude, hazardous_trees.Latitude)]
-    hazardous_trees_points = MultiPoint(map_points)
+    map_points = [shapely.geometry.Point(base_map(long, lat))
+                  for long, lat in zip(hazardous_trees.Longitude, hazardous_trees.Latitude)]
+    hazardous_trees_points = shapely.geometry.MultiPoint(map_points)
 
     # Plot hazardous trees on the basemap
     base_map.scatter([geom.x for geom in hazardous_trees_points], [geom.y for geom in hazardous_trees_points],
@@ -355,7 +356,7 @@ def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
                        math.sqrt((math.cos(lat_1) + b_x) * (math.cos(lat_1) + b_x) + b_y ** 2))
     long_3 = long_1 + math.atan2(b_y, math.cos(lat_1) + b_x)
 
-    midpoint = Point(math.degrees(long_3), math.degrees(lat_3))
+    midpoint = shapely.geometry.Point(math.degrees(long_3), math.degrees(lat_3))
 
     return midpoint
 
@@ -369,7 +370,7 @@ def get_midpoint(start_point, end_point, as_geom=True):
     :return: 
     """
     midpoint = (start_point.x + end_point.x) / 2, (start_point.y + end_point.y) / 2
-    return Point(midpoint) if as_geom else midpoint
+    return shapely.geometry.Point(midpoint) if as_geom else midpoint
 
 
 # Get coordinates of points from a .shp file, by subregion, layer and feature
@@ -391,7 +392,8 @@ def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
     else:
         try:
             railways_shp_data = osm_utils.read_shp_zip(subregion, layer, feature)
-            point_coords = MultiPoint(list(itertools.chain(*(l.coords for l in railways_shp_data.geometry))))
+            point_coords = \
+                shapely.geometry.MultiPoint(list(itertools.chain(*(l.coords for l in railways_shp_data.geometry))))
         except Exception as e:
             print(e)
             point_coords = None
@@ -417,10 +419,10 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
         # Get TRUST (by incident location, i.e. by STANOX section)
         schedule8_costs_by_location = dbm.get_schedule8_cost_by_location(route=None, weather=None)
         schedule8_costs_by_location['StartPoint'] = [
-            Point(long, lat) for long, lat in
+            shapely.geometry.Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.StartLongitude, schedule8_costs_by_location.StartLatitude)]
         schedule8_costs_by_location['EndPoint'] = [
-            Point(long, lat) for long, lat in
+            shapely.geometry.Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.EndLongitude, schedule8_costs_by_location.EndLatitude)]
 
         # Find a pseudo midpoint for each recorded incident
@@ -435,10 +437,11 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
         bounds = create_boundary_polygon(subarea_shp_file.bounds)
         subarea_shp_file.close()
 
-        ref_points = MultiPoint([p for p in rail_points if p.within(bounds) or p.intersects(bounds)])
+        ref_points = shapely.geometry.MultiPoint([p for p in rail_points if p.within(bounds) or p.intersects(bounds)])
 
         # Get rail coordinates closest to the midpoints between starts and ends
-        schedule8_costs_by_location['MidPoint'] = pseudo_midpoints.map(lambda x: nearest_points(x, ref_points)[1])
+        schedule8_costs_by_location['MidPoint'] = \
+            pseudo_midpoints.map(lambda x: shapely.ops.nearest_points(x, ref_points)[1])
 
         midpoints = pd.DataFrame(((pt.x, pt.y) for pt in schedule8_costs_by_location.MidPoint),
                                  index=schedule8_costs_by_location.index,
