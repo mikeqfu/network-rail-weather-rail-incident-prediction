@@ -29,7 +29,7 @@ from utils import cdd, save_pickle, load_pickle, save_json
 
 # Change directory to "[2017-03] OSM-pyutils" and sub-directories
 def cdd_osm(*directories):
-    path = os.path.join(os.path.dirname(os.getcwd()), "2017-03 OSM-pyutils")
+    path = os.path.join(os.path.dirname(os.getcwd()), "2017-03 OSM-Python-utils")
     for directory in directories:
         path = os.path.join(path, directory)
     return path

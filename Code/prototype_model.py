@@ -20,7 +20,7 @@ import database_met as dbm
 import database_veg as dbv
 import railwaycodes_utils as rc_utils
 import settings
-from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yards_to_mileage
+from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yards_to_mileage, svg_to_emf
 from utils import cdd, load_pickle, save_pickle, find_match
 
 # Apply the preferences ==============================================================================================
@@ -1058,7 +1058,7 @@ def specify_explanatory_variables():
 
 
 # Describe basic statistics about the main explanatory variables
-def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
+def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     fig = plt.figure(figsize=(12, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
@@ -1106,7 +1106,10 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Variables", "Weather-related variables" + save_as)), dpi=dpi)
+    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Weather" + save_as))
+    plt.savefig(path_to_file_weather, dpi=dpi)
+    if save_as == ".svg":
+        svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
 
     #
     fig_veg = plt.figure(figsize=(12, 5))
@@ -1123,8 +1126,12 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=600):
     ax.set_xticklabels([re.search('(?<=CoverPercent).*', c).group() for c in cover_percent_cols], rotation=45)
     plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
     ax.yaxis.set_label_coords(0, 1.02)
+
     plt.tight_layout()
-    plt.savefig(cdd(dbm.cdd_metex_db_fig_pub("01", "Variables", "Vegetation-related variables" + save_as)), dpi=dpi)
+    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Vegetation" + save_as))
+    plt.savefig(path_to_file_veg, dpi=dpi)
+    if save_as == ".svg":
+        svg_to_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
 
 
 """
@@ -1143,10 +1150,11 @@ def logistic_regression_model(trial_id=0,
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                               shift_yards_same_elr=660, shift_yards_diff_elr=220, hazard_pctl=50,
                               season=None,
-                              describe_var=True,
+                              describe_var=False,
                               outlier_pctl=99,
                               add_const=True, seed=123, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
+                              save_as=".tiff", dpi=600,
                               # dig_deeper=False,
                               verbose=True):
     """
@@ -1167,6 +1175,8 @@ def logistic_regression_model(trial_id=0,
     :param model:
     :param plot_roc:
     :param plot_pred_likelihood:
+    :param save_as:
+    :param dpi:
     # :param dig_deeper:
     :param verbose:
     :return:
@@ -1234,7 +1244,7 @@ def logistic_regression_model(trial_id=0,
     mdata.loc[nip_idx, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
 
     if describe_var:
-        describe_explanatory_variables(mdata, save_as=".tif", dpi=600)
+        describe_explanatory_variables(mdata, save_as=save_as, dpi=dpi)
 
     # Select data before 2014 as training data set, with the rest being test set
     train_set = mdata[mdata.FinancialYear != 2014]
@@ -1297,8 +1307,11 @@ def logistic_regression_model(trial_id=0,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            plt.savefig(cdd_mod_trial(trial_id, "ROC.tif"), dpi=600)
-            plt.savefig(dbm.cdd_metex_db_fig_pub("01", "Prediction", "ROC.tif"), dpi=600)
+            plt.savefig(cdd_mod_trial(trial_id, "ROC" + save_as), dpi=dpi)
+            path_to_file_roc = dbm.cdd_metex_db_fig_pub("01 Data integration", "Prediction", "ROC" + save_as)  # Fig. 6.
+            plt.savefig(path_to_file_roc, dpi=dpi)
+            if save_as == ".svg":
+                svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -1318,8 +1331,12 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            plt.savefig(cdd_mod_trial(trial_id, "Predicted-likelihood.tif"), dpi=600)
-            plt.savefig(dbm.cdd_metex_db_fig_pub("01", "Prediction", "Predicted-likelihood.tif"), dpi=600)  # Fig. 5.
+            plt.savefig(cdd_mod_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            path_to_file_pred = dbm.cdd_metex_db_fig_pub("01 Data integration", "Prediction",
+                                                         "Predicted-likelihood" + save_as)
+            plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
+            if save_as == ".svg":
+                svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
 
         # ===================================================================================
         # if dig_deeper:

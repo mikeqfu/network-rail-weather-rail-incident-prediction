@@ -291,7 +291,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
 # Plot base map and associated features
 def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_landuse_forest=True,
                        add_osm_natural_tree=False, show_nr_hazardous_trees=True,
-                       legend_loc=(1.05, 0.85), save_as=".png", dpi=None):
+                       legend_loc=(1.05, 0.85), save_as=".pdf", dpi=None):
     # Plot basemap
     fig, base_map = plot_base_map(projection='tmerc', legend_loc=legend_loc)
 
@@ -315,17 +315,24 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
     sr.imshow(PIL.Image.open(cdd("Network\\Routes\\Map", "Routes-edited-0.png")))
     sr.axis('off')
 
+    # ax1 = fig.add_axes([0.58, 0.01, 0.40, 0.40], frameon=True)
+    # ax1.imshow(PIL.Image.open(cdd("Network\\Routes\\Map", "Routes-edited-0.png")))
+    # ax1.axis('off')
+
+    plt.show()
+
     # Save the figure
     if save_as:
         print("Saving the figure ... ", end="")
-        filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
-                              ['cell', 'veg', 'haz'])
+        filename_suffix = zip(
+            [show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees], ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        fig.savefig(dbm.cdd_metex_db_fig_pub("01", "Basemap", fig_filename + save_as), dpi=dpi)
+        fig.savefig(dbm.cdd_metex_db_fig_pub("01 Data integration", "Basemap", fig_filename + save_as), dpi=dpi)
         print("Done.")
         if save_as == ".svg":
-            svg_to_emf(dbm.cdd_metex_db_fig_pub("01", fig_filename + save_as),
-                       dbm.cdd_metex_db_fig_pub("01", fig_filename + ".emf"))
+            svg_to_emf(
+                dbm.cdd_metex_db_fig_pub("01 Data integration", fig_filename + save_as),
+                dbm.cdd_metex_db_fig_pub("01 Data integration", fig_filename + ".emf"))
 
 
 # ====================================================================================================================
@@ -426,8 +433,8 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
             zip(schedule8_costs_by_location.EndLongitude, schedule8_costs_by_location.EndLatitude)]
 
         # Find a pseudo midpoint for each recorded incident
-        pseudo_midpoints = schedule8_costs_by_location[['StartPoint', 'EndPoint']].apply(
-            lambda x: get_midpoint(x[0], x[1]), axis=1)
+        pseudo_midpoints = \
+            schedule8_costs_by_location[['StartPoint', 'EndPoint']].apply(lambda x: get_midpoint(x[0], x[1]), axis=1)
 
         # Get reference points (coordinates), given subregion and layer (i.e. 'railways' in this case) of OSM .shp file
         rail_points = get_point_coords_from_shp(subregion='england', layer='railways', feature='rail')
@@ -480,8 +487,8 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
         print("Saving the figure ... ", end="")
         fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                       ['cell', 'veg', 'haz'])
-        filename = '_'.join(["Hotspots", keyword] + [v for s, v in fsuffix if s is True])
-        path_to_file = dbm.cdd_metex_db_fig_pub("01", "Hotspots", filename + save_as)
+        filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
+        path_to_file = dbm.cdd_metex_db_fig_pub("01 Data integration", "Hotspots", filename + save_as)
         plt.savefig(path_to_file, dpi=dpi)
         print("Done.")
         if save_as == ".svg":
@@ -494,7 +501,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
                            show_metex_weather_cells=False,
                            show_osm_landuse_forest=False,
                            show_nr_hazardous_trees=False,
-                           save_as=".png", dpi=None):
+                           save_as=".pdf", dpi=None):
     # Get data
     data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
     try:
@@ -578,7 +585,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
                     show_metex_weather_cells=False,
                     show_osm_landuse_forest=False,
                     show_nr_hazardous_trees=False,
-                    save_as=".png", dpi=None):
+                    save_as=".pdf", dpi=None):
     # Get hotspots data
     sort_by = ['DelayMinutes', 'IncidentCount', 'DelayCost']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -665,7 +672,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                        show_metex_weather_cells=False,
                        show_osm_landuse_forest=False,
                        show_nr_hazardous_trees=False,
-                       save_as=".png", dpi=None):
+                       save_as=".pdf", dpi=None):
     # Get data
     sort_by = ['IncidentCount', 'DelayCost', 'DelayMinutes']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -744,7 +751,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
                   show_metex_weather_cells=False,
                   show_osm_landuse_forest=False,
                   show_nr_hazardous_trees=False,
-                  save_as=".png", dpi=None):
+                  save_as=".pdf", dpi=None):
     # Get data
     sort_by = ['DelayCost', 'IncidentCount', 'DelayMinutes']
     hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
@@ -828,7 +835,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
                                  show_metex_weather_cells=False,
                                  show_osm_landuse_forest=False,
                                  show_nr_hazardous_trees=False,
-                                 save_as=".png", dpi=None):
+                                 save_as=".pdf", dpi=None):
     # Get data
     hotspots_data = get_schedule8_incident_hotspots(route, weather, None, update)
     hotspots_data['DelayMinutesPerIncident'] = hotspots_data.DelayMinutes.div(hotspots_data.IncidentCount)
@@ -907,38 +914,37 @@ def plotting_hotspots(update=False):
     settings.np_preferences(reset=False)
     settings.pd_preferences(reset=False)
 
-    if confirmed():
-        plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".tif", dpi=600)
-        plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".tif", dpi=600)
-        plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".tif", dpi=600)
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tif", dpi=600)  # Fig. 1.
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".pdf", dpi=600)  # Fig. 1.
-        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg", dpi=None)
+    if confirmed():  # No need of dpi for ".pdf" or ".svg"
+        plot_base_map_plus('ANGLIA', False, False, False, False, (1.05, 0.85), ".pdf")
+        plot_base_map_plus('ANGLIA', True, False, False, False, (1.05, 0.85), ".pdf")
+        plot_base_map_plus('ANGLIA', True, True, False, False, (1.05, 0.85), ".pdf")
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".pdf")  # Fig. 1.
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".svg")  # Fig. 1.
+        plot_base_map_plus('ANGLIA', True, True, False, True, (1.05, 0.85), ".tiff", dpi=600)  # Fig. 1.
 
         # Delays yearly
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg", dpi=None)
-        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tif", dpi=600)  # Fig. 2.
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', False, False, False, ".pdf")
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".pdf")
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".svg")
+        hotspots_delays_yearly('ANGLIA', 'Wind', update, 'Set1', True, True, True, ".tiff", dpi=600)  # Fig. 2.
 
         # Delays
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".svg", dpi=None)
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg", dpi=None)
-        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tif", dpi=600)  # Fig. 3.
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', False, False, False, ".pdf")
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".pdf")
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg")
+        hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tiff", dpi=600)  # Fig. 3.
 
         # Cost
-        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".svg", dpi=None)
-        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".svg", dpi=None)
-        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".tif", dpi=600)
+        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".pdf")
+        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".pdf")
 
         # Frequency
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', False, False, False, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".svg", dpi=None)
-        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".tif", dpi=600)
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', False, False, False, ".pdf")
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".pdf")
 
         # Delay minutes per incident
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".svg", dpi=None)
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".svg", dpi=None)
-        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".tif", dpi=600)
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".pdf")
+        hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".pdf")
 
     else:
         pass

@@ -21,7 +21,7 @@ from utils import save_pickle, load_pickle, is_float
 
 # Change directory to "[2017-04] RailwayCodes-pyutils" and sub-directories
 def cdd_rc(*directories):
-    path = os.path.join(os.path.dirname(os.getcwd()), "2017-04 RailwayCodes-pyutils")
+    path = os.path.join(os.path.dirname(os.getcwd()), "2017-04 RailwayCodes-Python-utils")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
