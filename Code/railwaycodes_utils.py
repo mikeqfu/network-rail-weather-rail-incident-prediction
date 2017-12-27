@@ -152,7 +152,7 @@ def parse_table(source, parser='lxml'):
     headers = table_temp[0]
     header = [header.text for header in headers.find_all('th')]
     # Get a list of lists, each of which corresponds to a piece of record
-    trs = table_temp[3:]
+    trs = table_temp[1:]
     # Return a list of parsed tr's, each of which corresponds to one df row
     return parse_tr(header, trs), header
 
@@ -692,14 +692,16 @@ def scrape_other_systems(update=False):
             source = requests.get(url)
             web_page_text = bs4.BeautifulSoup(source.text, 'lxml')
             # Get system name
-            systems = [k.text for k in web_page_text.find_all('h3')]
+            system_names = [k.text for k in web_page_text.find_all('h3')]
+            system_names = [n.replace('Tramlnk', 'Tramlink') if 'Tramlnk' in n else n for n in system_names]
             # Get column names for the other systems table
             headers = list(more_itertools.unique_everseen([h.text for h in web_page_text.find_all('th')]))
             # Parse table data for each system
-            table_data = web_page_text.find_all('table', {'border': 1})
+            table_data = web_page_text.find_all('table', {'width': '1100px'})
             tables = [pd.DataFrame(parse_tr(headers, table.find_all('tr')), columns=headers) for table in table_data]
+            codes = [tables[i] for i in range(len(tables)) if i % 2 != 0]
             # Create a dict
-            other_systems_codes = dict(zip(systems, tables))
+            other_systems_codes = dict(zip(system_names, codes))
         except Exception as e:
             print("Scraping location data for other systems ... failed due to '{}'.".format(e))
             other_systems_codes = None
