@@ -1,4 +1,4 @@
-## Explore wind-related delays
+## Explore wind-related delays on GB's rail network
 This is a data model for prediction of weather-related incidents on rail network in Great Britain. The method is
 demonstrated with a case study example in the context of delays due largely to wind effects.
 
