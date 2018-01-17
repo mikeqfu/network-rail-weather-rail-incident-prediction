@@ -6,6 +6,7 @@ is demonstrated with a case study example in the context of delays due largely t
 [1] **Fu, Q**. and Easton, J. M., A data model for prediction of weather-related rail incidents: a case-study example of
  wind-related incidents on the rail network in Great Britain, paper presented at the 50th Annual Conference of the
  Universities’ Transport Study Group, London, UK, 03-05 January 2018. (Unpublished.)
+
 [2] **Fu, Q**. and Easton, J. M., How does existing data improve decision making? A case study of wind-related incidents
  on rail network in Great Britain, paper presented at the 2016 International Conference on Railway Engineering,
  Brussels, Belgium, 12-13 May 2016. Published in the Proceedings of the International Conference on Railway Engineering
