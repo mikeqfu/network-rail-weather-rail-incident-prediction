@@ -1,3 +1,5 @@
+""" Helper functions used for converting X to Y """
+
 import subprocess
 from math import sqrt, pi, sin, cos, tan, atan2, floor
 
