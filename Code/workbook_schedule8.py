@@ -1,3 +1,5 @@
+""" Reports on Schedule 8 incidents """
+
 import datetime
 import glob
 import os

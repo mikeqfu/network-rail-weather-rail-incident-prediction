@@ -1,4 +1,4 @@
-""" A prototype model """
+""" A prototype model in the context of wind-related incidents """
 
 import datetime
 import itertools
@@ -41,9 +41,9 @@ def cdd_mod_dat(*directories):
     return path
 
 
-# Change directory to "Model\\Trial_" and sub-directories
-def cdd_mod_trial(trial_id=0, *directories):
-    path = cdd("Model", "Trial_{}".format(trial_id))
+# Change directory to "Model\\Prototype_Wind\\Trial_" and sub-directories
+def cdd_mod_wind(trial_id=0, *directories):
+    path = cdd("Model", "Prototype_Wind", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -105,8 +105,8 @@ def calculate_weather_variables_stats(weather_data):
     """
     Note: to get the n-th percentitle, use percentile(n)
 
-    This function also returns the weather dataframe indices. The corresponding
-    weather conditions in that weather cell might cause wind-related incidents.
+    This function also returns the weather dataframe indices. The corresponding weather conditions in that weather
+    cell might cause wind-related incidents.
     """
     # Compute the statistics
     weather_stats_computations = specify_weather_stats_calculations()
@@ -337,12 +337,12 @@ def get_furlongs_info_from_veg_db(location_data_only=False, update=False):
 # Get adjusted Start and End mileages
 def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
     """
-    :param furlongs: 
-    :param elr: 
-    :param start_mileage: 
-    :param end_mileage: 
-    :param shift_yards: 
-    :return: 
+    :param furlongs:
+    :param elr:
+    :param start_mileage:
+    :param end_mileage:
+    :param shift_yards:
+    :return:
     """
     elr_furlongs = furlongs[furlongs.ELR == elr]
 
@@ -902,21 +902,13 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
     return ivdata
 
 
-# Categorise wind directions into four quadrants
-def categorise_wind_directions(direction_degree):
-    if 0 <= direction_degree < 90:
-        return 1
-    elif 90 <= direction_degree < 180:
-        return 2
-    elif 180 <= direction_degree < 270:
-        return 3
-    elif 270 <= direction_degree < 360:
-        return 4
+# ====================================================================================================================
+""" Integrate both the weather and vegetation data """
 
 
 # Integrate the weather and vegetation conditions for incident locations
-def get_incident_data_with_weather_and_vegetation(route=None, weather='Wind',
-                                                  ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-24,
+def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
+                                                  ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
                                                   update=False):
     filename = dbm.make_filename("mod_data", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
@@ -939,6 +931,17 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather='Wind',
 
             # Electrified
             mdata.Electrified = mdata.Electrified.apply(int)
+
+            # Define a function the categorises wind directions into four quadrants
+            def categorise_wind_directions(direction_degree):
+                if 0 <= direction_degree < 90:
+                    return 1
+                elif 90 <= direction_degree < 180:
+                    return 2
+                elif 180 <= direction_degree < 270:
+                    return 3
+                elif 270 <= direction_degree < 360:
+                    return 4
 
             # Categorise average wind directions into 4 quadrants
             mdata['wind_direction'] = mdata.WindDirection_avg.apply(categorise_wind_directions)
@@ -1014,10 +1017,10 @@ def specify_explanatory_variables():
         'wind_direction_2',  # [90°, 180°)
         'wind_direction_3',  # [180°, 270°)
         'wind_direction_4',  # [270°, 360°)
+        'Temperature_diff',
         # 'Temperature_avg',
         # 'Temperature_max',
         # 'Temperature_min',
-        'Temperature_diff',
         'RelativeHumidity_max',
         'Snowfall_max',
         'TotalPrecipitation_max',
@@ -1138,13 +1141,13 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
 def save_result_to_excel(result, writer):
     result_file = dbm.make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                     shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    writer = pd.ExcelWriter(cdd_mod_trial(trial_id, result_file), engine='xlsxwriter')
+    writer = pd.ExcelWriter(cdd_mod_wind(trial_id, result_file), engine='xlsxwriter')
     info, estimates = pd.read_html(result.summary().as_html().replace(':', ''))
     info_0, info_1 = info.iloc[:, :2].set_index(0), info.iloc[:, 2:].set_index(2)
 """
 
 
-# Fit a prototype model
+# A prototype model in the context of wind-related incidents
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Wind',
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -1209,7 +1212,6 @@ def logistic_regression_model(trial_id=0,
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
-        # mdata = mdata[mdata.DelayMinutes < mdata.DelayMinutes.max()]
         mdata = mdata[mdata.DelayMinutes <= np.percentile(mdata.DelayMinutes, outlier_pctl)]
         # from utils import get_bounds_extreme_outliers
         # lo, up = get_bounds_extreme_outliers(mdata.DelayMinutes, k=1.5)
@@ -1307,8 +1309,9 @@ def logistic_regression_model(trial_id=0,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            plt.savefig(cdd_mod_trial(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = dbm.cdd_metex_db_fig_pub("01 Data integration", "Prediction", "ROC" + save_as)  # Fig. 6.
+            plt.savefig(cdd_mod_wind(trial_id, "ROC" + save_as), dpi=dpi)
+            path_to_file_roc = dbm.cdd_metex_db_fig_pub("Data integration and prototype model",
+                                                        "Prediction", "ROC" + save_as)  # Fig. 6.
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
                 svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
@@ -1331,8 +1334,8 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            plt.savefig(cdd_mod_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = dbm.cdd_metex_db_fig_pub("01 Data integration", "Prediction",
+            plt.savefig(cdd_mod_wind(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            path_to_file_pred = dbm.cdd_metex_db_fig_pub("Data integration and prototype model", "Prediction",
                                                          "Predicted-likelihood" + save_as)
             plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
             if save_as == ".svg":
@@ -1395,7 +1398,7 @@ def logistic_regression_model(trial_id=0,
     # filename = dbm.make_filename("data", route, weather,
     #                              ip_start_hrs, ip_end_hrs, nip_start_hrs,
     #                              shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    # save_pickle(resources, cdd_mod_trial(trial_id, filename))
+    # save_pickle(resources, cdd_mod_wind(trial_id, filename))
 
     return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold
 
@@ -1497,7 +1500,7 @@ def view_trial_data(trial_id=10, route='ANGLIA', weather='Wind',
                     shift_yards_same_elr=440, shift_yards_diff_elr=220, hazard_pctl=50):
     filename = dbm.make_filename("data", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                  shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_file = cdd_mod_trial(trial_id, filename)
+    path_to_file = cdd_mod_wind(trial_id, filename)
     try:
         load_pickle(path_to_file)
     except Exception as e:

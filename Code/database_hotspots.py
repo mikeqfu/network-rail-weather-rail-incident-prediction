@@ -1,4 +1,4 @@
-""" Plotting hotspots of weather- (wind-) related incidents """
+""" Plotting hotspots of weather-related incidents in the context of wind-related delays """
 
 import glob
 import itertools
@@ -285,6 +285,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
     # Show legend  # setfont = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
     font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
     plt.legend(scatterpoints=10, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
+
     print("Done.")
 
 
@@ -478,16 +479,18 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
     :param dpi: [int] or None
     :return:
     """
-    if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
-        print("Saving the figure ... ", end="")
-        fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
-                      ['cell', 'veg', 'haz'])
-        filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
-        path_to_file = dbm.cdd_metex_db_fig_pub("Data integration and prototype model", "Hotspots", filename + save_as)
-        plt.savefig(path_to_file, dpi=dpi)
-        print("Done.")
-        if save_as == ".svg":
-            svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
+    if save_as is not None:
+        if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
+            print("Saving the figure ... ", end="")
+            fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
+                          ['cell', 'veg', 'haz'])
+            filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
+            path_to_file = dbm.cdd_metex_db_fig_pub("Data integration and prototype model",
+                                                    "Hotspots", filename + save_as)
+            plt.savefig(path_to_file, dpi=dpi)
+            print("Done.")
+            if save_as == ".svg":
+                svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
 
 
 # Plot hotspots of delays for every financial year (2006/07-2014/15) =================================================
@@ -569,6 +572,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
 
+    # Save figure
     save_fig(fig, "annual_delays_cost",
              show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
@@ -684,7 +688,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
 
     cmap = plt.get_cmap(cmap_name)  # 'Oranges', 'RdPu', 'Purples'
     colours = cmap(pd.np.linspace(0, 1., len(jenks_labels)))
-    marker_size = pd.np.linspace(0.9, 2.1, len(jenks_labels)) * 12
+    marker_size = pd.np.linspace(1.0, 2.2, len(jenks_labels)) * 12
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
@@ -767,7 +771,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
     cmap = plt.get_cmap(cmap_name)  # 'RdPu'
     colour_array = pd.np.linspace(0, 1., len(jenks_labels))
     colours = cmap(colour_array)
-    marker_size = pd.np.linspace(0.8, 2.3, len(jenks_labels)) * 12
+    marker_size = pd.np.linspace(1.0, 2.2, len(jenks_labels)) * 12
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.90))
@@ -803,7 +807,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
     cb.draw_all()
 
     cb.ax.text(0., 1.028, "Compensation payments (2006/07-2014/15)",
-               ha='left', va='bottom', size=13, color='#555555', fontname='Cambria')
+               ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest cost, in descending order
     cb.ax.text(0., 0 - 0.16, "Locations accounted for most cost: ",
@@ -848,7 +852,8 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
     jenks_labels = ["<= %s min.  / %s locations" % (format(int(b), ','), c) for b, c in zip(breaks.bins, breaks.counts)]
 
     cmap = plt.get_cmap(cmap_name)
-    colours, marker_size = cmap(pd.np.linspace(0, 1, len(jenks_labels))), pd.np.linspace(1, 2.2, len(jenks_labels)) * 12
+    colours = cmap(pd.np.linspace(0, 1, len(jenks_labels)))
+    marker_size = pd.np.linspace(1.0, 2.2, len(jenks_labels)) * 12
 
     # Plot basemap (with railway tracks)
     fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
@@ -904,6 +909,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
 
 #
 def plotting_hotspots(update=False):
+
     import settings
     settings.mpl_preferences(use_cambria=True, reset=False)
     settings.np_preferences(reset=False)
@@ -940,6 +946,3 @@ def plotting_hotspots(update=False):
         # Delay minutes per incident
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".pdf")
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', True, True, True, ".pdf")
-
-    else:
-        pass

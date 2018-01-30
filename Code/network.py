@@ -1,3 +1,5 @@
+""" Network nodes and links """
+
 from collections import OrderedDict
 
 import pandas as pd
@@ -164,8 +166,7 @@ def get_index(lst_of_dict, key, value):
     next(index for (index, d) in enumerate(lst_of_dict) if d[key] == value)
 
 
-# Construct a dictionary where each key refers to a node name and the
-# corresponding value is a dictionary containing the attributes of the node
+# Construct a dict with each key referring to a node name and the corresponding value is a dict containing the node attr
 def build_dict(lst_of_dicts, key='Node'):
     """
     :param lst_of_dicts:
@@ -202,8 +203,7 @@ def merge_two_dicts(dict1, dict2):
     return new_dict
 
 
-# Given any number of dicts, shallow copy and merge into a new dict,
-# precedence goes to key value pairs in latter dicts.
+# Given any number of dicts, shallow copy and merge into a new dict, precedence goes to key value pairs in latter dicts.
 def merge_dicts(*dicts):
     """
     :param dicts:
@@ -275,7 +275,6 @@ def dic_r(rp_id_seq):
     return new_dict
 
 
-# ------------------------------------------------------------------------------
 # Get all edges on the network of the Anglia
 def edges_of_route(direct=False):
     """

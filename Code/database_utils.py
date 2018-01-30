@@ -196,9 +196,8 @@ def cdd_veg_db(*directories):
 
 
 # Read a table chunk-wise from a database ============================================================================
-def read_table_by_part(
-        db_name, table_name, index_col=None, parse_dates=None, chunk_size=100000,
-        save_as=None, save_by_chunk=False, save_by_value=False):
+def read_table_by_part(db_name, table_name, index_col=None, parse_dates=None, chunk_size=100000,
+                       save_as=None, save_by_chunk=False, save_by_value=False):
     """
     :param db_name: [str] name of a database to query
     :param table_name: [str] name of a queried table from the given database

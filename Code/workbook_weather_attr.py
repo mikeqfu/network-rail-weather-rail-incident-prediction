@@ -1,3 +1,5 @@
+""" Weather attribution of Schedule 8 incidents """
+
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import matplotlib.ticker
@@ -232,6 +234,5 @@ def delay_cost_bar_plot(data, save_as='.png'):
     plt.title('Cost', fontsize=15, fontweight='bold')
     # ax2.set_axis_bgcolor('#dddddd')
 
-    # plt.subplots_adjust(left=0.16, bottom=0.10, right=0.96, top=0.92, wspace=0.16)
-    plt.tight_layout()
+    plt.tight_layout()  # plt.subplots_adjust(left=0.16, bottom=0.10, right=0.96, top=0.92, wspace=0.16)
     plt.savefig('./Figures/Delay and costs.%s' % save_as, dpi=1600)

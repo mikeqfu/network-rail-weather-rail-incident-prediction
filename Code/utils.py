@@ -336,7 +336,7 @@ def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     """
     cmap_param = cmap_discretize(cmap_param, no_of_colours)
     mappable = matplotlib.cm.ScalarMappable(cmap=cmap_param)
-    mappable.set_array([])
+    mappable.set_array(np.array([]))
     mappable.set_clim(-0.5, no_of_colours + 0.5)
     colorbar = matplotlib.pyplot.colorbar(mappable, **kwargs)
     colorbar.set_ticks(np.linspace(0, no_of_colours, no_of_colours))
