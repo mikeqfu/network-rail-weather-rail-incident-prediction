@@ -190,7 +190,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
             if subset_weather_for_nip:
                 weather_data = weather_data.loc[
                     weather_data.WeatherCell.isin(ip_data.WeatherCell) &
-                    ~weather_data.index.isin(itertools.chain(*ip_data.ip_weather_idx))]
+                    ~weather_data.index.isin(itertools.chain(*ip_data.critical_weather_idx))]
 
             # Processing weather data for non-IP
             nip_data = sdata.copy(deep=True)
