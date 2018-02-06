@@ -4,13 +4,13 @@ import datetime
 import itertools
 import os
 import re
-import time
 
 import datetime_truncate
 import matplotlib.pyplot as plt
 import measurement.measures
 import numpy as np
 import pandas as pd
+import shapely.geometry
 import sklearn.metrics
 import sklearn.utils.extmath
 import statsmodels.discrete.discrete_model as smd
@@ -24,9 +24,10 @@ from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yar
 from utils import cdd, load_pickle, save_pickle, find_match
 
 # Apply the preferences ==============================================================================================
-settings.mpl_preferences(use_cambria=True, reset=False)
+settings.mpl_preferences(reset=False)
 settings.np_preferences(reset=False)
 settings.pd_preferences(reset=False)
+plt.rc('font', family='Times New Roman')
 
 # ====================================================================================================================
 """ Change directory """
@@ -41,7 +42,7 @@ def cdd_mod_dat(*directories):
 
 
 # Change directory to "Model\\Prototype_Heat\\Trial_" and sub-directories
-def cdd_mod_wind(trial_id=0, *directories):
+def cdd_mod_heat(trial_id=0, *directories):
     path = cdd("Model", "Prototype_Heat", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
@@ -56,21 +57,21 @@ def cdd_mod_wind(trial_id=0, *directories):
 # Specify the statistics that need to be computed
 def specify_weather_stats_calculations():
     weather_stats_computations = {'Temperature': (np.max, np.min, np.average),
-                                  'RelativeHumidity': np.max,
+                                  'RelativeHumidity': (np.max, np.min, np.average),
                                   'WindSpeed': np.max,
                                   'WindGust': np.max,
                                   'Snowfall': np.max,
-                                  'TotalPrecipitation': np.max}
+                                  'TotalPrecipitation': (np.max, np.min, np.average)}
     return weather_stats_computations
 
 
 # Get all weather variable names
 def weather_variable_names():
     # var_names = db.colnames_db_table('NR_METEX', table_name='Weather')[2:]
-    weather_stats_computations = specify_weather_stats_calculations()
-    agg_colnames = [k + '_max' for k in weather_stats_computations.keys()]
-    agg_colnames.insert(1, 'Temperature_min')
-    agg_colnames.insert(2, 'Temperature_avg')
+    agg_colnames = ['Temperature_max', 'Temperature_min', 'Temperature_avg',
+                    'RelativeHumidity_max', 'RelativeHumidity_min', 'RelativeHumidity_avg',
+                    'WindSpeed_max', 'WindGust_max', 'Snowfall_max',
+                    'TotalPrecipitation_max', 'TotalPrecipitation_min', 'TotalPrecipitation_avg']
     wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
     return agg_colnames + wind_speed_variables
 
@@ -120,48 +121,95 @@ def calculate_weather_variables_stats(weather_data):
     return stats_info
 
 
+# Find Weather Cell ID
+def find_weather_cell_id(longitude, latitude):
+    weather_cell = dbm.get_weather_cell()
+
+    ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
+    ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_lon, weather_cell.ul_lat)]
+    ur = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
+    lr = [shapely.geometry.Point(xy) for xy in zip(weather_cell.lr_lon, weather_cell.lr_lat)]
+
+    poly_list = [[ll[i], ul[i], ur[i], lr[i]] for i in range(len(weather_cell))]
+
+    cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in range(len(weather_cell))]
+
+    pt = shapely.geometry.Point(longitude, latitude)
+
+    id_set = set(weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
+    if len(id_set) == 1:
+        weather_cell_id = list(id_set)[0]
+    else:
+        weather_cell_id = list(id_set)
+    return weather_cell_id
+
+
 # Get TRUST and the relevant weather data for each location
-def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, ip_end_hrs=0, nip_start_hrs=-24,
-                                  subset_weather_for_nip=False, update=False):
+def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
+                                  subset_weather_for_nip=False,
+                                  update=False):
     """
     :param route: [str] Route name
     :param weather: [str] weather category
     :param ip_start_hrs: [int/float]
-    :param ip_end_hrs: [int/float]
+    :param nip_ip_gap:
     :param nip_start_hrs: [int/float]
     :param subset_weather_for_nip: [bool]
     :param update: [bool]
     :return: [DataFrame]
-
-    When offset the date and time data, an alterntiave function for "pd.DateOffset" is "datetime.timedelta"
     """
 
-    filename = dbm.make_filename("incident_location_weather", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs)
+    filename = dbm.make_filename("incident_location_weather", route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs)
     path_to_file = cdd_mod_dat(filename)
 
     if os.path.isfile(path_to_file) and not update:
         iwdata = load_pickle(path_to_file)
     else:
         try:
-            # Getting weather data for all incident locations
+            # ----------------------------------------------------------------------------------------------------
+            """ Get data """
+
+            # Getting incident data for all incident locations
             sdata = dbm.get_schedule8_cost_by_datetime_location_reason(route, weather, update)
             # Drop non-weather-related incident records
             sdata = sdata[sdata.WeatherCategory != ''] if weather is None else sdata
             # Get data for the specified "Incident Periods"
             sdata['incident_duration'] = sdata.EndDate - sdata.StartDate
-            sdata['critical_start'] = sdata.StartDate.apply(
-                datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
-            # sdata['critical_end'] = sdata.EndDate.apply(
-            #     datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_end_hrs)
+            sdata['critical_start'] = \
+                sdata.StartDate.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
             sdata['critical_end'] = sdata.StartDate
             sdata['critical_period'] = sdata.critical_end - sdata.critical_start
-            # Rectify the records for which weather cell id is empty
-            sdata.loc[sdata[sdata.WeatherCell == ''].index, 'WeatherCell'] = 14100
+
+            if sdata.WeatherCell.dtype != 'int64':
+                # Rectify the records for which weather cell id is empty
+                weather_cell = dbm.get_weather_cell()
+                ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
+                ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_lon, weather_cell.ul_lat)]
+                ur = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
+                lr = [shapely.geometry.Point(xy) for xy in zip(weather_cell.lr_lon, weather_cell.lr_lat)]
+                poly_list = [[ll[i], ul[i], ur[i], lr[i]] for i in range(len(weather_cell))]
+                cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in range(len(weather_cell))]
+
+                for i in sdata[sdata.WeatherCell == ''].index:
+                    pt = shapely.geometry.Point(sdata.StartLongitude.loc[i], sdata.StartLatitude.loc[i])
+                    id_set = set(
+                        weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
+                    if len(id_set) == 0:
+                        pt_alt = shapely.geometry.Point(sdata.EndLongitude.loc[i], sdata.EndLatitude.loc[i])
+                        id_set = set(
+                            weather_cell.iloc[
+                                [i for i, p in enumerate(cells) if pt_alt.within(p)]].WeatherCellId.tolist())
+                    if len(id_set) == 0:
+                        pass
+                    else:
+                        sdata.loc[i, 'WeatherCell'] = list(id_set)[0]
+
             # Get weather data
             weather_data = dbm.get_weather().reset_index()
 
             # ----------------------------------------------------------------------------------------------------
             """ Processing weather data for IP - Get weather conditions which led to incidents for each record """
+
             def get_ip_weather_conditions(weather_cell_id, ip_start, ip_end):
                 """
                 :param weather_cell_id: [int] Weather Cell ID
@@ -191,16 +239,17 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
             if subset_weather_for_nip:
                 weather_data = weather_data.loc[
                     weather_data.WeatherCell.isin(ip_data.WeatherCell) &
-                    ~weather_data.index.isin(itertools.chain(*ip_data.ip_weather_idx))]
+                    ~weather_data.index.isin(itertools.chain(*ip_data.critical_weather_idx))]
 
             # Processing weather data for non-IP
             nip_data = sdata.copy(deep=True)
-            nip_data.critical_end = nip_data.critical_start + datetime.timedelta(hours=0)
-            nip_data.critical_start = nip_data.critical_start + datetime.timedelta(hours=nip_start_hrs)
+            nip_data.critical_end = nip_data.critical_start + datetime.timedelta(days=nip_ip_gap)
+            nip_data.critical_start = nip_data.critical_end + datetime.timedelta(hours=nip_start_hrs)
             nip_data.critical_period = nip_data.critical_end - nip_data.critical_start
 
             # -----------------------------------------------------------------------
             """ Get data of weather which did not cause incidents for each record """
+
             def get_nip_weather_conditions(weather_cell_id, nip_start, nip_end, incident_location):
                 # Get non-IP weather data about where and when the incident occurred
                 nip_weather_data = weather_data[
@@ -211,7 +260,7 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
                     (ip_data.StanoxSection == incident_location) &
                     (((ip_data.critical_start < nip_start) & (ip_data.critical_end > nip_start)) |
                      ((ip_data.critical_start < nip_end) & (ip_data.critical_end > nip_end)))]
-                # Skip data of weather causing incidents at around the same time but
+                # Skip data of weather causing incidents at around the same time; but
                 if not ip_overlap.empty:
                     nip_weather_data = nip_weather_data[
                         (nip_weather_data.DateTime < np.min(ip_overlap.critical_start)) |
@@ -234,6 +283,7 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
 
             # --------------------------------
             """ Categorise wind directions """
+
             def categorise_wind_directions(direction_degree):
                 if 0 <= direction_degree < 90:
                     return 1
@@ -249,8 +299,9 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
             wind_direction = pd.get_dummies(iwdata.wind_direction, prefix='wind_direction')
             iwdata = iwdata.join(wind_direction)
 
-            # ----------------------------------------------------
+            # ---------------------------------------------------------------------------------
             """ Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE) """
+
             def categorise_track_orientations(data):
                 data['track_orient'] = None
                 # origin = (-0.565409, 51.23622)
@@ -288,6 +339,31 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
 
             iwdata = iwdata.join(categorise_track_orientations(iwdata))
 
+            # ----------------------------------------------------
+            """ Categorise temperature: 25, 26, 27, 28, 29, 30 """
+
+            # critical_temperature_dat = [
+            #     iwdata.Temperature_max.map(lambda x: 1 if x >= t else -1) for t in range(25, 31)]
+            # critical_temperature = ['Temperature_max ≥ {}°C'.format(t) for t in range(25, 31)]
+            # for dat, col in zip(critical_temperature_dat, critical_temperature):
+            #     iwdata[col] = dat
+
+            def categorise_temperatures(data):
+                data['temperatue_category'] = None
+                data.temperatue_category[data.Temperature_max < 24] = 'Temperature_max < 24°C'
+                data.temperatue_category[data.Temperature_max == 24] = 'Temperature_max = 24°C'
+                data.temperatue_category[data.Temperature_max == 25] = 'Temperature_max = 25°C'
+                data.temperatue_category[data.Temperature_max == 26] = 'Temperature_max = 26°C'
+                data.temperatue_category[data.Temperature_max == 27] = 'Temperature_max = 27°C'
+                data.temperatue_category[data.Temperature_max == 28] = 'Temperature_max = 28°C'
+                data.temperatue_category[data.Temperature_max == 29] = 'Temperature_max = 29°C'
+                data.temperatue_category[data.Temperature_max >= 30] = 'Temperature_max ≥ 30°C'
+                # data.temperatue_category[data.Temperature_max > 30] = 'Temperature_max > 30°C'
+                return data
+
+            iwdata = categorise_temperatures(iwdata)
+            iwdata = iwdata.join(pd.get_dummies(iwdata.temperatue_category, prefix=''))
+
             save_pickle(iwdata, path_to_file)
 
         except Exception as e:
@@ -295,6 +371,39 @@ def get_incident_location_weather(route=None, weather='Heat', ip_start_hrs=-24, 
             iwdata = None
 
     return iwdata
+
+
+def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=600):
+    gap = np.abs(nip_ip_gap)
+    data = [get_incident_location_weather(route='ANGLIA', weather='Heat', nip_ip_gap=-d) for d in range(1, gap + 1)]
+
+    time_and_iloc = ['StartDate', 'EndDate', 'StanoxSection', 'IncidentDescription']
+    ip_temperature_max = data[0][data[0].IncidentReported == 1][time_and_iloc + ['Temperature_max']]
+    diff_means, diff_std = [], []
+    for i in range(0, gap):
+        nip_temperature_max = data[i][data[i].IncidentReported == 0][time_and_iloc + ['Temperature_max']]
+        temp_diffs = pd.merge(ip_temperature_max, nip_temperature_max, on=time_and_iloc, suffixes=('_ip', '_nip'))
+        temp_diff = temp_diffs.Temperature_max_ip - temp_diffs.Temperature_max_nip
+        diff_means.append(temp_diff.abs().mean())
+        diff_std.append(temp_diff.abs().std())
+
+    plt.figure()
+    if add_errbar:
+        container = plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std, capsize=4,
+                            width=0.7, color='#9FAFBE')
+        connector, caplines, (vertical_lines,) = container.errorbar.lines
+        vertical_lines.set_color('#666666')
+        for cap in caplines:
+            cap.set_color('#da8067')
+    else:
+        plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7, color='#9FAFBE')
+        plt.grid(False)
+    plt.xticks(np.arange(1, len(diff_means) + 1), fontsize=14)
+    plt.xlabel('Latent period (Number of days)', fontsize=14)
+    plt.ylabel('Temperature deviation (°C)', fontsize=14)
+    plt.tight_layout()
+
+    plt.savefig(cdd_mod_heat(0, "Temp deviation" + save_as), dpi=dpi)
 
 
 # ====================================================================================================================
@@ -951,6 +1060,9 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
 
             ivdata = incident_location_furlongs.join(vegetation_statistics)
 
+            # Electrified
+            ivdata.Electrified = ivdata.Electrified.apply(int)
+
             save_pickle(ivdata, path_to_file)
 
         except Exception as e:
@@ -965,11 +1077,11 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
 
 
 # Integrate the weather and vegetation conditions for incident locations
-def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
-                                                  ip_start_hrs=-24, ip_end_hrs=0, nip_start_hrs=-24,
+def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat',
+                                                  ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
                                                   update=False):
-    filename = dbm.make_filename("mod_data", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+    filename = dbm.make_filename("mod_data", route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                  shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     path_to_file = cdd_mod_dat(filename)
 
@@ -978,17 +1090,16 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
     else:
         try:
             # Get Schedule 8 incident and weather data for locations
-            iwdata = get_incident_location_weather(route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+            iwdata = get_incident_location_weather(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                                    subset_weather_for_nip=False, update=update)
             # Get vegetation conditions for the locations
             ivdata = get_incident_location_vegetation(route, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
             iv_features = [f for f in ivdata.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
             ivdata = ivdata[iv_features]
-            mdata = pd.merge(iwdata, ivdata, how='inner', on=list(set(iwdata.columns) & set(iv_features)))
 
-            # Electrified
-            mdata.Electrified = mdata.Electrified.apply(int)
+            # Merge the above two data sets
+            mdata = pd.merge(iwdata, ivdata, how='inner', on=list(set(iwdata.columns) & set(iv_features)))
 
             save_pickle(mdata, path_to_file)
 
@@ -1051,25 +1162,41 @@ def get_data_by_season(mdata, season):
 # Specify the explanatory variables considered in this prototype model
 def specify_explanatory_variables():
     return [
-        'Temperature_diff',
-        'Temperature_max',
         # 'Temperature_min',
         # 'Temperature_avg',
-        'track_orientation_E_W',
+        # 'Temperature_max ≥ 25°C',
+        # 'Temperature_max ≥ 26°C',
+        # 'Temperature_max ≥ 27°C',
+        # 'Temperature_max ≥ 28°C',
+        # 'Temperature_max ≥ 29°C',
+        # 'Temperature_max ≥ 30°C',
+        # 'Temperature_max',
+        'Temperature_diff',
+        # '_Temperature_max < 24°C',
+        '_Temperature_max = 24°C',
+        '_Temperature_max = 25°C',
+        '_Temperature_max = 26°C',
+        '_Temperature_max = 27°C',
+        '_Temperature_max = 28°C',
+        '_Temperature_max = 29°C',
+        '_Temperature_max ≥ 30°C',
+        # 'track_orientation_E_W',
         'track_orientation_NE_SW',
         'track_orientation_NW_SE',
-        'track_orientation_N_S'
+        'track_orientation_N_S',
         # 'WindGust_max',
-        # 'WindSpeed_avg',
+        'WindSpeed_avg',
         # 'WindDirection_avg',
-        'WindSpeed_max',
-        # 'wind_direction_1',  # [0°, 90°)
-        'wind_direction_2',  # [90°, 180°)
-        'wind_direction_3',  # [180°, 270°)
-        'wind_direction_4',  # [270°, 360°)
-        'RelativeHumidity_max',
-        'Snowfall_max',
-        'TotalPrecipitation_max',
+        # 'WindSpeed_max',
+        # # 'wind_direction_1',  # [0°, 90°)
+        # 'wind_direction_2',  # [90°, 180°)
+        # 'wind_direction_3',  # [180°, 270°)
+        # 'wind_direction_4',  # [270°, 360°)
+        # 'RelativeHumidity_max',
+        'RelativeHumidity_avg',
+        # 'Snowfall_max',
+        # 'TotalPrecipitation_max',
+        'TotalPrecipitation_avg',
         # 'Electrified',
         # 'CoverPercentAlder',
         # 'CoverPercentAsh',
@@ -1085,15 +1212,15 @@ def specify_explanatory_variables():
         # 'CoverPercentSweetChestnut',
         # 'CoverPercentSycamore',
         # 'CoverPercentWillow',
-        # 'CoverPercentOpenSpace',
-        'CoverPercentOther',
-        'CoverPercentVegetation',
+        'CoverPercentOpenSpace',
+        # 'CoverPercentOther',
+        # 'CoverPercentVegetation',
         # 'CoverPercentDiff',
         # 'TreeDensity',
         # 'TreeNumber',
-        'TreeNumberDown',
-        'TreeNumberUp',
-        'HazardTreeDensity',
+        # 'TreeNumberDown',
+        # 'TreeNumberUp',
+        # 'HazardTreeDensity',
         # 'HazardTreeNumber',
         # 'HazardTreediameterM_max',
         # 'HazardTreediameterM_min',
@@ -1107,91 +1234,78 @@ def specify_explanatory_variables():
 
 
 # Describe basic statistics about the main explanatory variables
-def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
-    fig = plt.figure(figsize=(12, 5))
+def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
+    plt.figure(figsize=(13, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
-    ax1 = fig.add_subplot(161)
-    mdata.WindGust_max.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
-    # train_set[['WindGust_max']].boxplot(column='WindGust_max', ax=ax1, boxprops=dict(color='k'))
+    ax1 = plt.subplot2grid((1, 8), (0, 0))
+    train_set.Temperature_diff.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
     ax1.set_xticklabels('')
-    plt.xlabel('Max. Gust', fontsize=13, labelpad=16)
-    plt.ylabel('($\\times$10 mph)', fontsize=12, rotation=0)
-    ax1.yaxis.set_label_coords(-0.1, 1.02)
-
-    ax2 = fig.add_subplot(162)
-    mdata.wind_direction.value_counts().sort_index().plot.bar(color='#4c76e1', rot=0, fontsize=12)
-    # ax2.xaxis.set_ticks_position('top')
-    plt.xlabel('Avg. Wind Direction', fontsize=13)
-    plt.ylabel('No.', fontsize=12, rotation=0)
-    ax2.yaxis.set_label_coords(-0.1, 1.02)
-
-    ax3 = fig.add_subplot(163)
-    mdata.Temperature_diff.plot.box(color=colour, ax=ax3, widths=0.5, fontsize=12)
-    ax3.set_xticklabels('')
-    plt.xlabel('Temp. Diff.', fontsize=13, labelpad=16)
+    plt.xlabel('Temp. Diff.', fontsize=13, labelpad=39)
     plt.ylabel('(°C)', fontsize=12, rotation=0)
-    ax3.yaxis.set_label_coords(-0.1, 1.02)
+    ax1.yaxis.set_label_coords(0.05, 1.01)
 
-    ax4 = fig.add_subplot(164)
-    mdata.RelativeHumidity_max.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
+    ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
+    train_set.temperatue_category.value_counts().plot.bar(color='#537979', rot=-45, fontsize=12)
+    plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'], fontsize=12)
+    plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
+    plt.ylabel('No.', fontsize=12, rotation=0)
+    ax2.yaxis.set_label_coords(0.0, 1.01)
+
+    ax3 = plt.subplot2grid((1, 8), (0, 3))
+    track_orient = train_set.track_orient.value_counts()
+    track_orient.index = [i.replace('_', '-') for i in track_orient.index]
+    track_orient.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
+    plt.xlabel('Track orientation', fontsize=13)
+    plt.ylabel('No.', fontsize=12, rotation=0)
+    ax3.yaxis.set_label_coords(0.0, 1.01)
+
+    ax4 = plt.subplot2grid((1, 8), (0, 4))
+    train_set.WindSpeed_avg.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
     ax4.set_xticklabels('')
-    plt.xlabel('Max. R.H.', fontsize=13, labelpad=16)
-    plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
-    ax4.yaxis.set_label_coords(-0.1, 1.02)
+    plt.xlabel('Average\nWind speed', fontsize=13, labelpad=29)
+    plt.ylabel('($\\times$10 mph)', fontsize=12, rotation=0)
+    ax4.yaxis.set_label_coords(0.2, 1.01)
 
-    ax5 = fig.add_subplot(165)
-    mdata.Snowfall_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
+    ax5 = plt.subplot2grid((1, 8), (0, 5))
+    train_set.RelativeHumidity_avg.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
     ax5.set_xticklabels('')
-    plt.xlabel('Max. Sowfall', fontsize=13, labelpad=16)
-    plt.ylabel('(mm)', fontsize=12, rotation=0)
-    ax5.yaxis.set_label_coords(-0.1, 1.02)
+    plt.xlabel('Average\nR.H.', fontsize=13, labelpad=29)
+    plt.ylabel('(%)', fontsize=12, rotation=0)
+    # plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
+    ax5.yaxis.set_label_coords(0.0, 1.01)
 
-    ax6 = fig.add_subplot(166)
-    mdata.TotalPrecipitation_max.plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
+    ax6 = plt.subplot2grid((1, 8), (0, 6))
+    train_set.TotalPrecipitation_avg.plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
     ax6.set_xticklabels('')
-    plt.xlabel('Max. Total Precip.', fontsize=13, labelpad=16)
+    plt.xlabel('Average\nTotal Precip.', fontsize=13, labelpad=29)
     plt.ylabel('(mm)', fontsize=12, rotation=0)
-    ax6.yaxis.set_label_coords(-0.1, 1.02)
+    ax6.yaxis.set_label_coords(0.0, 1.01)
+
+    ax7 = plt.subplot2grid((1, 8), (0, 7))
+    train_set.CoverPercentOpenSpace.plot.box(color=colour, ax=ax7, widths=0.5, fontsize=12)
+    ax7.set_xticklabels('')
+    plt.xlabel('Open Space\nCoverage', fontsize=13, labelpad=29)
+    plt.ylabel('(%)', fontsize=12, rotation=0)
+    ax7.yaxis.set_label_coords(0.0, 1.01)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Weather" + save_as))
+
+    path_to_file_weather = cdd_mod_heat(0, "Variables" + save_as)
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
-
-    #
-    fig_veg = plt.figure(figsize=(12, 5))
-    ax = fig_veg.add_subplot(111)
-    colour_veg = dict(boxes='DarkGreen', whiskers='DarkOrange', medians='DarkBlue', caps='Gray')
-
-    cover_percent_cols = [c for c in mdata.columns if c.startswith('CoverPercent')
-                          and not (c.endswith('Vegetation') or c.endswith('Diff'))]
-    cover_percent_cols += [cover_percent_cols.pop(cover_percent_cols.index('CoverPercentOpenSpace'))]
-    cover_percent_cols += [cover_percent_cols.pop(cover_percent_cols.index('CoverPercentOther'))]
-    mdata[cover_percent_cols].plot.box(color=colour_veg, ax=ax, widths=0.5, fontsize=12)
-    # plt.boxplot([train_set[c] for c in cover_percent_cols])
-    # plt.tick_params(axis='x', labelbottom='off')
-    ax.set_xticklabels([re.search('(?<=CoverPercent).*', c).group() for c in cover_percent_cols], rotation=45)
-    plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
-    ax.yaxis.set_label_coords(0, 1.02)
-
-    plt.tight_layout()
-    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Vegetation" + save_as))
-    plt.savefig(path_to_file_veg, dpi=dpi)
-    if save_as == ".svg":
-        svg_to_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
 
 
 # A prototype model in the context of wind-related incidents
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Heat',
-                              ip_start_hrs=-24, ip_end_hrs=0, nip_start_hrs=-24,
+                              ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
                               shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
-                              season=None,
+                              season='summer',
                               describe_var=False,
-                              outlier_pctl=99,
-                              add_const=True, seed=123, model='logit',
+                              outlier_pctl=100,
+                              add_const=True, seed=0, model='logit',
                               plot_roc=False, plot_pred_likelihood=False,
                               save_as=".tiff", dpi=600,
                               verbose=True):
@@ -1200,7 +1314,7 @@ def logistic_regression_model(trial_id=0,
     :param route: [str]
     :param weather: [str]
     :param ip_start_hrs: [int] or [float]
-    :param ip_end_hrs: [int] or [float]
+    :param nip_ip_gap:
     :param nip_start_hrs: [int] or [float]
     :param shift_yards_same_elr:
     :param shift_yards_diff_elr:
@@ -1234,7 +1348,7 @@ def logistic_regression_model(trial_id=0,
 
     """
     # Get the mdata for modelling
-    mdata = get_incident_data_with_weather_and_vegetation(route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+    mdata = get_incident_data_with_weather_and_vegetation(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                                           shift_yards_same_elr, shift_yards_diff_elr,
                                                           hazard_pctl)
 
@@ -1244,28 +1358,12 @@ def logistic_regression_model(trial_id=0,
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
         mdata = mdata[mdata.DelayMinutes <= np.percentile(mdata.DelayMinutes, outlier_pctl)]
-        # from utils import get_bounds_extreme_outliers
-        # lo, up = get_bounds_extreme_outliers(mdata.DelayMinutes, k=1.5)
-        # mdata = mdata[mdata.DelayMinutes.between(lo, up, inclusive=True)]
 
-    # CoverPercet
-    cover_percent_cols = [x for x in mdata.columns if re.match('^CoverPercent', x)]
-    mdata[cover_percent_cols] = mdata[cover_percent_cols] / 10.0
-    mdata['CoverPercentDiff'] = mdata.CoverPercentVegetation - mdata.CoverPercentOpenSpace - mdata.CoverPercentOther
-    mdata.CoverPercentDiff = mdata.CoverPercentDiff * mdata.CoverPercentDiff.map(lambda x: 1 if x >= 0 else 0)
-
-    #
-    mdata.WindGust_max = mdata.WindGust_max / 10.0
-    mdata.RelativeHumidity_max = mdata.RelativeHumidity_max / 10.0
+    # TreeDensity (number of trees per 10 yards)
+    mdata['TreeDensity'] = mdata['TreeDensity'] / 22.0
 
     # Select features
     explanatory_variables = specify_explanatory_variables()
-    explanatory_variables += [
-        # 'HazardTreediameterM_%s' % hazard_pctl,
-        # 'HazardTreeheightM_%s' % hazard_pctl,
-        # 'HazardTreeprox3py_%s' % hazard_pctl,
-        # 'HazardTreeproxrailM_%s' % hazard_pctl,
-    ]
 
     # Add the intercept
     if add_const:
@@ -1276,21 +1374,21 @@ def logistic_regression_model(trial_id=0,
     nip_idx = mdata.IncidentReported == 0
     mdata.loc[nip_idx, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
 
-    if describe_var:
-        describe_explanatory_variables(mdata, save_as=save_as, dpi=dpi)
-
     # Select data before 2014 as training data set, with the rest being test set
     train_set = mdata[mdata.FinancialYear != 2014]
     test_set = mdata[mdata.FinancialYear == 2014]
+
+    if describe_var:
+        describe_explanatory_variables(train_set, save_as=save_as, dpi=dpi)
 
     try:
         np.random.seed(seed)
         if model == 'probit':
             mod = smd.Probit(train_set.IncidentReported, train_set[explanatory_variables])
-            result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
+            result = mod.fit(method='newton', maxiter=10000, full_output=True, disp=False)
         else:
             mod = smd.Logit(train_set.IncidentReported, train_set[explanatory_variables])
-            result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
+            result = mod.fit(method='newton', maxiter=10000, full_output=True, disp=False)
 
         if verbose:
             print(result.summary())
@@ -1340,9 +1438,8 @@ def logistic_regression_model(trial_id=0,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            plt.savefig(cdd_mod_wind(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = dbm.cdd_metex_db_fig_pub("Data integration and prototype model",
-                                                        "Prediction", "ROC" + save_as)  # Fig. 6.
+            path_to_file_roc = cdd_mod_heat(trial_id, "ROC" + save_as)
+            plt.savefig(cdd_mod_heat(trial_id, "ROC" + save_as), dpi=dpi)
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
                 svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
@@ -1353,24 +1450,24 @@ def logistic_regression_model(trial_id=0,
             plt.figure()
             ax = plt.subplot2grid((1, 1), (0, 0))
             ax.scatter(test_set[incid_ind].incident_prob, test_set[incid_ind].DelayMinutes,
-                       c='#db0101', edgecolors='k', marker='o', linewidths=2, s=80, alpha=.3, label="Incidents")
-            plt.axvline(x=threshold, label="Threshold = %.2f" % threshold, color='b')
-            legend = plt.legend(scatterpoints=1, loc='best', fontsize=14, fancybox=True)
+                       c='#D87272', edgecolors='k', marker='o', linewidths=1.5, s=80,  # alpha=.5,
+                       label="Heat-related incident (2014/15)")
+            plt.axvline(x=threshold, label="Threshold: %.2f" % threshold, color='#e5c100', linewidth=2)
+            legend = plt.legend(scatterpoints=1, loc='best', fontsize=14, fancybox=True, labelspacing=0.6)
             frame = legend.get_frame()
             frame.set_edgecolor('k')
             plt.xlim(xmin=0, xmax=1.03)
             plt.ylim(ymin=-15)
-            ax.set_xlabel("Predicted probability of incident occurrence (for 2014/15)", fontsize=14, fontweight='bold')
+            ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14,
+                          fontweight='bold')
             ax.set_ylabel("Delay minutes", fontsize=14, fontweight='bold')
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            plt.savefig(cdd_mod_wind(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = dbm.cdd_metex_db_fig_pub("Data integration and prototype model", "Prediction",
-                                                         "Predicted-likelihood" + save_as)
-            plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
+            path_to_file_pred = cdd_mod_heat(trial_id, "Predicted-likelihood" + save_as)
+            plt.savefig(path_to_file_pred, dpi=dpi)
             if save_as == ".svg":
-                svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
+                svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))
 
     except Exception as e:
         print(e)
@@ -1384,6 +1481,6 @@ def logistic_regression_model(trial_id=0,
     # filename = dbm.make_filename("data", route, weather,
     #                              ip_start_hrs, ip_end_hrs, nip_start_hrs,
     #                              shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    # save_pickle(resources, cdd_mod_wind(trial_id, filename))
+    # save_pickle(resources, cdd_mod_heat(trial_id, filename))
 
     return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold

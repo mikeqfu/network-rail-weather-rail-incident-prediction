@@ -138,7 +138,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     # Show legend
     plt.plot([], '-', label="Railway track", linewidth=2.2, color=railway_line_color)
     # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=22)
     legend = plt.legend(numpoints=1, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
     frame = legend.get_frame()
     frame.set_edgecolor('none')
@@ -150,7 +150,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
 
 
 # Show weather cells on the map ======================================================================================
-def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#add6ff', legend_loc=(1.05, 0.85)):
+def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#D5EAFF', legend_loc=(1.05, 0.85)):
     """
     :param base_map: [mpl_toolkits.basemap.Basemap] basemap object
     :param update: [bool]
@@ -177,14 +177,15 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
         ur_x, ur_y = base_map(data.ur_Longitude[i], data.ur_Latitude[i])
         lr_x, lr_y = base_map(data.lr_lon[i], data.lr_lat[i])
         xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', alpha=.5, zorder=2)
+        p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', zorder=2)
         plt.gca().add_patch(p)
 
     # Add labels
-    plt.plot([], 's', label="Weather cell", ms=25, color=weather_cell_colour, markeredgecolor='#433f3f', alpha=.5)
+    # plt.plot([], 's', label="Weather cell", ms=30, color=weather_cell_colour, markeredgecolor='#433f3f', alpha=.5)
+    plt.plot([], 's', label="Weather cell", ms=30, color='#D5EAFF', markeredgecolor='#433f3f')
 
     # Show legend  # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=22)
     plt.legend(numpoints=1, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
 
     print("Done.")
@@ -911,7 +912,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
 def plotting_hotspots(update=False):
 
     import settings
-    settings.mpl_preferences(use_cambria=True, reset=False)
+    settings.mpl_preferences(use_cambria=False, reset=False)
     settings.np_preferences(reset=False)
     settings.pd_preferences(reset=False)
 
