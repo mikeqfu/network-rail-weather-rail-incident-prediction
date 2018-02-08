@@ -22,7 +22,7 @@ def mpl_preferences(use_cambria=False, reset=False):
             matplotlib.pyplot.rcParams['font.family'] = 'serif'
         matplotlib.pyplot.rcParams['font.size'] = 13
         matplotlib.pyplot.rcParams['font.weight'] = 'normal'
-        matplotlib.pyplot.rcParams['legend.labelspacing'] = 0.6
+        matplotlib.pyplot.rcParams['legend.labelspacing'] = 0.7
         matplotlib.pyplot.style.use('ggplot')
     else:
         matplotlib.pyplot.rcParams = default_settings

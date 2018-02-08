@@ -3,11 +3,9 @@
 import datetime
 import itertools
 import os
-import re
 
 import datetime_truncate
 import matplotlib.pyplot as plt
-import measurement.measures
 import numpy as np
 import pandas as pd
 import shapely.geometry
@@ -17,11 +15,10 @@ import statsmodels.discrete.discrete_model as smd
 import statsmodels.tools.tools as smd_tools
 
 import database_met as dbm
-import database_veg as dbv
-import railwaycodes_utils as rc_utils
+from prototype_wind import get_incident_location_vegetation
 import settings
-from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yards_to_mileage, svg_to_emf
-from utils import cdd, load_pickle, save_pickle, find_match
+from converters import svg_to_emf
+from utils import cdd, load_pickle, save_pickle, find_match, save_fig
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(reset=False)
@@ -407,672 +404,6 @@ def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=6
 
 
 # ====================================================================================================================
-""" Calculations for vegetation data """
-
-
-# Get Schedule 8 costs (minutes & cost) aggregated for each STANOX section
-def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None):
-    """
-    :param route:
-    :param weather:
-    :param same_elr:
-    :return:
-    """
-    # Load Schedule 8 costs data aggregated by financial year and STANOX section
-    s8data = dbm.get_schedule8_cost_by_location(route, weather).loc[:, 'Route':]
-
-    # Aggregate the data for each STANOX section
-    incident_locations = s8data.groupby(list(s8data.columns)[:-3]).agg(np.sum)
-    incident_locations.reset_index(inplace=True)
-
-    # Create two additional columns about data of mileages (convert str to num)
-    incident_locations[['start_mileage', 'end_mileage']] = \
-        incident_locations[['StartMileage', 'EndMileage']].applymap(str_to_num_mileage)
-
-    # Remove records for which ELR information was missing
-    incident_locations = incident_locations[
-        ~(incident_locations.StartELR.str.contains('^$')) & ~(incident_locations.EndELR.str.contains('^$'))]
-
-    # # Remove records of 'WTS', as vegetation data is unavailable for this ELR
-    # incident_locations = incident_locations[
-    #     ~(incident_locations.StartELR.str.contains(re.compile('^$|WTS'))) &
-    #     ~(incident_locations.EndELR.str.contains(re.compile('^$|WTS')))]
-
-    # Get "ilocations_same_elr" / "ilocations_diff_elr", and "furlongs_veg_db"
-    if same_elr is None:
-        return incident_locations
-    elif same_elr is True:
-        # Subset the data for which the 'StartELR' and 'EndELR' are THE SAME
-        same_elr_idx = incident_locations.StartELR == incident_locations.EndELR
-        incident_locations_same_elr = incident_locations[same_elr_idx]
-        return incident_locations_same_elr
-    elif same_elr is False:
-        # Subset the data for which the 'StartELR' and 'EndELR' are DIFFERENT
-        diff_elr_idx = incident_locations.StartELR != incident_locations.EndELR
-        incident_locations_diff_elr = incident_locations[diff_elr_idx]
-        return incident_locations_diff_elr
-
-
-# Get the ELR & mileage data of furlong locations
-def get_furlongs_info_from_veg_db(location_data_only=False, update=False):
-    """
-    :param location_data_only:
-    :param update:
-    :return:
-    """
-    filename = "furlongs_veg_db"
-    path_to_file = cdd_mod_dat(filename + ".pickle")
-
-    if location_data_only:
-        path_to_file = path_to_file.replace(filename, filename + "_loc_only")
-
-    if os.path.isfile(path_to_file) and not update:
-        furlongs = load_pickle(path_to_file)
-    else:
-        try:
-            # Get the data of furlong location
-            if location_data_only:  # using the original 'FurlongLocation'?
-                furlong_location = dbv.get_furlong_location(useful_columns_only=True, update=update)
-            else:  # using the merged data set 'furlong_vegetation_data'
-                furlong_vegetation_data = dbv.get_furlong_vegetation_conditions(update=update)
-                furlong_vegetation_data.set_index('FurlongID', inplace=True)
-                furlong_location = furlong_vegetation_data.sort_index()
-
-            # Column names of mileage data (as string)
-            str_mileage_colnames = ['StartMileage', 'EndMileage']
-            # Column names of ELR and mileage data (as string)
-            elr_mileage_colnames = ['ELR'] + str_mileage_colnames
-
-            furlongs = furlong_location.drop_duplicates(elr_mileage_colnames)
-
-            # Create two new columns of mileage data (as float)
-            num_mileage_colnames = ['start_mileage', 'end_mileage']
-            furlongs[num_mileage_colnames] = furlongs[str_mileage_colnames].applymap(str_to_num_mileage)
-
-            # Sort the furlong data by ELR and mileage
-            furlongs.sort_values(['ELR'] + num_mileage_colnames, inplace=True)
-
-            save_pickle(furlongs, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            furlongs = None
-
-    return furlongs
-
-
-# Get adjusted Start and End mileages
-def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
-    """
-    :param furlongs:
-    :param elr:
-    :param start_mileage:
-    :param end_mileage:
-    :param shift_yards:
-    :return:
-    """
-    elr_furlongs = furlongs[furlongs.ELR == elr]
-
-    def merge_start_and_end(start_array, end_array):
-        end_array = np.array(end_array)
-        assert len(start_array) == len(end_array)
-        return pd.Series(np.append(start_array, end_array[-1]))
-
-    try:
-        elr_mileages = merge_start_and_end(elr_furlongs.start_mileage, elr_furlongs.end_mileage)
-    except IndexError:
-        return '', '', np.nan, np.nan, np.nan, []
-
-    m_indices = pd.Index(elr_mileages)
-    s_indices = pd.Index(elr_furlongs.StartMileage)
-    e_indices = pd.Index(elr_furlongs.EndMileage)
-
-    def num_mileage_shifting(mileage, y):
-        yards = mileage_to_yards(mileage) + y
-        str_mileage = yards_to_mileage(yards)
-        return str_to_num_mileage(str_mileage)
-
-    if start_mileage <= end_mileage:
-        if start_mileage == end_mileage:
-            start_mileage = num_mileage_shifting(start_mileage, -shift_yards)
-            end_mileage = num_mileage_shifting(end_mileage, shift_yards)
-        else:  # start_mileage < end_mileage
-            pass
-        # Get adjusted mileages of start and end locations ---------------
-        try:
-            adj_start_mileage = elr_mileages[m_indices.get_loc(start_mileage, 'ffill')]
-        except (ValueError, KeyError):
-            adj_start_mileage = elr_mileages[m_indices.get_loc(start_mileage, 'nearest')]
-        try:
-            adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'bfill')]
-        except (ValueError, KeyError):
-            adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'nearest')]
-        # Get 'FurlongID's for extracting vegetation data ----------------
-        try:
-            s_idx = s_indices.get_loc(mileage_to_str(adj_start_mileage))
-        except (ValueError, KeyError):
-            s_idx = e_indices.get_loc(mileage_to_str(adj_start_mileage))
-            adj_start_mileage = str_to_num_mileage(elr_furlongs.StartMileage.iloc[s_idx])
-        try:
-            e_idx = e_indices.get_loc(mileage_to_str(adj_end_mileage))
-        except (ValueError, KeyError):
-            e_idx = s_indices.get_loc(mileage_to_str(adj_end_mileage))
-            adj_end_mileage = str_to_num_mileage(elr_furlongs.EndMileage.iloc[e_idx])
-    else:  # start_mileage > end_mileage:
-        # Get adjusted mileages of start and end locations ---------------
-        try:
-            adj_start_mileage = elr_mileages[m_indices.get_loc(start_mileage, 'bfill')]
-        except (ValueError, KeyError):
-            adj_start_mileage = elr_mileages[m_indices.get_loc(start_mileage, 'nearest')]
-        try:
-            adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'ffill')]
-        except (ValueError, KeyError):
-            adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'nearest')]
-        # Get 'FurlongID's for extracting vegetation data ----------------
-        try:
-            s_idx = e_indices.get_loc(mileage_to_str(adj_start_mileage))
-        except (ValueError, KeyError):
-            s_idx = s_indices.get_loc(mileage_to_str(adj_start_mileage))
-            adj_start_mileage = str_to_num_mileage(elr_furlongs.EndMileage.iloc[s_idx])
-        try:
-            e_idx = s_indices.get_loc(mileage_to_str(adj_end_mileage))
-        except (ValueError, KeyError):
-            e_idx = e_indices.get_loc(mileage_to_str(adj_end_mileage))
-            adj_end_mileage = str_to_num_mileage(elr_furlongs.StartMileage.iloc[e_idx])
-
-    if s_idx <= e_idx:
-        e_idx = e_idx + 1 if e_idx < len(elr_mileages) else e_idx
-        veg_furlongs = elr_furlongs.iloc[s_idx:e_idx]
-    else:  # s_idx > e_idx
-        s_idx = s_idx + 1 if s_idx < len(elr_mileages) else s_idx
-        veg_furlongs = elr_furlongs.iloc[e_idx:s_idx]
-
-    return \
-        mileage_to_str(adj_start_mileage), \
-        mileage_to_str(adj_end_mileage), \
-        adj_start_mileage, adj_end_mileage, \
-        measurement.measures.Distance(mile=np.abs(adj_end_mileage - adj_start_mileage)).yd, \
-        veg_furlongs.index.tolist()
-
-
-# Get furlongs data of incident locations each identified by the same ELRs
-def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yards_same_elr=220, update=False):
-    """
-    :param route:
-    :param weather:
-    :param shift_yards_same_elr: yards
-    :param update:
-    :return:
-    """
-    filename = dbm.make_filename("incident_location_furlongs_same_ELRs", route, weather, shift_yards_same_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incident_location_furlongs_same_elr = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data about for which the 'StartELR' and 'EndELR' are THE SAME
-            incident_locations_same_elr = get_incident_locations_from_metex_db(route, weather, same_elr=True)
-
-            # Get furlong information
-            furlongs = get_furlongs_info_from_veg_db(location_data_only=False, update=update)
-
-            # Get data of each incident's furlong locations for extracting vegetation
-            adjusted_mileages = incident_locations_same_elr.apply(
-                lambda record: adjust_start_end(
-                    furlongs, record.StartELR, record.start_mileage, record.end_mileage, shift_yards_same_elr), axis=1)
-            # Column names
-            colnames = ['StartMileage_adjusted',
-                        'EndMileage_adjusted',
-                        'start_mileage_adjusted',
-                        'end_mileage_adjusted',
-                        'total_yards_adjusted',  # yards
-                        'critical_FurlongIDs']
-            # Get adjusted mileage data
-            adjusted_mileages_data = pd.DataFrame(list(adjusted_mileages), incident_locations_same_elr.index, colnames)
-
-            save_pickle(adjusted_mileages_data, cdd_mod_dat("adjusted_mileages_same_ELRs_{}.pickle".format(route)))
-
-            incident_locations_same_elr.drop(['start_mileage', 'end_mileage'], axis=1, inplace=True)
-            incident_location_furlongs_same_elr = incident_locations_same_elr.join(
-                adjusted_mileages_data[['total_yards_adjusted', 'critical_FurlongIDs']], how='inner').dropna()
-
-            save_pickle(incident_location_furlongs_same_elr, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incident_location_furlongs_same_elr = None
-
-    return incident_location_furlongs_same_elr
-
-
-# Get furlongs data by the same ELRs
-def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_elr=220, update=False):
-    filename = dbm.make_filename("incident_furlongs_same_elr", route, weather, shift_yards_same_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incident_furlongs_same_elr = load_pickle(path_to_file)
-    else:
-        try:
-            incident_location_furlongs_same_elr = \
-                get_incident_location_furlongs_same_elr(route, weather, shift_yards_same_elr, update)
-            # Form a list containing all the furlong ID's
-            veg_furlongs_idx = list(itertools.chain(*incident_location_furlongs_same_elr.critical_FurlongIDs))
-            # Get furlong information
-            furlongs = get_furlongs_info_from_veg_db(location_data_only=False, update=update)
-
-            incident_furlongs_same_elr = furlongs.loc[veg_furlongs_idx]. \
-                drop(['start_mileage', 'end_mileage'], axis=1).drop_duplicates(subset='AssetNumber')
-
-            incident_furlongs_same_elr['IncidentReported'] = 1
-
-            save_pickle(incident_furlongs_same_elr, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incident_furlongs_same_elr = None
-
-    return incident_furlongs_same_elr
-
-
-# Get information of connecting points for different ELRs
-def get_connecting_nodes(route=None, update=False):
-    filename = dbm.make_filename("connecting_nodes_between_ELRs", route, weather=None)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        connecting_nodes = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data about where incidents occurred
-            incident_locations_diff_elr = get_incident_locations_from_metex_db(route, same_elr=False)
-
-            elr_mileage_cols = ['StartELR', 'StartMileage', 'EndELR', 'EndMileage', 'start_mileage', 'end_mileage']
-            diff_elr_mileages = incident_locations_diff_elr[elr_mileage_cols].drop_duplicates()
-
-            # Trying to get the connecting nodes ...
-            def get_conn_mileages(start_elr, start_mileage, end_elr, end_mileage):
-                s_end_mileage, e_start_mileage = rc_utils.get_conn_end_start_mileages(start_elr, end_elr)
-                if s_end_mileage is None:
-                    s_end_mileage = start_mileage
-                if e_start_mileage is None:
-                    e_start_mileage = end_mileage
-                return s_end_mileage, e_start_mileage
-
-            conn_mileages = diff_elr_mileages.apply(
-                lambda x: pd.Series(get_conn_mileages(x.StartELR, x.start_mileage, x.EndELR, x.end_mileage)), axis=1)
-            conn_mileages.columns = ['StartELR_EndMileage', 'EndELR_StartMileage']
-
-            idx_columns = ['StartELR', 'StartMileage', 'EndELR', 'EndMileage']
-            connecting_nodes = diff_elr_mileages[idx_columns].join(conn_mileages).set_index(idx_columns)
-
-            save_pickle(connecting_nodes, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            connecting_nodes = None
-
-    return connecting_nodes
-
-
-# Get furlongs data of incident locations each identified by different ELRs
-def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
-    filename = dbm.make_filename("incident_location_furlongs_diff_ELRs", route, weather, shift_yards_diff_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incident_location_furlongs_diff_elr = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data for which the 'StartELR' and 'EndELR' are DIFFERENT
-            incident_locations_diff_elr = get_incident_locations_from_metex_db(route, weather, same_elr=False)
-
-            # Get furlong information
-            furlongs = get_furlongs_info_from_veg_db(location_data_only=False, update=update)
-
-            # Get connecting points for different (ELRs, mileages)
-            connecting_nodes = get_connecting_nodes(route, update=update)
-
-            incident_locations_diff_elr = incident_locations_diff_elr.join(
-                connecting_nodes, on=connecting_nodes.index.names, how='inner')
-            str_conn_colnames = ['StartELR_EndMileage', 'EndELR_StartMileage']
-            num_conn_colnames = ['StartELR_end_mileage', 'EndELR_start_mileage']
-            incident_locations_diff_elr[num_conn_colnames] = \
-                incident_locations_diff_elr[str_conn_colnames].applymap(str_to_num_mileage)
-
-            """ Get data of each incident's furlong locations for extracting vegetation """
-            # Processing Start locations
-            adjusted_start_elr_mileages = incident_locations_diff_elr.apply(
-                lambda x: adjust_start_end(
-                    furlongs, x.StartELR, x.start_mileage, x.StartELR_end_mileage, shift_yards_diff_elr),
-                axis=1)
-
-            # Column names for adjusted_start_elr_mileages_data
-            start_elr_colnames = [
-                'StartMileage_adjusted',
-                'StartELR_EndMileage_adjusted',
-                'start_mileage_adjusted',
-                'StartELR_end_mileage_adjusted',
-                'StartELR_total_yards_adjusted',  # yards
-                'StartELR_FurlongIDs']
-
-            # Form a dataframe for adjusted_start_elr_mileages_data
-            adjusted_start_elr_mileages_data = pd.DataFrame(list(adjusted_start_elr_mileages),
-                                                            index=incident_locations_diff_elr.index,
-                                                            columns=start_elr_colnames)
-
-            # Find the index for null values in adjusted_start_elr_mileages_data
-            start_elr_null_idx = \
-                adjusted_start_elr_mileages_data[adjusted_start_elr_mileages_data.isnull().any(axis=1)].index
-
-            # Processing End locations
-            adjusted_end_elr_mileages = incident_locations_diff_elr.apply(
-                lambda record: adjust_start_end(
-                    furlongs, record.EndELR, record.EndELR_start_mileage, record.end_mileage, shift_yards_diff_elr),
-                axis=1)
-
-            # Column names for adjusted_end_elr_mileages_data
-            end_elr_colnames = [
-                'EndELR_StartMileage_adjusted',
-                'EndMileage_adjusted',
-                'EndELR_start_mileage_adjusted',
-                'end_mileage_adjusted',
-                'EndELR_total_yards_adjusted',  # yards
-                'EndELR_FurlongIDs']
-
-            # Form a dataframe for adjusted_end_elr_mileages_data
-            adjusted_end_elr_mileages_data = pd.DataFrame(list(adjusted_end_elr_mileages),
-                                                          index=incident_locations_diff_elr.index,
-                                                          columns=end_elr_colnames)
-
-            # Find the index for null values in adjusted_end_elr_mileages_data
-            end_elr_null_idx = adjusted_end_elr_mileages_data[adjusted_end_elr_mileages_data.isnull().any(axis=1)].index
-
-            # --------------------------------------------------------------------------------------------
-            adjusted_mileages_data = adjusted_start_elr_mileages_data.join(adjusted_end_elr_mileages_data)
-            adjusted_mileages_data['total_yards_adjusted'] = list(zip(
-                adjusted_mileages_data.StartELR_total_yards_adjusted.fillna(0),
-                adjusted_mileages_data.EndELR_total_yards_adjusted.fillna(0)))
-            adjusted_mileages_data['critical_FurlongIDs'] = \
-                adjusted_mileages_data.StartELR_FurlongIDs + adjusted_mileages_data.EndELR_FurlongIDs
-
-            # Save the adjusted_mileages_data
-            save_pickle(adjusted_mileages_data, cdd_mod_dat("adjusted_mileages_diff_ELRs.pickle"))
-
-            incident_locations_diff_elr.drop(
-                str_conn_colnames + num_conn_colnames + ['start_mileage', 'end_mileage'], axis=1, inplace=True)
-
-            colnames = incident_locations_diff_elr.columns
-            start_loc_cols = [x for x in colnames if re.match('^Start(?!Location)', x)]
-            end_loc_cols = [x for x in colnames if re.match('^End(?!Location)', x)]
-            incident_locations_diff_elr.loc[start_elr_null_idx, start_loc_cols] = \
-                incident_locations_diff_elr.loc[start_elr_null_idx, end_loc_cols].values
-            incident_locations_diff_elr.loc[end_elr_null_idx, end_loc_cols] = \
-                incident_locations_diff_elr.loc[end_elr_null_idx, start_loc_cols].values
-
-            incident_location_furlongs_diff_elr = incident_locations_diff_elr.join(
-                adjusted_mileages_data[['total_yards_adjusted', 'critical_FurlongIDs']], how='inner').dropna()
-
-            save_pickle(incident_location_furlongs_diff_elr, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incident_location_furlongs_diff_elr = None
-
-    return incident_location_furlongs_diff_elr
-
-
-# Get furlongs data by different ELRS
-def get_incident_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
-    filename = dbm.make_filename("incident_furlongs_diff_ELRs", route, weather, shift_yards_diff_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incid_furlongs_diff_elr = load_pickle(path_to_file)
-    else:
-        try:
-            incident_location_furlongs_diff_elr = get_incident_location_furlongs_diff_elr(route, weather,
-                                                                                          shift_yards_diff_elr)
-
-            # Form a list containing all the furlong ID's
-            veg_furlongs_idx = list(itertools.chain(*incident_location_furlongs_diff_elr.critical_FurlongIDs))
-
-            # Get furlong information
-            furlongs = get_furlongs_info_from_veg_db(location_data_only=False)
-
-            # Merge the data of the starts and ends
-            incid_furlongs_diff_elr = furlongs.loc[veg_furlongs_idx]. \
-                drop(['start_mileage', 'end_mileage'], axis=1).drop_duplicates(subset='AssetNumber')
-
-            incid_furlongs_diff_elr['IncidentReported'] = 1
-
-            save_pickle(incid_furlongs_diff_elr, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incid_furlongs_diff_elr = None
-
-    return incid_furlongs_diff_elr
-
-
-# Combine the incident furlong data of both of the above
-def get_incident_location_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
-    filename = dbm.make_filename("incident_location_furlongs", route, None, shift_yards_same_elr, shift_yards_diff_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incident_location_furlongs = load_pickle(path_to_file)
-    else:
-        try:
-            # Data of incident furlongs: both start and end identified by the same ELR
-            incident_location_furlongs_same_elr = \
-                get_incident_location_furlongs_same_elr(route, None, shift_yards_same_elr)
-            # Data of incident furlongs: start and end are identified by different ELRs
-            incident_location_furlongs_diff_elr = \
-                get_incident_location_furlongs_diff_elr(route, None, shift_yards_diff_elr)
-            # Merge the above two data sets
-            incident_location_furlongs = incident_location_furlongs_same_elr.append(
-                incident_location_furlongs_diff_elr)
-            incident_location_furlongs.sort_index(inplace=True)
-            # incident_location_furlongs['IncidentReported'] = 1
-            save_pickle(incident_location_furlongs, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incident_location_furlongs = None
-
-    return incident_location_furlongs
-
-
-# Combine the incident furlong data of both of the above
-def get_incident_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
-    filename = dbm.make_filename("incident_furlongs", route, None, shift_yards_same_elr, shift_yards_diff_elr)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        incident_furlongs = load_pickle(path_to_file)
-    else:
-        try:
-            # Data of incident furlongs: both start and end identified by the same ELR
-            incid_furlongs_same_elr = get_incident_furlongs_same_elr(route, None, shift_yards_same_elr, update=update)
-            # Data of incident furlongs: start and end are identified by different ELRs
-            incid_furlongs_diff_elr = get_incident_furlongs_diff_elr(route, None, shift_yards_diff_elr, update=update)
-            # Merge the above two data sets
-            furlong_incidents = incid_furlongs_same_elr.append(incid_furlongs_diff_elr)
-            furlong_incidents.drop_duplicates(subset='AssetNumber', inplace=True)
-            # Data of furlong vegetation coverage and hazardous trees
-            furlong_vegetation_data = dbv.get_furlong_vegetation_conditions(route)
-            incident_furlongs = furlong_vegetation_data.join(
-                furlong_incidents[['IncidentReported']], on='FurlongID', how='inner')
-            incident_furlongs.sort_values(by='StructuredPlantNumber', inplace=True)
-            # # incident_furlongs.index = range(len(incident_furlongs))
-            save_pickle(incident_furlongs, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            incident_furlongs = None
-
-    return incident_furlongs
-
-
-# Specify the statistics that need to be computed
-def specify_vegetation_stats_calculations(features):
-    # "CoverPercent..."
-    cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
-
-    veg_stats_calc = dict(zip(cover_percents, [np.sum] * len(cover_percents)))
-
-    veg_stats_calc.update({'AssetNumber': np.count_nonzero,
-                           'TreeNumber': np.sum,
-                           'TreeNumberUp': np.sum,
-                           'TreeNumberDown': np.sum,
-                           'Electrified': np.any,
-                           'DateOfMeasure': lambda x: tuple(x),
-                           # 'AssetDesc1': np.all,
-                           # 'IncidentReported': np.any
-                           'HazardTreeNumber': np.sum})
-
-    # variables for hazardous trees
-    hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
-    hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
-    hazard_rest = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
-    # Computations for hazardous trees variables
-    hazard_calc = [dict(zip(hazard_rest, [lambda x: tuple(x)] * len(hazard_rest))),
-                   dict(zip(hazard_min, [np.min] * len(hazard_min))),
-                   dict(zip(hazard_max, [np.max] * len(hazard_max)))]
-
-    # Update vegetation_stats_computations
-    veg_stats_calc.update({k: v for d in hazard_calc for k, v in d.items()})
-
-    return cover_percents, hazard_rest, veg_stats_calc
-
-
-# Get vegetation conditions for incident locations
-def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220,
-                                     hazard_pctl=50, update=False):
-    """
-    Note that the "CoverPercent..." in furlong_vegetation_data has been
-    amended when furlong_data was read. Check the function get_furlong_data().
-    """
-    filename = dbm.make_filename("incident_location_vegetation", route, None,
-                                 shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_file = cdd_mod_dat(filename)
-
-    if os.path.isfile(path_to_file) and not update:
-        ivdata = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data of furlong vegetation coverage and hazardous trees
-            furlong_vegetation_data = dbv.get_furlong_vegetation_conditions(update=update).set_index('FurlongID')
-
-            # Get all column names as features
-            features = furlong_vegetation_data.columns
-            # Specify the statistics that need to be computed
-            cover_percents, hazard_rest, veg_stats_calc = specify_vegetation_stats_calculations(features)
-
-            # Get features which would be filled with "0" and "inf", respectively
-            fill_0 = [x for x in features if re.match('.*height', x)] + ['HazardTreeNumber']
-            fill_inf = [x for x in features if re.match('^.*prox|.*diam', x)]
-
-            # Define a function that computes vegetation stats for each incident record
-            def compute_vegetation_variables_stats(furlong_ids, start_elr, end_elr, total_yards_adjusted):
-                """
-                Note: to get the n-th percentitle may use percentile(n)
-                """
-                vegetation_data = furlong_vegetation_data.loc[furlong_ids]
-
-                veg_stats = vegetation_data.groupby('ELR').aggregate(veg_stats_calc)
-                veg_stats[cover_percents] = veg_stats[cover_percents].div(veg_stats.AssetNumber, axis=0).values
-
-                if start_elr == end_elr:
-                    if np.isnan(veg_stats.HazardTreeNumber.values):
-                        veg_stats[fill_0] = 0.0
-                        veg_stats[fill_inf] = 999999.0
-                    else:
-                        assert isinstance(hazard_pctl, int) and 0 <= hazard_pctl <= 100
-                        veg_stats[hazard_rest] = veg_stats[hazard_rest].applymap(
-                            lambda x: np.nanpercentile(tuple(itertools.chain(*pd.Series(x).dropna())), hazard_pctl))
-                else:
-                    if np.all(np.isnan(veg_stats.HazardTreeNumber.values)):
-                        veg_stats[fill_0] = 0.0
-                        veg_stats[fill_inf] = 999999.0
-                        calc_further = {k: lambda y: np.average(y) for k in hazard_rest}
-                    else:
-                        veg_stats[hazard_rest] = veg_stats[hazard_rest].applymap(
-                            lambda y: tuple(itertools.chain(*pd.Series(y).dropna())))
-                        hazard_rest_func = [lambda y: np.nanpercentile(np.sum(y), hazard_pctl)]
-                        calc_further = dict(zip(hazard_rest, hazard_rest_func * len(hazard_rest)))
-
-                    # Specify further calculations
-                    calc_further.update({'AssetNumber': np.sum})
-                    calc_further.update(dict(DateOfMeasure=lambda y: tuple(itertools.chain(*y))))
-                    calc_further.update({k: lambda y: tuple(y) for k in cover_percents})
-                    veg_stats_calc_further = veg_stats_calc.copy()
-                    veg_stats_calc_further.update(calc_further)
-
-                    # Rename index (by which the dataframe can be grouped)
-                    veg_stats.index = pd.Index(data=['-'.join(set(veg_stats.index))] * len(veg_stats.index), name='ELR')
-                    veg_stats = veg_stats.groupby(veg_stats.index).aggregate(veg_stats_calc_further)
-
-                    # Calculate the cover percents across two neighbouring ELRs
-                    def overall_cover_percent(cp_start_and_end):
-                        # (start * end) / (start + end)
-                        multiplier = np.prod(total_yards_adjusted) / np.sum(total_yards_adjusted)
-                        # 1/start, 1/end
-                        cp_start, cp_end = cp_start_and_end
-                        s_, e_ = np.divide(1, total_yards_adjusted)
-                        # a numerator
-                        n = e_ * cp_start + s_ * cp_end
-                        # a denominator
-                        d = np.sum(cp_start_and_end) if np.all(cp_start_and_end) else 1
-                        factor = multiplier * np.divide(n, d)
-                        return factor * d
-
-                    veg_stats[cover_percents] = veg_stats[cover_percents].applymap(overall_cover_percent)
-
-                # Calculate tree densities (number of trees per furlong)
-                veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(np.divide(
-                    np.sum(total_yards_adjusted), 220.0))
-                veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(
-                    np.divide(np.sum(total_yards_adjusted), 220.0))
-
-                # Rearrange the order of features
-                veg_stats = veg_stats[sorted(veg_stats.columns)]
-
-                return veg_stats.values[0].tolist()
-
-            # Get incident_location_furlongs
-            incident_location_furlongs = \
-                get_incident_location_furlongs(route, shift_yards_same_elr, shift_yards_diff_elr, update)
-
-            # Compute vegetation stats for each incident record
-            vegetation_statistics = incident_location_furlongs.apply(
-                lambda x: pd.Series(compute_vegetation_variables_stats(
-                    x.critical_FurlongIDs, x.StartELR, x.EndELR, x.total_yards_adjusted)), axis=1)
-
-            vegetation_statistics.columns = sorted(list(veg_stats_calc.keys()) + ['TreeDensity', 'HazardTreeDensity'])
-            veg_percent = [x for x in cover_percents if re.match('^CoverPercent*.[^Open|thr]', x)]
-            vegetation_statistics['CoverPercentVegetation'] = vegetation_statistics[veg_percent].apply(np.sum, axis=1)
-
-            hazard_rest_pctl = [''.join([x, '_%s' % hazard_pctl]) for x in hazard_rest]
-            rename_features = dict(zip(hazard_rest, hazard_rest_pctl))
-            rename_features.update({'AssetNumber': 'AssetCount'})
-            vegetation_statistics.rename(columns=rename_features, inplace=True)
-
-            ivdata = incident_location_furlongs.join(vegetation_statistics)
-
-            # Electrified
-            ivdata.Electrified = ivdata.Electrified.apply(int)
-
-            save_pickle(ivdata, path_to_file)
-
-        except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
-            ivdata = None
-
-    return ivdata
-
-
-# ====================================================================================================================
 """ Integrate both the weather and vegetation data """
 
 
@@ -1307,7 +638,7 @@ def logistic_regression_model(trial_id=0,
                               outlier_pctl=100,
                               add_const=True, seed=0, model='logit',
                               plot_roc=False, plot_pred_likelihood=False,
-                              save_as=".tiff", dpi=600,
+                              save_as=".svg", dpi=None,
                               verbose=True):
     """
     :param trial_id:
@@ -1359,9 +690,6 @@ def logistic_regression_model(trial_id=0,
     if 95 <= outlier_pctl <= 100:
         mdata = mdata[mdata.DelayMinutes <= np.percentile(mdata.DelayMinutes, outlier_pctl)]
 
-    # TreeDensity (number of trees per 10 yards)
-    mdata['TreeDensity'] = mdata['TreeDensity'] / 22.0
-
     # Select features
     explanatory_variables = specify_explanatory_variables()
 
@@ -1381,23 +709,19 @@ def logistic_regression_model(trial_id=0,
     if describe_var:
         describe_explanatory_variables(train_set, save_as=save_as, dpi=dpi)
 
+    np.random.seed(seed)
     try:
-        np.random.seed(seed)
         if model == 'probit':
             mod = smd.Probit(train_set.IncidentReported, train_set[explanatory_variables])
             result = mod.fit(method='newton', maxiter=10000, full_output=True, disp=False)
         else:
             mod = smd.Logit(train_set.IncidentReported, train_set[explanatory_variables])
             result = mod.fit(method='newton', maxiter=10000, full_output=True, disp=False)
-
-        if verbose:
-            print(result.summary())
+        print(result.summary()) if verbose else print("")
 
         # Odds ratios
         odds_ratios = pd.DataFrame(np.exp(result.params), columns=['OddsRatio'])
-        if verbose:
-            print("\nOdds ratio:")
-            print(odds_ratios)
+        print("\n{}".format(odds_ratios)) if verbose else print("")
 
         # Prediction
         test_set['incident_prob'] = result.predict(test_set[explanatory_variables])
@@ -1413,15 +737,13 @@ def logistic_regression_model(trial_id=0,
         test_set['incident_prediction'] = test_set.incident_prob.apply(lambda x: 1 if x >= threshold else 0)
         test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
         mod_acc = np.divide(test.sum(), len(test))
-        if verbose:
-            print("\nAccuracy: %f" % mod_acc)
+        print("\nAccuracy: %f" % mod_acc) if verbose else print("")
 
         # incident prediction accuracy
         incid_only = test_set[test_set.IncidentReported == 1]
         test_acc = pd.Series(incid_only.IncidentReported == incid_only.incident_prediction)
         incid_acc = np.divide(test_acc.sum(), len(test_acc))
-        if verbose:
-            print("Incident accuracy: %f" % incid_acc)
+        print("Incident accuracy: %f" % incid_acc) if verbose else print("")
 
         if plot_roc:
             plt.figure()
@@ -1436,13 +758,8 @@ def logistic_regression_model(trial_id=0,
             # plt.title('Receiver operating characteristic example')
             plt.legend(loc='lower right', fontsize=14)
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
-            # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            path_to_file_roc = cdd_mod_heat(trial_id, "ROC" + save_as)
-            plt.savefig(cdd_mod_heat(trial_id, "ROC" + save_as), dpi=dpi)
-            plt.savefig(path_to_file_roc, dpi=dpi)
-            if save_as == ".svg":
-                svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
+            save_fig(cdd_mod_heat(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -1458,29 +775,16 @@ def logistic_regression_model(trial_id=0,
             frame.set_edgecolor('k')
             plt.xlim(xmin=0, xmax=1.03)
             plt.ylim(ymin=-15)
-            ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14,
-                          fontweight='bold')
+            ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14, fontweight='bold')
             ax.set_ylabel("Delay minutes", fontsize=14, fontweight='bold')
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            path_to_file_pred = cdd_mod_heat(trial_id, "Predicted-likelihood" + save_as)
-            plt.savefig(path_to_file_pred, dpi=dpi)
-            if save_as == ".svg":
-                svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))
+            save_fig(cdd_mod_heat(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)
         result = e
         mod_acc, incid_acc, threshold = np.nan, np.nan, np.nan
-
-    # from utils import get_variable_names
-    # repo = locals()
-    # resources = {k: repo[k]
-    #              for k in get_variable_names(mdata, train_set, test_set, result, mod_acc, incid_acc, threshold)}
-    # filename = dbm.make_filename("data", route, weather,
-    #                              ip_start_hrs, ip_end_hrs, nip_start_hrs,
-    #                              shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    # save_pickle(resources, cdd_mod_heat(trial_id, filename))
 
     return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold

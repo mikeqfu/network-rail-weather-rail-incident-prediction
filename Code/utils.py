@@ -12,6 +12,7 @@ import matplotlib.colors
 import matplotlib.pyplot
 import numpy as np
 import pandas as pd
+import subprocess
 
 
 # Type to confirm whether to proceed or not
@@ -206,6 +207,15 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
         save_json(dat, path_to_file)
     else:
         save_pickle(dat, path_to_file)
+
+
+# Save a figure using plt.savefig()
+def save_fig(path_to_fig_file, dpi):
+    matplotlib.pyplot.figure(path_to_fig_file, dpi=dpi)
+    save_as = os.path.splitext(path_to_fig_file)[1]
+    if save_as == ".svg":
+        path_to_emf = path_to_fig_file.replace(save_as, ".emf")
+        subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
 
 
 # ====================================================================================================================
