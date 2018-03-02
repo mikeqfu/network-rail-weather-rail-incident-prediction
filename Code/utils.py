@@ -61,7 +61,7 @@ def cd(*directories):
 
 # Change directory to "Data"
 def cdd(*directories):
-    path = os.path.join(os.getcwd(), "Data")
+    path = cd("Data")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
