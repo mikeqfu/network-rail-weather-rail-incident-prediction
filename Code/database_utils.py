@@ -18,7 +18,7 @@ import os
 import urllib.parse
 
 import pandas as pd
-import pypyodbc
+import pyodbc
 import sqlalchemy
 
 from utils import cdd, save
@@ -88,13 +88,13 @@ def get_table_names(db_name, schema='dbo', table_type='TABLE'):
     """
     # Make a direct connection to the queried database
     p_str = windows_authentication() + database_driver() + database_server()
-    conn_db = pypyodbc.connect(p_str, database=db_name)
+    conn_db = pyodbc.connect(p_str, database=db_name)
     # Create a cursor
     db_cursor = conn_db.cursor()
     # Get a results set of tables defined in the data source
     table_cursor = db_cursor.tables(schema=schema, tableType=table_type)
     # Return a list of the names of table names
-    return [t.get('table_name') for t in table_cursor]
+    return [t.table_name for t in table_cursor]
 
 
 # Get a list of column names of a given table in a database ==========================================================
@@ -106,9 +106,9 @@ def get_table_colnames(db_name, table_name):
     """
     # Make a direct connection to the queried database
     p_str = windows_authentication() + database_driver() + database_server()
-    conn_db = pypyodbc.connect(p_str, database=db_name)
+    conn_db = pyodbc.connect(p_str, database=db_name)
     db_cursor = conn_db.cursor()
-    colnames = [x['column_name'] for x in db_cursor.columns(table_name)]
+    colnames = [x.column_name for x in db_cursor.columns(table_name)]
     conn_db.close()
     return colnames
 
@@ -123,11 +123,11 @@ def get_table_primary_keys(db_name, table_name=None, schema='dbo', table_type='T
     :return: [dict] {table_name: primary keys}
     """
     p_str = windows_authentication() + database_driver() + database_server()
-    conn_db = pypyodbc.connect(p_str, database=db_name)
+    conn_db = pyodbc.connect(p_str, database=db_name)
     db_cursor = conn_db.cursor()
-    table_names = [table.get('table_name') for table in db_cursor.tables(schema=schema, tableType=table_type)]
+    table_names = [table.table_name for table in db_cursor.tables(schema=schema, tableType=table_type)]
     # Get primary keys for each table
-    pri_keys = [{k['table_name']: k['column_name']} for t in table_names for k in db_cursor.primaryKeys(t)]
+    pri_keys = [{k.table_name: k.column_name} for t in table_names for k in db_cursor.primaryKeys(t)]
     keys = functools.reduce(operator.or_, (set(d.keys()) for d in pri_keys), set())
     # Disconnect the database
     conn_db.close()
