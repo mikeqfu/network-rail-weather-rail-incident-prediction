@@ -466,7 +466,7 @@ def get_imdm(as_dict=False, update=False):
                 imdm.pop('None', None)
             save_pickle(imdm, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             imdm = None
 
     return imdm
@@ -492,7 +492,7 @@ def get_imdm_alias(as_dict=False, update=False):
                 imdm_alias = imdm_alias_dict['IMDM']
             save_pickle(imdm_alias, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             imdm_alias = None
 
     return imdm_alias
@@ -518,7 +518,7 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
                 weather_cell_map = group_items(weather_cell_map, by='WeatherCellId', to_group='IMDM', group_name='IMDM')
             save_pickle(weather_cell_map, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             weather_cell_map = None
 
     return weather_cell_map
@@ -552,7 +552,7 @@ def get_incident_reason_info(database_plus=True, update=False):
             save_pickle(incident_reason_info, path_to_file)
 
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             incident_reason_info = None
 
     return incident_reason_info
@@ -579,7 +579,7 @@ def get_weather_category_lookup(as_dict=False, update=False):
                 weather_category_lookup = weather_category_lookup.to_dict()
             save_pickle(weather_category_lookup, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             weather_category_lookup = None
 
     return weather_category_lookup
@@ -609,7 +609,7 @@ def get_incident_record(update=False):
             # Save the data
             save_pickle(incident_record, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             incident_record = None
 
     return incident_record
@@ -635,7 +635,7 @@ def get_location(update=False):
             # Save the data
             save_pickle(location, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             location = None
 
     return location
@@ -664,7 +664,7 @@ def get_pfpi(update=False):
             # Save the data
             save_pickle(pfpi, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             pfpi = None
 
     return pfpi
@@ -685,7 +685,7 @@ def get_route(update=False):
             # Save the processed data
             save_pickle(route, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             route = None
 
     return route
@@ -777,7 +777,7 @@ def get_stanox_location(nr_mileage_format=True, update=False):
 
             save_pickle(stanox_location, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             stanox_location = None
 
     return stanox_location
@@ -835,7 +835,7 @@ def get_stanox_section(update=False):
             # Save the data
             save_pickle(stanox_section, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             stanox_section = None
 
     return stanox_section
@@ -869,7 +869,7 @@ def get_trust_incident(financial_years_06_14=True, update=False):
             # Save the processed data
             save_pickle(trust_incident, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             trust_incident = None
 
     return trust_incident
@@ -909,7 +909,7 @@ def get_weather(update=False):
             # Save the processed data
             save_pickle(weather_data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             weather_data = None
 
     return weather_data
@@ -976,7 +976,7 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
             # Save the processed data
             save_pickle(weather_cell_map, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(table_name, e))
+            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             weather_cell_map = None
 
     # Plot the weather cells on the map?
@@ -1273,7 +1273,7 @@ def get_schedule8_details(route=None, weather=None, reset_index=False, update=Fa
             schedule8_details = subset(schedule8_details, route, weather, reset_index)
             save_pickle(schedule8_details, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             schedule8_details = None
 
     return schedule8_details
@@ -1314,7 +1314,7 @@ def get_schedule8_details_pfpi(route=None, weather=None, update=False):
             data = schedule8_data[selected_features]
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1362,7 +1362,7 @@ def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12
             save_pickle(data, path_to_file)
 
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1402,7 +1402,7 @@ def get_schedule8_cost_by_location(route=None, weather=None, update=False):
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1433,7 +1433,7 @@ def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
             data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1469,7 +1469,7 @@ def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=Fal
             data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1506,7 +1506,7 @@ def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip
             # Save the merged data
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1543,7 +1543,7 @@ def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1582,7 +1582,7 @@ def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1623,7 +1623,7 @@ def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, upd
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1646,7 +1646,7 @@ def get_schedule8_cost_by_weathercategory(route=None, weather=None, update=False
             data = agg_pfpi_stats(schedule8_data, selected_features)
             save_pickle(data, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data

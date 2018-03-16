@@ -35,13 +35,31 @@ def cdd_veg_db_views(*directories):
 # Route names dictionary
 def get_route_names_dict(reverse=False):
     # title_case = sorted(get_furlong_location()['Route'].unique().tolist())
-    title_cases = [
-        'Anglia', 'East Midlands', 'Kent', 'LNE', 'LNW North', 'LNW South', 'Scotland', 'Sussex', 'Wales', 'Wessex',
-        'Western Thames Valley', 'Western West']
+    title_cases = ['Anglia',
+                   'East Midlands',
+                   'Kent',
+                   'LNE',
+                   'LNW North',
+                   'LNW South',
+                   'Scotland',
+                   'Sussex',
+                   'Wales',
+                   'Wessex',
+                   'Western Thames Valley',
+                   'Western West']
     # upper_case = sorted(get_du_route()['Route'].unique().tolist())
-    upper_cases = [
-        'ANGLIA', 'EAST MIDLANDS', 'KENT', 'LNE', 'LNW North', 'LNW South', 'SCOTLAND', 'SUSSEX', 'WALES', 'WESSEX',
-        'WESTERN Thames Valley', 'WESTERN West']
+    upper_cases = ['ANGLIA',
+                   'EAST MIDLANDS',
+                   'KENT',
+                   'LNE',
+                   'LNW North',
+                   'LNW South',
+                   'SCOTLAND',
+                   'SUSSEX',
+                   'WALES',
+                   'WESSEX',
+                   'WESTERN Thames Valley',
+                   'WESTERN West']
     if not reverse:
         route_names_dict = dict(zip(title_cases, upper_cases))
     else:
@@ -69,10 +87,8 @@ def get_adverse_wind(update=False):
     else:
         try:
             adverse_wind = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(adverse_wind, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             adverse_wind = None
 
     return adverse_wind
@@ -90,8 +106,7 @@ def get_cutting_angle_class(update=False):
             cutting_angle = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(cutting_angle, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             cutting_angle = None
 
     return cutting_angle
@@ -109,8 +124,7 @@ def get_cutting_depth_class(update=False):
             cutting_depth = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(cutting_depth, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             cutting_depth = None
 
     return cutting_depth
@@ -130,8 +144,7 @@ def get_du_list(index=True, update=False):
             if not index:
                 du_list = du_list.reset_index()
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             du_list = None
 
     return du_list
@@ -149,8 +162,7 @@ def get_path_route(update=False):
             path_route = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(path_route, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             path_route = None
 
     return path_route
@@ -175,8 +187,7 @@ def get_du_route(update=False):
             routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'}, inplace=True)
             save_pickle(routes, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             routes = None
 
     return routes
@@ -194,8 +205,7 @@ def get_s8data_from_db_veg(update=False):
             s8data = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(s8data, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             s8data = None
 
     return s8data
@@ -213,8 +223,7 @@ def get_tree_age_class(update=False):
             tree_age_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(tree_age_class, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             tree_age_class = None
 
     return tree_age_class
@@ -232,8 +241,7 @@ def get_tree_size_class(update=False):
             tree_size_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(tree_size_class, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             tree_size_class = None
 
     return tree_size_class
@@ -251,8 +259,7 @@ def get_tree_type(update=False):
             tree_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(tree_type, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             tree_type = None
 
     return tree_type
@@ -270,8 +277,7 @@ def get_felling_type(update=False):
             felling_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(felling_type, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             felling_type = None
 
     return felling_type
@@ -289,8 +295,7 @@ def get_area_work_type(update=False):
             area_work_type = db.read_veg_table(table_name, index_col=veg_pk('AreaWorkType'), save_as=".csv")
             save_pickle(area_work_type, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             area_work_type = None
 
     return area_work_type
@@ -308,8 +313,7 @@ def get_service_detail(update=False):
             service_detail = db.read_veg_table(table_name, index_col=veg_pk('ServiceDetail'), save_as=".csv")
             save_pickle(service_detail, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             service_detail = None
 
     return service_detail
@@ -327,8 +331,7 @@ def get_service_path(update=False):
             service_path = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(service_path, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             service_path = None
 
     return service_path
@@ -346,8 +349,7 @@ def get_supplier(update=False):
             supplier = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(supplier, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             supplier = None
 
     return supplier
@@ -365,8 +367,7 @@ def get_supplier_costs(update=False):
             supplier_costs = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(supplier_costs, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             supplier_costs = None
 
     return supplier_costs
@@ -384,8 +385,7 @@ def get_supplier_costs_area(update=False):
             costs_area = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(costs_area, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             costs_area = None
 
     return costs_area
@@ -403,8 +403,7 @@ def get_supplier_cost_simple(update=False):
             costs_simple = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(costs_simple, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             costs_simple = None
 
     return costs_simple
@@ -422,8 +421,7 @@ def get_tree_action_fractions(update=False):
             tree_action_fractions = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(tree_action_fractions, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             tree_action_fractions = None
 
     return tree_action_fractions
@@ -441,8 +439,7 @@ def get_veg_surv_type_class(update=False):
             veg_surv_type_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(veg_surv_type_class, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             veg_surv_type_class = None
 
     return veg_surv_type_class
@@ -460,8 +457,7 @@ def get_wb_factors(update=False):
             wb_factors = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(wb_factors, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             wb_factors = None
 
     return wb_factors
@@ -479,8 +475,7 @@ def get_weed_spray(update=False):
             weed_spray = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(weed_spray, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             weed_spray = None
 
     return weed_spray
@@ -498,8 +493,7 @@ def get_work_hours(update=False):
             work_hours = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
             save_pickle(work_hours, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             work_hours = None
 
     return work_hours
@@ -605,8 +599,7 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
             save_pickle(furlong_data, path_to_file)
 
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             furlong_data = None
 
     return furlong_data
@@ -652,8 +645,7 @@ def get_furlong_location(useful_columns_only=True, update=False):
             save_pickle(furlong_location, path_to_file)
 
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             furlong_location = None
 
     return furlong_location
@@ -747,8 +739,7 @@ def get_hazard_tree(set_index=False, update=False):
             hazard_tree.dropna(inplace=True)
 
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(table_name))
+            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
             hazard_tree = None
 
     return hazard_tree
@@ -861,8 +852,7 @@ def get_furlong_vegetation_coverage(route=None, update=False):
             save_pickle(furlong_vegetation_coverage, path_to_file)
 
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(os.path.splitext(filename)[0]))
+            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
             furlong_vegetation_coverage = None
 
     return furlong_vegetation_coverage
@@ -919,8 +909,7 @@ def get_hazardous_trees(route=None, update=False):
             save_pickle(hazardous_trees_data, path_to_file)
 
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(os.path.splitext(filename)[0]))
+            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
             hazardous_trees_data = None
 
     return hazardous_trees_data
@@ -972,8 +961,7 @@ def get_furlong_vegetation_conditions(route=None, update=False):
 
             save_pickle(furlong_vegetation_data, path_to_file)
         except Exception as e:
-            print(e)
-            print("Getting '{}' ... Failed.".format(os.path.splitext(filename)[0]))
+            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
             furlong_vegetation_data = None
 
     return furlong_vegetation_data
