@@ -293,7 +293,7 @@ def read_metex_table(table_name, schema='dbo', index_col=None, route=None, weath
     if save_as:
         path_to_file = cdd_metex_db("Tables_original", table_name + save_as)
         if not os.path.isfile(path_to_file) or update:
-            save(table_data, cdd_metex_db("Tables_original", table_name + save_as))
+            save(table_data, path_to_file)
     return table_data
 
 
