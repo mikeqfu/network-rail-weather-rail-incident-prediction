@@ -13,7 +13,7 @@ import pandas.errors
 import requests
 
 from converters import miles_chains_to_mileage
-from utils import save_pickle, load_pickle, is_float
+from utils import is_float, load_pickle, save_pickle
 
 # ====================================================================================================================
 """ Change directories """

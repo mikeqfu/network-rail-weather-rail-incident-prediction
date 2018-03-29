@@ -15,10 +15,10 @@ import statsmodels.discrete.discrete_model as smd
 import statsmodels.tools.tools as smd_tools
 
 import database_met as dbm
-from prototype_wind import get_incident_location_vegetation
 import settings
 from converters import svg_to_emf
-from utils import cdd, load_pickle, save_pickle, find_match, save_fig
+from prototype_wind import get_incident_location_vegetation
+from utils import cdd, find_match, load_pickle, save_fig, save_pickle
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(reset=False)

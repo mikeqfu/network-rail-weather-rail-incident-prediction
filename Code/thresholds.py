@@ -14,7 +14,7 @@ import os
 
 import pandas as pd
 
-from utils import cdd, save_pickle, load_pickle
+from utils import cdd, load_pickle, save_pickle
 
 
 # Change directory to "Schedule 8 incidents"
@@ -31,7 +31,7 @@ def read_thresholds_from_html():
     thr = pd.read_html(cdd("METEX\\Weather thresholds", "Weather-Thresholds_9306121.html"))
     thr = thr[0]
     # Specify column names
-    hdr = thr.ix[0].tolist()
+    hdr = thr.loc[0].tolist()
     thr.columns = hdr
     # Drop the first row, which has been used as the column names
     thr.drop(0, inplace=True)

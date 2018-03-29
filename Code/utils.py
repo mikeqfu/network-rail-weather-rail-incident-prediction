@@ -6,13 +6,13 @@ import json
 import os
 import pickle
 import re
+import subprocess
 
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot
 import numpy as np
 import pandas as pd
-import subprocess
 
 
 # Type to confirm whether to proceed or not

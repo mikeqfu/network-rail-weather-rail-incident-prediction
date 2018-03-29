@@ -14,7 +14,7 @@ import pandas as pd
 import database_met as dbm
 import database_veg as dbv
 import railwaycodes_utils as rc
-from utils import cdd, save, load_pickle
+from utils import cdd, load_pickle, save
 
 
 # Change directory to "Schedule 8 incidents"
@@ -43,7 +43,7 @@ def get_schedule8_weather_cost_report_all_data(route=None, weather=None, update=
         try:
             workbook = pd.ExcelFile(cdd_schedule8("Reports", "Schedule8WeatherCostReport.xlsx"))
             # 'AllData'
-            all_data = workbook.parse(sheetname='AllData')
+            all_data = workbook.parse(sheet_name='AllData')
             all_data.columns = [c.replace(' ', '') for c in all_data.columns]
             all_data.rename(columns={'Weather': 'WeatherCategoryCode',
                                      'Cost': 'DelayCost',
@@ -351,13 +351,13 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             workbook = pd.ExcelFile(cdd_schedule8("Reports", filename + ".xlsm"))
 
             # 'Thresholds'
-            thresholds = workbook.parse(sheetname='Thresholds', parse_cols='A:F').dropna()
+            thresholds = workbook.parse(sheet_name='Thresholds', parse_cols='A:F').dropna()
             thresholds.index = range(len(thresholds))
             thresholds.columns = [col.replace(' ', '') for col in thresholds.columns]
             thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
 
             # 'Data'
-            data = workbook.parse(sheetname='Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
+            data = workbook.parse(sheet_name='Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
             data.columns = [c.replace('(C)', '(degrees Celcius)').replace(' ', '') for c in data.columns]
             data.rename(columns={'imdm': 'IMDM',
                                  'stanoxSection': 'StanoxSection',
@@ -418,7 +418,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
                             on=['IncidentReason', 'IncidentCategoryDescription'], how='inner')
 
             # Weather'CategoryLookup'
-            weather_category_lookup = workbook.parse(sheetname='CategoryLookup')
+            weather_category_lookup = workbook.parse(sheet_name='CategoryLookup')
             weather_category_lookup.columns = ['WeatherCategoryCode', 'WeatherCategory']
 
             # Make a dictionary

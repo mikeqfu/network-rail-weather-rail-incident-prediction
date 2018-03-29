@@ -12,7 +12,6 @@ import sklearn.model_selection
 import database_met as dbm
 import workbook_schedule8 as wbs
 
-
 # ====================================================================================================================
 """ Task 1: Broad classification of incidents into weather-related and non-weather-related """
 
@@ -143,8 +142,8 @@ def classification_model_for_weather_related_incidents():
 
 def get_stats(data):
     # Calculate the proportions of different types of weather-related incidents
-    stats = data. \
-        groupby('WeatherCategory').aggregate({'WeatherCategory': 'count', 'DelayMinutes': np.sum, 'DelayCost': np.sum})
+    stats = data.groupby('WeatherCategory').aggregate(
+        {'WeatherCategory': 'count', 'DelayMinutes': np.sum, 'DelayCost': np.sum})
     stats.rename(columns={'WeatherCategory': 'Count'}, inplace=True)
     stats['percentage'] = stats.Count / len(data) * 100
     # Sort stats in the ascending order of 'percentage'

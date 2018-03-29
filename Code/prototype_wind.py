@@ -20,8 +20,8 @@ import database_met as dbm
 import database_veg as dbv
 import railwaycodes_utils as rc_utils
 import settings
-from converters import str_to_num_mileage, mileage_to_str, mileage_to_yards, yards_to_mileage, svg_to_emf
-from utils import cdd, load_pickle, save_pickle, find_match
+from converters import mileage_to_str, mileage_to_yards, str_to_num_mileage, svg_to_emf, yards_to_mileage
+from utils import cdd, find_match, load_pickle, save_pickle
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(use_cambria=True, reset=False)

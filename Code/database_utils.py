@@ -15,10 +15,10 @@ In order to connect to the database you use the connect method of the Connection
 import functools
 import operator
 import os
+import pyodbc
 import urllib.parse
 
 import pandas as pd
-import pyodbc
 import sqlalchemy
 
 from utils import cdd, save
@@ -55,7 +55,7 @@ def database_server():
     import socket
     socket.gethostname()
     """
-    return 'SERVER={};'.format(os.environ['COMPUTERNAME'] + '\\SQLEXPRESS')
+    return 'SERVER={};'.format(os.environ['COMPUTERNAME'])  # '\\SQLEXPRESS'
 
 
 # Database name ======================================================================================================

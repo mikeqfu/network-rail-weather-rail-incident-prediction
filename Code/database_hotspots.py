@@ -23,7 +23,7 @@ import database_met as dbm
 import database_veg as dbv
 import osm_utils
 from converters import svg_to_emf
-from utils import cdd, save, save_pickle, load_pickle, colorbar_index, confirmed
+from utils import cdd, colorbar_index, confirmed, load_pickle, save, save_pickle
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================

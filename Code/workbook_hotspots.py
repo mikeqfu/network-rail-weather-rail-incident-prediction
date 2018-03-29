@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 import database_met as dbm
-from utils import cdd, save, load_pickle, reset_double_indexes
+from utils import cdd, load_pickle, reset_double_indexes, save
 
 
 # Change directory to "Schedule 8 incidents"
