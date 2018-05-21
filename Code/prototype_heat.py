@@ -491,7 +491,80 @@ def get_data_by_season(mdata, season):
 
 
 # Specify the explanatory variables considered in this prototype model
-def specify_explanatory_variables():
+def specify_explanatory_variables_model_1():
+    return [
+        # 'Temperature_min',
+        # 'Temperature_avg',
+        # 'Temperature_max ≥ 25°C',
+        # 'Temperature_max ≥ 26°C',
+        # 'Temperature_max ≥ 27°C',
+        # 'Temperature_max ≥ 28°C',
+        # 'Temperature_max ≥ 29°C',
+        # 'Temperature_max ≥ 30°C',
+        # 'Temperature_max',
+        'Temperature_diff',
+        # '_Temperature_max < 24°C',
+        '_Temperature_max = 24°C',
+        '_Temperature_max = 25°C',
+        '_Temperature_max = 26°C',
+        '_Temperature_max = 27°C',
+        '_Temperature_max = 28°C',
+        '_Temperature_max = 29°C',
+        '_Temperature_max ≥ 30°C',
+        # 'track_orientation_E_W',
+        'track_orientation_NE_SW',
+        'track_orientation_NW_SE',
+        'track_orientation_N_S',
+        # 'WindGust_max',
+        # 'WindSpeed_avg',
+        # 'WindDirection_avg',
+        # 'WindSpeed_max',
+        # # 'wind_direction_1',  # [0°, 90°)
+        # 'wind_direction_2',  # [90°, 180°)
+        # 'wind_direction_3',  # [180°, 270°)
+        # 'wind_direction_4',  # [270°, 360°)
+        # 'RelativeHumidity_max',
+        # 'RelativeHumidity_avg',
+        # 'Snowfall_max',
+        # 'TotalPrecipitation_max',
+        # 'TotalPrecipitation_avg',
+        # 'Electrified',
+        # 'CoverPercentAlder',
+        # 'CoverPercentAsh',
+        # 'CoverPercentBeech',
+        # 'CoverPercentBirch',
+        # 'CoverPercentConifer',
+        # 'CoverPercentElm',
+        # 'CoverPercentHorseChestnut',
+        # 'CoverPercentLime',
+        # 'CoverPercentOak',
+        # 'CoverPercentPoplar',
+        # 'CoverPercentShrub',
+        # 'CoverPercentSweetChestnut',
+        # 'CoverPercentSycamore',
+        # 'CoverPercentWillow',
+        # 'CoverPercentOpenSpace',
+        # 'CoverPercentOther',
+        # 'CoverPercentVegetation',
+        # 'CoverPercentDiff',
+        # 'TreeDensity',
+        # 'TreeNumber',
+        # 'TreeNumberDown',
+        # 'TreeNumberUp',
+        # 'HazardTreeDensity',
+        # 'HazardTreeNumber',
+        # 'HazardTreediameterM_max',
+        # 'HazardTreediameterM_min',
+        # 'HazardTreeheightM_max',
+        # 'HazardTreeheightM_min',
+        # 'HazardTreeprox3py_max',
+        # 'HazardTreeprox3py_min',
+        # 'HazardTreeproxrailM_max',
+        # 'HazardTreeproxrailM_min'
+    ]
+
+
+def specify_explanatory_variables_model_2():
     return [
         # 'Temperature_min',
         # 'Temperature_avg',
@@ -691,7 +764,7 @@ def logistic_regression_model(trial_id=0,
         mdata = mdata[mdata.DelayMinutes <= np.percentile(mdata.DelayMinutes, outlier_pctl)]
 
     # Select features
-    explanatory_variables = specify_explanatory_variables()
+    explanatory_variables = specify_explanatory_variables_model_2()
 
     # Add the intercept
     if add_const:
@@ -770,7 +843,7 @@ def logistic_regression_model(trial_id=0,
                        c='#D87272', edgecolors='k', marker='o', linewidths=1.5, s=80,  # alpha=.5,
                        label="Heat-related incident (2014/15)")
             plt.axvline(x=threshold, label="Threshold: %.2f" % threshold, color='#e5c100', linewidth=2)
-            legend = plt.legend(scatterpoints=1, loc='best', fontsize=14, fancybox=True, labelspacing=0.6)
+            legend = plt.legend(scatterpoints=1, loc=2, fontsize=14, fancybox=True, labelspacing=0.6)
             frame = legend.get_frame()
             frame.set_edgecolor('k')
             plt.xlim(xmin=0, xmax=1.03)

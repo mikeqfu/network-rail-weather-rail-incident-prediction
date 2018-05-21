@@ -1097,7 +1097,7 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax5 = fig.add_subplot(165)
     mdata.Snowfall_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
     ax5.set_xticklabels('')
-    plt.xlabel('Max. Sowfall', fontsize=13, labelpad=16)
+    plt.xlabel('Max. Snowfall', fontsize=13, labelpad=16)
     plt.ylabel('(mm)', fontsize=12, rotation=0)
     ax5.yaxis.set_label_coords(-0.1, 1.02)
 
@@ -1109,7 +1109,8 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Weather" + save_as))
+    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub(
+        "Data integration and prototype model", "Variables", "Weather" + save_as))
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -1131,7 +1132,8 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax.yaxis.set_label_coords(0, 1.02)
 
     plt.tight_layout()
-    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub("01 Data integration", "Variables", "Vegetation" + save_as))
+    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub(
+        "Data integration and prototype model", "Variables", "Vegetation" + save_as))
     plt.savefig(path_to_file_veg, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))

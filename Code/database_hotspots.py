@@ -281,7 +281,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
     base_map.scatter([geom.x for geom in hazardous_trees_points], [geom.y for geom in hazardous_trees_points],
                      marker='x',  # edgecolor='w',
                      s=20, lw=1.5, facecolor=hazardous_tree_colour,
-                     label="Hazardous tress", alpha=0.6, antialiased=True, zorder=3)
+                     label="Hazardous trees", alpha=0.6, antialiased=True, zorder=3)
 
     # Show legend  # setfont = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
     font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)

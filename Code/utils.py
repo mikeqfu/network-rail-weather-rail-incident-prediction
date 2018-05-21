@@ -211,7 +211,8 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
 
 # Save a figure using plt.savefig()
 def save_fig(path_to_fig_file, dpi):
-    matplotlib.pyplot.figure(path_to_fig_file, dpi=dpi)
+    matplotlib.pyplot.savefig(path_to_fig_file, dpi=dpi)
+
     save_as = os.path.splitext(path_to_fig_file)[1]
     if save_as == ".svg":
         path_to_emf = path_to_fig_file.replace(save_as, ".emf")
