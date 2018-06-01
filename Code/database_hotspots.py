@@ -323,13 +323,12 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
         filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                               ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        fig.savefig(dbm.cdd_metex_db_fig_pub("Data integration and prototype model", "Basemap", fig_filename + save_as),
-                    dpi=dpi)
+        fig.savefig(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Basemap", fig_filename + save_as), dpi=dpi)
         print("Done.")
         if save_as == ".svg":
             svg_to_emf(
-                dbm.cdd_metex_db_fig_pub("Data integration and prototype model", fig_filename + save_as),
-                dbm.cdd_metex_db_fig_pub("Data integration and prototype model", fig_filename + ".emf"))
+                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + save_as),
+                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + ".emf"))
 
 
 # ====================================================================================================================
@@ -486,8 +485,7 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
             fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                           ['cell', 'veg', 'haz'])
             filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
-            path_to_file = dbm.cdd_metex_db_fig_pub("Data integration and prototype model",
-                                                    "Hotspots", filename + save_as)
+            path_to_file = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Hotspots", filename + save_as)
             plt.savefig(path_to_file, dpi=dpi)
             print("Done.")
             if save_as == ".svg":
