@@ -1109,8 +1109,7 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub(
-        "Data integration and prototype model", "Variables", "Weather" + save_as))
+    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Variables", "Weather" + save_as))
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -1132,8 +1131,7 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax.yaxis.set_label_coords(0, 1.02)
 
     plt.tight_layout()
-    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub(
-        "Data integration and prototype model", "Variables", "Vegetation" + save_as))
+    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Variables", "Vegetation" + save_as))
     plt.savefig(path_to_file_veg, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
@@ -1312,8 +1310,7 @@ def logistic_regression_model(trial_id=0,
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
             plt.savefig(cdd_mod_wind(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = dbm.cdd_metex_db_fig_pub("Data integration and prototype model",
-                                                        "Prediction", "ROC" + save_as)  # Fig. 6.
+            path_to_file_roc = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Prediction", "ROC" + save_as)  # Fig. 6.
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
                 svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
@@ -1337,8 +1334,7 @@ def logistic_regression_model(trial_id=0,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             plt.savefig(cdd_mod_wind(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = dbm.cdd_metex_db_fig_pub("Data integration and prototype model", "Prediction",
-                                                         "Predicted-likelihood" + save_as)
+            path_to_file_pred = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Prediction", "Likelihood" + save_as)
             plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
             if save_as == ".svg":
                 svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
