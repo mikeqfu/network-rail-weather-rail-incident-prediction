@@ -11,10 +11,10 @@ __*See also*:__
 
 ***Journal Article***
 
-- **Fu, Q**. and Easton, J. M. (In press), Prediction of weather-related incidents on the rail network: a prototype data
-model in the context of wind-related delays in Great Britain. Accepted for publication in ASCE-ASME Journal of Risk and
-Uncertainty in Engineering Systems, Part A: Civil Engineering. 
-[doi:10.1061/AJRUA6.0000975]()
+- **Fu, Q**. and Easton, J. M. (2018), Prediction of weather-related incidents on the rail network: prototype data 
+model for wind-related delays in Great Britain. ASCE-ASME Journal of Risk and Uncertainty in Engineering Systems, 
+Part A: Civil Engineering 4(3): 04018027. 
+[doi:10.1061/AJRUA6.0000975](https://ascelibrary.org/doi/abs/10.1061/AJRUA6.0000975)
 
 
 ***Conference papers***
