@@ -35,3 +35,8 @@ https://tv.theiet.org/?eventvideoid=8723)
 Published in the Proceedings of the International Conference on Railway Engineering (ICRE 2016), 
 Institution of Engineering and Technology, p.1-7. 
 [doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/)
+
+
+***Technical report***
+- **Fu, Q**. and Easton, J. M. (2018), Establishing the value of existing data sources as supporting datasets for 
+improved decision-making. Approved by Network Rail. (Unpublished.)
