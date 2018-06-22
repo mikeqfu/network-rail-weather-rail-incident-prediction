@@ -38,5 +38,6 @@ Institution of Engineering and Technology, p.1-7.
 
 
 ***Technical report***
+
 - **Fu, Q**. and Easton, J. M. (2018), Establishing the value of existing data sources as supporting datasets for 
-improved decision-making. Approved by Network Rail. (Unpublished.)
+improved decision-making. Approved by Network Rail. (*Unpublished*.)
