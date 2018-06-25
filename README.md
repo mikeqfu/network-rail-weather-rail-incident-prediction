@@ -14,7 +14,7 @@ __*See also*:__
 - **Fu, Q**. and Easton, J. M. (2018), Prediction of weather-related incidents on the rail network: prototype data 
 model for wind-related delays in Great Britain. ASCE-ASME Journal of Risk and Uncertainty in Engineering Systems, 
 Part A: Civil Engineering 4(3): 04018027. 
-[doi:10.1061/AJRUA6.0000975](https://ascelibrary.org/doi/abs/10.1061/AJRUA6.0000975)
+[doi:10.1061/AJRUA6.0000975](https://ascelibrary.org/doi/abs/10.1061/AJRUA6.0000975).
 
 
 ***Conference papers***
@@ -23,10 +23,10 @@ Part A: Civil Engineering 4(3): 04018027.
 incidents: a case study on the Anglia area in Great Britain, paper presented at the 
 [8th International Conference on Railway Engineering, IET London: Savoy Place, 16-17 May 2018](
 https://tv.theiet.org/?event=4726) 
-([Presentation](https://tv.theiet.org/?videoid=12228)). 
+\[[Presentation](https://tv.theiet.org/?videoid=12228)\]. 
 Published in the Proceedings of the 8th International Conference on Railway Engineering, 
 Institution of Engineering and Technology. 
-[doi:10.1049/cp.2018.0071](http://digital-library.theiet.org/content/conferences/10.1049/cp.2018.0071)
+[doi:10.1049/cp.2018.0071](http://digital-library.theiet.org/content/conferences/10.1049/cp.2018.0071).
 - **Fu, Q**. and Easton, J. M. (2018), A data model for prediction of weather-related rail incidents: a case-study
 example of wind-related incidents on the rail network in Great Britain, paper presented at the 50th Annual Conference 
 of the Universities’ Transport Study Group, London, UK, 3-5 January 2018. (*Unpublished*.)
@@ -34,10 +34,10 @@ of the Universities’ Transport Study Group, London, UK, 3-5 January 2018. (*Un
 incidents on rail network in Great Britain, paper presented at the 
 [2016 International Conference on Railway Engineering, Brussels, Belgium, 12-13 May 2016](
 https://tv.theiet.org/?eventvideoid=8723) 
-([Presentation](https://tv.theiet.org/?videoid=8607)). 
+\[[Presentation](https://tv.theiet.org/?videoid=8607)\]. 
 Published in the Proceedings of the International Conference on Railway Engineering (ICRE 2016), 
 Institution of Engineering and Technology, p.1-7. 
-[doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/)
+[doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/).
 
 
 ***Technical report***
