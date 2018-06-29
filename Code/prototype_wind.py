@@ -13,8 +13,8 @@ import numpy as np
 import pandas as pd
 import sklearn.metrics
 import sklearn.utils.extmath
-import statsmodels.discrete.discrete_model as smd
-import statsmodels.tools.tools as smd_tools
+import statsmodels.discrete.discrete_model as sm
+import statsmodels.tools.tools as sm_tools
 
 import database_met as dbm
 import database_veg as dbv
@@ -1238,7 +1238,7 @@ def logistic_regression_model(trial_id=0,
 
     # Add the intercept
     if add_const:
-        mdata = smd_tools.add_constant(mdata)  # data['const'] = 1.0
+        mdata = sm_tools.add_constant(mdata)  # data['const'] = 1.0
         explanatory_variables = ['const'] + explanatory_variables
 
     #
@@ -1255,10 +1255,10 @@ def logistic_regression_model(trial_id=0,
     try:
         np.random.seed(seed)
         if model == 'probit':
-            mod = smd.Probit(train_set.IncidentReported, train_set[explanatory_variables])
+            mod = sm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
             result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
         else:
-            mod = smd.Logit(train_set.IncidentReported, train_set[explanatory_variables])
+            mod = sm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
             result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
 
         if verbose:
@@ -1462,7 +1462,7 @@ def evaluate_prototype_model(season=None):
         incid_accuracy.append(incid_acc)
         thresholds.append(threshold)
 
-        if isinstance(result, smd.BinaryResultsWrapper):
+        if isinstance(result, sm.BinaryResultsWrapper):
             nobs.append(result.nobs)
             mod_aic.append(result.aic)
             mod_bic.append(result.bic)

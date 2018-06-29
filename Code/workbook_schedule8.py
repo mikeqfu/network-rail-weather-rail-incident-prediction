@@ -357,7 +357,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
 
             # 'Data'
-            data = workbook.parse(sheet_name='Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
+            data = workbook.parse('Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
             data.columns = [c.replace('(C)', '(degrees Celcius)').replace(' ', '') for c in data.columns]
             data.rename(columns={'imdm': 'IMDM',
                                  'stanoxSection': 'StanoxSection',
