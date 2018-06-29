@@ -1,15 +1,31 @@
 ## Prototype data models for understanding weather-related incidents on Great Britain's rail network
 
-This repo presents prototype data models for forecasting weather-related incidents on GB's rail network. Two case study 
+This repo presents prototype data models for predicting weather-related incidents on GB's rail network. Two case study 
 examples are demonstrated in the context of delays caused primarily by high winds and temperatures, respectively.
+
+#### Brief background:
+
+The model was initially developed in a research project which was intended to establish a modelling framework for 
+exploration of the applicability of existing data resources to specific industry problems. The methodology was 
+demonstrated in the context of wind-related 8 delays on the rail network in Great Britain. This case study examined the
+sub-networks most susceptible to delays as a result of high-wind events; and it identified appropriate data sources 
+that could support the decision-making process around placement of trackside weather stations to monitor the impact 
+of the high wind speeds. 
+
+The study investigates a variety of relevant data sources, including historical records of wind-related incidents, 
+and the weather and vegetation conditions around the incident locations. It shows on how those data could be 
+exploited and modelled with logistic regression analysis. A number of factors contributing to wind-related delay 
+incidents are identified and used for making predictions of likelihood of such incidents occurrences. 
+
+The prototype data model is generic and should also be adaptable to other contexts, e.g. with other categories of 
+weather-related incidents or a wider range of common industry tasks.
 
 ---
 
 
-__*See also*:__
+#### Relevant outputs:
 
-
-***Journal Article***
+##### *Journal Article*
 
 - **Fu, Q**. and Easton, J. M. (2018), Prediction of weather-related incidents on the rail network: prototype data 
 model for wind-related delays in Great Britain. ASCE-ASME Journal of Risk and Uncertainty in Engineering Systems, 
@@ -17,7 +33,7 @@ Part A: Civil Engineering 4(3): 04018027.
 [doi:10.1061/AJRUA6.0000975](https://ascelibrary.org/doi/abs/10.1061/AJRUA6.0000975).
 
 
-***Conference papers***
+##### *Conference papers*
 
 - **Fu, Q.**, Jaroszweski, D. J. and Easton, J. M. (2018), A prototype model for understanding heat-related rail 
 incidents: a case study on the Anglia area in Great Britain, paper presented at the 
@@ -40,7 +56,7 @@ Institution of Engineering and Technology, p.1-7.
 [doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/).
 
 
-***Technical report***
+##### *Technical report*
 
 - **Fu, Q**. and Easton, J. M. (2018), Establishing the value of existing data sources as supporting datasets for 
 improved decision-making. Approved by Network Rail. (*Unpublished*.)
