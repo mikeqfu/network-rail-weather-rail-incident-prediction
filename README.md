@@ -1,4 +1,4 @@
-#### Prototype data models for understanding and predicting weather-related incidents on Great Britain's rail network
+### Prototype data models for understanding and predicting weather-related incidents on Great Britain's rail network
 
 This repo presents prototype data models for predicting weather-related incidents on GB's rail network. Two case study 
 examples are demonstrated in the context of delays caused primarily by high winds and temperatures, respectively.
