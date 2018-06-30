@@ -30,7 +30,7 @@ weather-related incidents or a wider range of common industry tasks.
 - **Fu, Q**. and Easton, J. M. (2018), Prediction of weather-related incidents on the rail network: prototype data 
 model for wind-related delays in Great Britain. ASCE-ASME Journal of Risk and Uncertainty in Engineering Systems, 
 Part A: Civil Engineering 4(3): 04018027. 
-[doi:10.1061/AJRUA6.0000975](https://ascelibrary.org/doi/abs/10.1061/AJRUA6.0000975).
+[doi:10.1061/AJRUA6.0000975](https://doi.org/10.1061/AJRUA6.0000975).
 
 
 ##### *Conference papers*
