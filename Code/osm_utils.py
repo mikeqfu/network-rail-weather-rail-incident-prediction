@@ -317,31 +317,8 @@ def download_subregion_osm_file(subregion, file_format=".shp.zip", update=False)
         if os.path.isfile(file_path) and not update:
             print("'{}' is already available for {}.".format(filename, subregion_name))
         else:
-
-            """
-            # Make a custom bar to show downloading progress --------------------------
-            def make_custom_progressbar():
-                widgets = [progressbar.Bar(), ' ', progressbar.Percentage(),
-                           ' [', progressbar.Timer(), '] ',
-                           progressbar.FileTransferSpeed(),
-                           ' (', progressbar.ETA(), ') ']
-                progress_bar = progressbar.ProgressBar(widgets=widgets)
-                return progress_bar
-
-            pbar = make_custom_progressbar()
-
-            def show_progress(block_count, block_size, total_size):
-                if pbar.max_value is None:
-                    pbar.max_value = total_size
-                    pbar.start()
-                pbar.update(min(block_count * block_size, total_size))
-            # -------------------------------------------------------------------------
-            """
             try:
                 urllib.request.urlretrieve(download_url, file_path)
-                # urllib.request.urlretrieve(download_url, file_path, reporthook=show_progress)
-                # pbar.finish()
-                # time.sleep(0.1)
                 print("\n'{}' is downloaded for {}.".format(filename, subregion_name))
             except Exception as e:
                 print("\nDownload failed due to '{}'.".format(e))

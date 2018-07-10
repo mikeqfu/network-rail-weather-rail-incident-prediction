@@ -19,7 +19,7 @@ from utils import cdd, load_pickle, save_pickle
 
 # Change directory to "Schedule 8 incidents"
 def cdd_schedule8(*directories):
-    path = cdd("METEX", "Schedule 8 incidents")
+    path = cdd("Schedule 8 incidents")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -28,7 +28,7 @@ def cdd_schedule8(*directories):
 #
 def read_thresholds_from_html():
     # thr: thresholds
-    thr = pd.read_html(cdd("METEX\\Weather thresholds", "Weather-Thresholds_9306121.html"))
+    thr = pd.read_html(cdd("METEX\\Weather\\Thresholds", "Weather-Thresholds_9306121.html"))
     thr = thr[0]
     # Specify column names
     hdr = thr.loc[0].tolist()
@@ -97,12 +97,12 @@ def read_thresholds_from_html():
 
 # The threshold data is also available in the following file: "S8_Weather 02_06_2006 - 31-03-2014.xlsm"
 def read_thresholds_from_workbook(update=False):
-    path_to_file = cdd_schedule8("Reports", "Worksheet_Thresholds.pickle")
+    path_to_file = cdd_schedule8("Spreadsheets", "Worksheet_Thresholds.pickle")
     if os.path.isfile(path_to_file) and not update:
         thresholds = load_pickle(path_to_file)
     else:
         try:
-            thresholds = pd.read_excel(cdd_schedule8("Reports", "S8_Weather 02_06_2006 - 31-03-2014.xlsm"),
+            thresholds = pd.read_excel(cdd_schedule8("Spreadsheets", "S8_Weather 02_06_2006 - 31-03-2014.xlsm"),
                                        sheetname="Thresholds", parse_cols="A:F")
             thresholds.dropna(inplace=True)
             thresholds.index = range(len(thresholds))
@@ -116,8 +116,8 @@ def read_thresholds_from_workbook(update=False):
 
 
 def get_weather_thresholds(update=False):
-    path_to_file = cdd("METEX\\Weather thresholds", "Thresholds.pickle")
-    if os.path.isfile(path_to_file):
+    path_to_file = cdd("METEX\\Weather\\Thresholds", "Thresholds.pickle")
+    if os.path.isfile(path_to_file) and not update:
         thresholds = load_pickle(path_to_file)
     else:
         try:

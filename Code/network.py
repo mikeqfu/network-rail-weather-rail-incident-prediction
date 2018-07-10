@@ -48,7 +48,7 @@ def nodes_of_srs(srs_id):
     :return: [list]
     """
     # Read excel data into a data frame named srs_df
-    srs_df = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheetname=srs_id)
+    srs_df = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheet_name=srs_id)
     # Convert a 'Node' Series to a list named srs_nodes
     srs_nodes = [each_node for each_node in srs_df.Node]
     return srs_nodes
@@ -142,7 +142,7 @@ def list_of_dicts(srs_id):
     :return: A list of dictionaries
     """
     # Read excel data into a data frame named srs_df
-    srs_df = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheetname=srs_id)
+    srs_df = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheet_name=srs_id)
     # Get the names of all the columns
     attr_name = srs_df.columns.values.tolist()
     attr_name.insert(3, 'SRS')
@@ -283,7 +283,7 @@ def edges_of_route(direct=False):
     :return: All the edges for an Undirected/Directed Anglia network
     """
     # Adjacency 'matrix' (DataFrame)
-    adj_mat = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheetname='AdjacencyMatrix')
+    adj_mat = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheet_name='AdjacencyMatrix')
     # row names of the adjacency 'matrix'
     # row = adj_mat.index.tolist()
     # column names in a list

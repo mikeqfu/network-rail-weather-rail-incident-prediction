@@ -75,9 +75,9 @@ def cdd_rc(*directories):
     return path
 
 
-# Change directory to "Historic delay attribution"
+# Change directory to "Delay attribution"
 def cdd_delay_attr(*directories):
-    path = cdd("METEX", "Historic delay attribution")
+    path = cdd("Schedule 8 incidents", "Delay attribution")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -223,7 +223,7 @@ def save_fig(path_to_fig_file, dpi):
 """ Misc """
 
 
-# Check if a, say str, is float
+# Check if a str expresses a float
 def is_float(text):
     try:
         float(text)
@@ -276,12 +276,12 @@ def contains_digits(string):
     return bool(re.compile('\d').search(string))
 
 
-#
-def find_nearest_date(dates_list, date):
+# Find the closest date of the given 'data' from a list of dates
+def find_closest_date(dates_list, date):
     return min(dates_list, key=lambda x: abs(x - date))
 
 
-#
+# Calculate the n-th percentile
 def percentile(n):
     def np_percentile(x):
         return np.percentile(x, n)
@@ -290,7 +290,7 @@ def percentile(n):
     return np_percentile
 
 
-#
+# Get the given variable's name
 def get_variable_names(*var):
     local_variables = inspect.currentframe().f_back.f_locals.items()
     variable_list = []

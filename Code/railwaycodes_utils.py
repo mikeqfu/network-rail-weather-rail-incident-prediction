@@ -263,6 +263,7 @@ def parse_mileage(mileage):
 
 
 # Separate node and connection
+# noinspection PyTypeChecker
 def parse_node_and_connection(node):
     """
     :param node:

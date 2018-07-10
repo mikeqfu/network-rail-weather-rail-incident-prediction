@@ -47,9 +47,9 @@ def cdd_metex_db_fig(*directories):
     return path
 
 
-# Change directory to "Publications\\Journal\\Figures" and sub-directories
+# Change directory to "Publications\\Journals\\Figures" and sub-directories
 def cdd_metex_db_fig_pub(pid, *directories):
-    path = cd("Publications", "Journal", "{}\\Figures".format(pid))
+    path = cd("Publications", "Journals", "{}".format(pid), "Figures")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -393,7 +393,7 @@ def get_performance_event_code(update=False):
         performance_event_code = load_pickle(path_to_file)
     else:
         try:
-            performance_event_code = pd.read_excel(cdd_delay_attr("Historic delay attribution glossary.xlsx"),
+            performance_event_code = pd.read_excel(cdd_delay_attr("Delay attribution glossary.xlsx"),
                                                    sheetname="Performance Event Code")
             # Rename columns
             performance_event_code.columns = [x.replace(' ', '') for x in performance_event_code.columns]
@@ -408,24 +408,24 @@ def get_performance_event_code(update=False):
     return performance_event_code
 
 
-# Get Performance Event Code
-def get_incident_reason_info_ref(update=False):
-    path_to_file = cdd_delay_attr("incident_reason_info.pickle")
+# Get metadata about incident reasons
+def get_incident_reason_metadata(update=False):
+    path_to_file = cdd_delay_attr("incident_reason_metadata.pickle")
     if os.path.isfile(path_to_file) and not update:
-        incident_reason_info = load_pickle(path_to_file)
+        incident_reason_metadata = load_pickle(path_to_file)
     else:
         try:
             # Get data from the original glossary file
-            path_to_file0 = cdd_delay_attr("Historic delay attribution glossary.xlsx")
-            incident_reason_info = pd.read_excel(path_to_file0, sheetname="Incident Reason")
-            incident_reason_info.columns = [x.replace(' ', '') for x in incident_reason_info.columns]
-            incident_reason_info.set_index('IncidentReason', inplace=True)
+            path_to_original_file = cdd_delay_attr("Delay attribution glossary.xlsx")
+            incident_reason_metadata = pd.read_excel(path_to_original_file, sheetname="Incident Reason")
+            incident_reason_metadata.columns = [x.replace(' ', '') for x in incident_reason_metadata.columns]
+            incident_reason_metadata.set_index('IncidentReason', inplace=True)
             # Save the data
-            save_pickle(incident_reason_info, path_to_file)
+            save_pickle(incident_reason_metadata, path_to_file)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format("incident_reason_info_ref", e))
-            incident_reason_info = None
-    return incident_reason_info
+            print("Getting '{}' ... failed due to '{}'.".format(path_to_file, e))
+            incident_reason_metadata = None
+    return incident_reason_metadata
 
 
 # Transform a DataFrame to dictionary
@@ -545,7 +545,7 @@ def get_incident_reason_info(database_plus=True, update=False):
             incident_reason_info.index.rename('IncidentReason', inplace=True)
 
             if database_plus:
-                reason_info_plus = get_incident_reason_info_ref()
+                reason_info_plus = get_incident_reason_metadata()
                 incident_reason_info = reason_info_plus.join(incident_reason_info, how='outer', rsuffix='_orig')
                 incident_reason_info.dropna(axis=1, inplace=True)
 
@@ -915,7 +915,7 @@ def get_weather(update=False):
     return weather_data
 
 
-# Get Weather data in a chunk-wise way
+# Get Weather in a chunk-wise way
 def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chunk=False, save_by_value=False):
     """
     Note that it might be too large for pd.read_sql to read with low memory. Instead, we may read the 'Weather' table
