@@ -10,7 +10,7 @@ import sklearn.linear_model
 import sklearn.model_selection
 
 import database_met as dbm
-import workbook_schedule8 as wbs
+from Prototype import spreadsheet_schedule8 as wbs
 
 # ====================================================================================================================
 """ Task 1: Broad classification of incidents into weather-related and non-weather-related """

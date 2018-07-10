@@ -1,4 +1,4 @@
-""" Reports on Schedule 8 incidents """
+""" Spreadsheets on Schedule 8 incidents """
 
 import datetime
 import glob
@@ -35,13 +35,13 @@ def get_schedule8_weather_cost_report_all_data(route=None, weather=None, update=
     Summary report for Schedule 8 weather costs covering the UK.
     """
     filename = "Schedule8WeatherCostReport_AllData"
-    path_to_file = cdd_schedule8("Reports", filename + ".pickle")
+    path_to_file = cdd_schedule8("Spreadsheets", filename + ".pickle")
 
     if os.path.isfile(path_to_file) and not update:
         all_data = load_pickle(path_to_file)
     else:
         try:
-            workbook = pd.ExcelFile(cdd_schedule8("Reports", "Schedule8WeatherCostReport.xlsx"))
+            workbook = pd.ExcelFile(cdd_schedule8("Spreadsheets", "Schedule8WeatherCostReport.xlsx"))
             # 'AllData'
             all_data = workbook.parse(sheet_name='AllData')
             all_data.columns = [c.replace(' ', '') for c in all_data.columns]
@@ -192,7 +192,7 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
 
     """
     filename = "S8WeatherIncidentsByDay"
-    path_to_file = cdd_schedule8("Reports", filename + ".pickle")
+    path_to_file = cdd_schedule8("Spreadsheets", filename + ".pickle")
     if os.path.isfile(path_to_file) and not update:
         workbook_data = load_pickle(path_to_file)
     else:
@@ -206,7 +206,7 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
             details.rename(columns={'DU': 'IMDM', 'delayMinutes': 'DelayMinutes'}, inplace=True)
             workbook_data = dict(zip(workbook.sheet_names, [summary, details]))
             workbook.close()
-            save(workbook_data, cdd_schedule8("Reports", filename + ".pickle"))
+            save(workbook_data, cdd_schedule8("Spreadsheets", filename + ".pickle"))
         except Exception as e:
             print("Getting '{}' ... failed due to '{}'.".format(filename, e))
             workbook_data = None
@@ -341,14 +341,14 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
     # Path to the file
     filename = "S8_Weather 02_06_2006 - 31-03-2014"
     filename_modified = "_".join(filter(None, [re.sub('[_-]', '', x) for x in filename.split(" ")]))
-    path_to_file = cdd_schedule8("Reports", filename_modified + ".pickle")
+    path_to_file = cdd_schedule8("Spreadsheets", filename_modified + ".pickle")
 
     if os.path.isfile(path_to_file) and not update:
         workbook_data = load_pickle(path_to_file)
     else:
         try:
             # Open the original file
-            workbook = pd.ExcelFile(cdd_schedule8("Reports", filename + ".xlsm"))
+            workbook = pd.ExcelFile(cdd_schedule8("Spreadsheets", filename + ".xlsm"))
 
             # 'Thresholds'
             thresholds = workbook.parse(sheet_name='Thresholds', parse_cols='A:F').dropna()
@@ -413,7 +413,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             col_names.insert(col_names.index('StartLocation') + 1, 'EndLocation')
             data = stanox_section.join(data.drop('StanoxSection', axis=1))[col_names]
 
-            incident_reason_info = dbm.get_incident_reason_info_ref()
+            incident_reason_info = dbm.get_incident_reason_metadata()
             data = pd.merge(data, incident_reason_info.reset_index(),
                             on=['IncidentReason', 'IncidentCategoryDescription'], how='inner')
 
