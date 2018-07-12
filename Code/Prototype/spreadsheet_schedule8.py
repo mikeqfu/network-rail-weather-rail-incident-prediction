@@ -19,7 +19,7 @@ from utils import cdd, load_pickle, save
 
 # Change directory to "Schedule 8 incidents"
 def cdd_schedule8(*directories):
-    path = cdd("METEX\\Schedule 8 incidents")
+    path = cdd("Schedule 8 incidents")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -350,13 +350,13 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             # Open the original file
             workbook = pd.ExcelFile(cdd_schedule8("Spreadsheets", filename + ".xlsm"))
 
-            # 'Thresholds'
+            # 'Thresholds' ================================================================
             thresholds = workbook.parse(sheet_name='Thresholds', parse_cols='A:F').dropna()
             thresholds.index = range(len(thresholds))
             thresholds.columns = [col.replace(' ', '') for col in thresholds.columns]
             thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
 
-            # 'Data'
+            # 'Data' =========================================================================================
             data = workbook.parse('Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
             data.columns = [c.replace('(C)', '(degrees Celcius)').replace(' ', '') for c in data.columns]
             data.rename(columns={'imdm': 'IMDM',
@@ -413,11 +413,12 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             col_names.insert(col_names.index('StartLocation') + 1, 'EndLocation')
             data = stanox_section.join(data.drop('StanoxSection', axis=1))[col_names]
 
-            incident_reason_info = dbm.get_incident_reason_metadata()
-            data = pd.merge(data, incident_reason_info.reset_index(),
+            # Add incident reason metadata --------------------------
+            incident_reason_metadata = dbm.get_incident_reason_metadata()
+            data = pd.merge(data, incident_reason_metadata.reset_index(),
                             on=['IncidentReason', 'IncidentCategoryDescription'], how='inner')
 
-            # Weather'CategoryLookup'
+            # Weather'CategoryLookup' ===========================================
             weather_category_lookup = workbook.parse(sheet_name='CategoryLookup')
             weather_category_lookup.columns = ['WeatherCategoryCode', 'WeatherCategory']
 
@@ -426,6 +427,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             workbook.close()
             # Save the workbook data
             save(workbook_data, path_to_file)
+
         except Exception as e:
             print("Getting '{}' ... failed due to '{}'.".format(filename, e))
             workbook_data = None
