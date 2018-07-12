@@ -49,6 +49,7 @@ def pd_preferences(reset=False):
         pandas.set_option('display.max_rows', 20)
         pandas.set_option('io.excel.xlsx.writer', 'xlsxwriter')
         pandas.set_option('mode.chained_assignment', None)
+        # pandas.set_option('display.float_format', lambda x: '%.4f' % x)
     else:
         pandas.reset_option('all')
 
