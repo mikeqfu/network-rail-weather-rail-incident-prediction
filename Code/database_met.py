@@ -1,7 +1,6 @@
 """ Read and clean data of NR_METEX database """
 
 import os
-import re
 
 import datetime_truncate
 import matplotlib.patches
@@ -14,13 +13,14 @@ import database_utils as db
 import database_veg as dbv
 import railwaycodes_utils as rc
 from converters import yards_to_mileage
+from loc_code_dict import *
 from utils import cd, cdd_delay_attr, cdd_rc, find_match, load_json, load_pickle, save, save_json, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
 
 
-# Change directory to "Data\\METEX\\Database\\Tables" and sub-directorie
+# Change directory to "Data\\METEX\\Database\\Tables" and sub-directories
 def cdd_metex_db_tables(*directories):
     path = db.cdd_metex_db("Tables")
     os.makedirs(path, exist_ok=True)
@@ -29,7 +29,7 @@ def cdd_metex_db_tables(*directories):
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Views" and sub-directorie
+# Change directory to "Data\\METEX\\Database\\Views" and sub-directories
 def cdd_metex_db_views(*directories):
     path = db.cdd_metex_db("Views")
     os.makedirs(path, exist_ok=True)
@@ -53,326 +53,6 @@ def cdd_metex_db_fig_pub(pid, *directories):
     for directory in directories:
         path = os.path.join(path, directory)
     return path
-
-
-# ====================================================================================================================
-""" Special utils """
-
-
-# Create a dict for replace location names
-def create_loc_name_replacement_dict(k=None):
-    loc_repl_dict = {
-        '"Tyndrum Upper" (Upper Tyndrum)': 'Upper Tyndrum',
-        '"Wigston South" (South Wigston)': 'South Wigston',
-        '03405': 'Stirling Sidings', 'AND008': 'Andover Signal 8',
-        'ATLBRJN': 'Attleborough South Junction',
-        "Allington West Junction ['(formerly Allington Junction)']": 'Allington West Junction',
-        'Angerstein Wharf (Bardon)': 'Angerstein Wharf Bardon',
-        'Angerstein Wharf (Tarmac)': 'Angerstein Wharf Tarmac',
-        'Appleby LC': 'Scunthorpe Appleby Level Crossing',
-        'Avonmouth (Fastline)': 'Avonmouth Bennets Fastline',
-        'BARONS COURT LT': 'Barons Court LT',
-        'BCST196': 'Bicester Signal ME196',
-        'BOW OLYMPICS (GBRf)': 'Bow Depot Olympics GB Railfreight',
-        'BSNGW34': 'Basingstoke Signal YW34',
-        'Barnetby Down Sidings': 'Barnetby Down/On Track Machine Sidings',
-        'Barry Docks Abp Shipment': 'Barry Docks ABP Shipment',
-        'Barry Docks BP Chemicals [later Zeon]': 'Barry Docks Zeon',
-        'Barry Docks [station]': 'Barry Docks',
-        'Bentley (S.Yorks)': 'Bentley (Yorks)',
-        'Bury St. Edmunds Cmd': 'Bury St Edmunds Carriage Maintenance Depot',
-        'CADOEWS': 'Cadoxton English Welsh & Scottish Railway',
-        'CARDCSS': 'Cardiff Docks Coastal Shipping',
-        'CARLISLE NY DBS LOCO MAIN PT': 'Carlisle New Yard DB Schenker Locomotive Maintenance Point',
-        'CLAPS47': 'Clapham Junction Signal W1047',
-        'CLHMABL': 'Chelmsford Arbour Lane',
-        'CREWE SSN SIG. NH19': 'Crewe Signal NH19',
-        'CTNM': 'Castleton Moor',
-        'Cadder Loops/Cadder Yard DRS': 'Cadder Yard DRS',
-        'Cambridge T.&R.S.M.D.': 'Cambridge Traction & Rolling Stock Maintenance Depot',
-        'Carlisle Kingmoor Jcn': 'Kingmoor Junction',
-        'Carlisle Kingmoor V.Q.(RT)': 'Carlisle Kingmoor Yard English Welsh & Scottish Railway/Marcroft/Wabtec',
-        'Castleton R.W.D.': 'Castleton Wagon Repair Depot',
-        'Chapel-En-Le-Frith': 'Chapel-en-le-Frith',
-        'Coleham Isu (CE)': "Coleham Civil Engineer's Sidings",
-        'Crewe Wagon Shop Centrac (later Crewe Gresty Bridge DRS)': 'Crewe Gresty Bridge DRS',
-        'Dalston Junction (ELL)': 'Dalston Junction (East London Line)',
-        'Dean (Wilts)': 'Dean',
-        'Derby North Doc Sdgs': 'Derby North Dock Sidings',
-        'Ditton (later Ditton East Junction)': 'Ditton East Junction',
-        "Ditton Foundry Lane Victa Westlink Rail (['codes no longer used'])": 'Ditton Foundry Lane Victa Westlink Rail',
-        'Ditton Reception (FLT)': 'Ditton Foundry Lane AHC Freightliner',
-        'Doncaster Rfs Engineering': 'Doncaster RFS Engineering/Wabtec',
-        'Doncaster Up Decoy (Fastline)': 'Doncaster Up Decoy GB Railfreight',
-        'East Cowton Xovers': 'Darlington East Cowton Crossovers',
-        'East Somerset Junction (Witham)': 'East Somerset Junction',
-        'Eastfields (Mitcham)': 'Mitcham Eastfields',
-        'Eastleigh Works-Alstom-Fl': 'Eastleigh Works Alstom Freightliner',
-        'Ely (Cambs)': 'Ely', 'Epsom - Up Sidings': 'Epsom Up Sidings',
-        'Exeter St Davids Prem Tran': 'Exeter St Davids Premier Transport',
-        'Exetr Sd Carr Sdgs Wessex': 'Exeter St Davids Carriage Sidings Wessex',
-        'Farnborough (Main)': 'Farnborough Main',
-        'Faversham Down Sdg No1': 'Faversham Down Siding No 1',
-        'Fenny Compton M.O.D.': 'Fenny Compton MOD',
-        'Garston(Speke) T.C.': 'Garston Speke Terminal Complex',
-        'Gascoigne Wood  Up Sidings': 'Gascoigne Wood Up Sidings',
-        'Gascoigne Wood Down Bunker Sidings (?)': 'Gascoigne Wood Down (DBS)',
-        'Gillingham E.M.U.D.': 'Gillingham (Kent) Electric Multiple Unit Depot',
-        'Gladstone Dock BT (Fastline)': 'Liverpool Bulk Terminal Fastline Freight',
-        'Grangemouth (VWL)': 'Grangemouth TDG Victa Westlink Rail',
-        'Grangemouth BP (later Innovene) Chemicals': 'Grangemouth Innovene (Chemicals)',
-        'Grangemouth BP (later Innovene) Holding Sidings': 'Grangemouth Innovene Holding Sidings',
-        'Grangemouth Tdg (EWS)': 'Grangemouth TDG English Welsh & Scottish Railway',
-        'Grangemouth Tdg Main Term': 'Grangemouth TDG Main Terminal',
-        'Grangemouth Wh Malcolm': 'Grangemouth WH Malcolm',
-        'Grosvr Cs': 'Victoria Grosvenor Carriage Shed',
-        'Guide Bridge Advenza Freight (?)': 'Guide Bridge Advenza Sidings FLHH',
-        'Guildford Up Recp': 'Guildford Up Reception',
-        'HIGH MEADS JN': 'High Meads Junction',
-        'Heysham Harbour [station]': 'Heysham Harbour',
-        'High Marnham (Freightliner Heavy Haul)': 'High Marnham Freightliner Heavy Haul',
-        'High Wycombe (West Wycombe)': 'West Wycombe',
-        'Hitchin Up Scrap Siding (Advenza': 'Hitchin Advenza Freight',
-        'Hoo Junction Signal Nk1611': 'Hoo Junction Signal NK1611',
-        'Hope (Earles Sidings) Fhh': 'Earles Sidings (Hope) Freightliner Heavy Haul',
-        'IMMINGHAM B4 SIDINGS (DBS)': 'Immingham B4 Sidings',
-        'Ilford Lon End Junction': 'Ilford London End Junction',
-        'Immingham Dock Cotswold Rail (?)': 'Immingham Dock Coals Rail',
-        'Immingham Dock Ct (Fastline)': 'Immingham Hargreaves Container Terminal Fastline Freight',
-        'Immingham Dock [unknown feature]': 'Immingham Reception (FLHH)',
-        'Immingham HIT (Fastline)': 'Immingham Humber International Terminal Freightliner Heavy Haul',
-        'Immingham NCB PAD1 (Fastline)': 'Immingham NCB Pad 1 Fastline Freight',
-        'Imperial Wharf (originally planned to be Chelsea Harbour)': 'Imperial Wharf',
-        'Invergordon Distillery (No 2 Up Siding)': 'Invergordon Distillery',
-        'Ironbridge Power Station (also known as Buildwas CEGB)': 'Ironbridge Power Station',
-        'KNOTTINGLEY SIG FE6418': 'Knottingley Signal FE6418',
-        'Kennington Junction (also listed as Kennington Junction Points Heaters)': 'Kennington Junction',
-        'Kings Cross Copenhagen (formerly Freight Terminal) Junction': "King's Cross Copenhagen Junction",
-        'Kings Norton Ot Plant Dept': 'Kings Norton On Track Plant Depot',
-        'Kingsbury G Cohen (later Kingsbury Coal Sidings?)': 'Kingsbury Coal Sidings',
-        'Kirkhmtip': 'Kirkham & Wesham Tip',
-        "L'Pool Sth Pw Hl (Allertn)": 'Liverpool South Parkway High Level',
-        'Leicester Car Sidings': 'Leicester Carriage Sidings',
-        'Lindleys Lane (Kirkby South Junction)': 'Kirkby South Junction',
-        'Liverpool Street Sig L572': 'Billericay Signal L572',
-        'London Bridge (Central) (Platforms 14 - 16)': 'London Bridge',
-        'MLRHM21': 'Millerhill Signal M21',
-        'MOORPK': 'Moor Park',
-        'MORRISC': 'Morris Cowley',
-        'Maltby Colliery National Coal Board/RJB Mining': 'Maltby Colliery',
-        'Northampton Down Goods Loop (formerly Northampton No 4)': 'Northampton Down Goods Loop',
-        'Old Oak Common C.S. (EWS)': 'Old Oak Common Carriage Sidings English Welsh & Scottish Railway',
-        'PEEL GROUP SIDING ELLESMERE PORT': 'Ellesmere Port Freightliner Heavy Haul',
-        'PLAISTOW L.T.': 'Plaistow LT',
-        'Paddn Yd Marcon Topmix': 'Paddington Yard Marcon Topmix',
-        'Parc Slip - Celtic Energy': 'Margam Parc Slip Celtic Energy',
-        'Peckham Rye (Catford Loop Lines)': 'Peckham Rye',
-        'Portbury Coal Terml (Fastline)': 'Portbury Coal Terminal Fastline Freight',
-        'Purfleet Deep Wharf (VWL)': 'Purfleet Deep Water Wharf Victa Westlink Rail',
-        'RETFORD Signal D1348': 'Retford Signal D1348',
-        "RIDHAM DOCK B'WTRS SDG": 'Ridham Sidings',
-        'Railtrack Head Quarters Training Location Delta': 'Dollands Moor CTRL',
-        'Ripple Lane Advenza Frt': 'Ripple Lane Advenza Railfreight',
-        'Rugeley B PS (FGD) (GBRF)': 'Rugeley Power Station GB Railfreight',
-        'STRNHDS': 'Stourbridge Junction Light Maintenance Depot Headshunt',
-        'Scunthorpe B.S.C.(Ent.C.)': 'Scunthorpe BSC Entrance C',
-        'Seaforth C.T. Mdhc (EWS)': 'Seaforth Container Terminal Mersey Docks & Harbour Commission',
-        'Shadwell (ELL)': 'Shadwell',
-        'Shrewsbury Abbey Frgte Cs': 'Shrewsbury Abbey Foregate Sidings',
-        'Small Heath Lafarge Aggr': 'Small Heath Lafarge Aggregates',
-        'Smitham (renamed Coulsdon Town)': 'Smitham',
-        'Southend Airport Stn': 'Southend Airport [station]',
-        'St Neots Fd (E W & S)': 'St Neots Freight Depot English Welsh & Scottish Railway',
-        "St Nicholas (Carlisle) Civil Engineer's Sidings": "Carlisle St Nicholas Civil Engineer's Sidings",
-        'St Pancras International (MML)': 'St Pancras [domestic station]',
-        'St Peters (formerly Sunderland Monkseaton)': 'St Peters',
-        'Stoke [-on-Trent] Junction': 'Stoke Junction',
-        'Sudforth Lane Up Rs': 'Sudforth Lane Up Reception Sidings',
-        'Swinderby Thorpe-On-The-Hill': 'Swinderby Thorpe-on-the-Hill',
-        'TONBRIDGE ENGINEERS SIDING': 'Tonbridge Engineers Siding',
-        'TOTONWRD': 'Toton Wagon Repair Depot',
-        'Temple Mills Orient CS': 'Temple Mills Orient Way Carriage Sidings',
-        'Temple Mills S.S.': 'Temple Mills Sorting Sidings',
-        'Terrace Carriage Holding Sidings [Lincoln]': 'Lincoln Terrace Carriage Holding Sidings',
-        'Thornhill [Scotland]': 'Thornhill',
-        'Three Bridges P & Md': 'Three Bridges P & MD',
-        'Tilbury I.R.F.T. Colas': 'Tilbury International Rail Freight Terminal Victa Advenza/Colas',
-        'Tilbury IRFT (DRS)': 'Tilbury International Rail Freight Terminal DRS',
-        'Upton Lovell (by 2010 STANOX listed as "now deleted")': 'Upton Lovell',
-        'WLNDGL': 'Wellingborough Down Goods Loop',
-        'WLSD2DT': 'Willesden Brent 2 Down Through Siding/Up & Down Goods',
-        'Warrdalln': 'Warrington Dallam J G Russell',
-        'Warrington C.E. Sdgs': "Warrington NCL/Civil Engineer's Sidings",
-        'Warrington Latchford Sdgs (DBS)': 'Latchford Sidings',
-        'Warrington Latchford Sdgs (FLHH)': 'Latchford Sidings Freightliner Heavy Haul',
-        'Waterloo (Ballast)': 'Waterloo Ballast',
-        'Wavertree P.C.D. (Oou)': 'Wavertree PCD',
-        'Wellingborough Up TC GBRF': 'Wellingborough Up Sidings GB Railfreight',
-        'Whitechapel (ELL)': 'Whitechapel',
-        'Willesden Brent (FLT)': 'Willesden Brent Sidings Freightliner',
-        'Willesden Brent Freightliner': 'Willesden Brent Sidings Freightliner',
-        'Wilsdn Yd': 'Willesden Yard CTT Forwardings',
-        'Woodhouse Junc Sdgs (Fhh)': 'Woodhouse Junction Sidings Freightliner Heavy Haul',
-        'Yarmouth [Great Yarmouth]': 'Yarmouth'}
-    if k:
-        return {k: loc_repl_dict}
-    else:
-        return loc_repl_dict
-
-
-# Create a regex dict for replace location names
-def create_loc_name_regexp_replacement_dict(k=None):
-    loc_regexp_repl_dict = {
-        re.compile('\\['): '(',
-        re.compile(']'): ')',
-        re.compile(' \\[station]'): '',
-        re.compile(' And '): ' & ',
-        re.compile(' \\(was Eurostar Depot\\)'): '',
-        re.compile('-In-| In '): '-in-',
-        re.compile('-La-'): '-la-',
-        re.compile('-Le-'): '-le-',
-        re.compile('-On-| On '): '-on-',
-        re.compile(' Of '): ' of ',
-        re.compile('-Super-'): '-super-',
-        re.compile('-Upon-| Upon '): '-upon-',
-        re.compile('-Under-'): '-under-',
-        re.compile('-Y-'): '-y-',
-        re.compile('Depot \\(E\\)'): '',
-        re.compile(' A\\.C\\.C\\.'): ' Avon County Council',
-        re.compile(' A\\.?B\\.?P\\.?'): ' Associated British Ports',
-        re.compile(' A C E '): " Area Civil Engineer's ",
-        re.compile(' Bardon Aggs'): ' Bardon Aggregates',
-        re.compile(' B\\.T\\.P\\.'): ' British Tar Products',
-        re.compile(' C\\. Sidings'): ' Carriage Sidings',
-        re.compile(' C\\.C\\.E\\.'): " Chief Civil Engineer's Sidings",
-        re.compile('Canada water'): 'Canada Water',
-        re.compile(' C\\.E\\.Sdgs'): " Civil Engineer's Sidings",
-        re.compile(' Car\\. ?M\\.D\\.?| Cmd'): ' Carriage Maintenance Depot',
-        re.compile(' C\\.S\\.M\\.D\\.'): ' Carriage Servicing & Maintenance Depot',
-        re.compile(' C\\.Pt\\. '): ' Crown Point ',
-        re.compile(' C\\.H\\.S\\.'): ' Carriage Holding Sidings',
-        re.compile(' Charrgtn'): ' Charrington Coal Concentration Depot',
-        re.compile(' C\\.P\\.A\\.'): ' Clyde Ports Authority',
-        re.compile(' C\\.S\\.D\\.'): ' Carriage Servicing Depot',
-        re.compile(' \\(DBS\\)'): ' DB Schenker',
-        re.compile(' Depot\\.'): ' Depot',
-        re.compile(' D&U\\.G\\.L\\.'): ' Down & Up Goods Loop',
-        re.compile(' D\\.D\\. H\\.S\\.'): ' Diesel Depot Holding Sidings',
-        re.compile(' D\\.G\\.L\\.?| D G L'): ' Down Goods Loop',
-        re.compile(' D\\.H\\.S\\.'): ' Down Holding Sidings',
-        re.compile(' D\\.?P\\.?L\\.?'): ' Down Passenger Loop',
-        re.compile(' D\\.M\\.U\\.D| DMU Depot'): ' Diesel Multiple Unit Depot',
-        re.compile(' D\\.R\\.S\\.| DRS'): ' Down Refuge Siding',
-        re.compile(' Dn '): ' Down ',
-        re.compile(' Dsn'): ' Down Sidings North',
-        re.compile(' Dss'): ' Down Sidings South',
-        re.compile('\\. E\\. '): ' East ',
-        re.compile('Earls '): "Earl's ",
-        re.compile(' Eccq '): ' ECC Quarries ',
-        re.compile(' E\\.M\\.U\\.D\\.?'): ' Electric Multiple Unit Depot',
-        re.compile(' E\\.M\\.U\\. '): ' Electric Multiple Unit ',
-        re.compile(' E\\.P\\.S\\.'): ' European Passenger Services',
-        re.compile(' EWS| \\(EWS\\)'): ' English Welsh & Scottish Railway',
-        re.compile(' Eur Frt Ops Cntre'): ' European Freight Operations Centre',
-        re.compile(' F\\.C\\.'): ' Flat Crossing',
-        re.compile(' F\\.D\\.'): ' Freight Depot',
-        re.compile(' Ept'): ' Europort',
-        re.compile("\\(F'Liners\\)|F/L"): 'Freightliner',
-        re.compile('\\(Ff\\)'): ' Fastline Freight',
-        re.compile(' F[Ll]?[Hh][Hh]| \\(F[Ll]?[Hh][Hh]\\)| Fliner HH'): ' Freightliner Heavy Haul',
-        re.compile(' F\\.L\\.T\\.| FLT| \\(FLT\\)'): ' Freightliner Terminal',
-        re.compile(' \\(F[Ll][Tt]\\)'): ' Freightliner',
-        re.compile(' Ryans F\\.W\\.'): ' Ryans Fletchers Wharf',
-        re.compile(' GBR[Ff]| \\(GBR[Ff]\\)| Gbf'): ' GB Railfreight',
-        re.compile(' G\\.C\\.'): ' Garden City',
-        re.compile(' G\\.F\\.'): ' Ground Frame',
-        re.compile(' Gp '): ' Group ',
-        re.compile(' G\\.S\\.P\\.'): ' Ground Shunt Panel',
-        re.compile(' Gds Lp| Gds Loop'): ' Goods Loop',
-        re.compile(' H\\.L\\.'): ' High Level',
-        re.compile(' H\\.S\\.'): ' Holding Sidings',
-        re.compile(' Ntl Pwr'): ' National Power',
-        re.compile(' Nth\\.? '): ' North ',
-        re.compile(' I\\.B\\.'): ' Intermediate Block',
-        re.compile(' I\\.?R\\.?F\\.?T\\.?'): ' International Rail Freight Terminal',
-        re.compile(' I[Ss][Uu]'): ' Infrastructure Servicing Unit',
-        re.compile(' Isu \\(CE\\)'): " Civil Engineer's Sidings",
-        re.compile(' Int Rft Recep '): 'International Rail Freight Reception ',
-        re.compile(' Intl E'): ' International East',
-        re.compile(' Intl W'): ' International West',
-        re.compile(' Jn\\.?| Jcn'): ' Junction',
-        re.compile(' JN HL '): ' Junction High Level ',
-        re.compile(' J\\.Yd '): ' Junction Yard ',
-        re.compile(' L\\.C\\.| L Xing'): ' Level Crossing',
-        re.compile(' L\\.D\\.C\\.? '): ' Local Distribution Centre ',
-        re.compile(' L\\.H\\.S\\.'): ' Loco Holding Siding',
-        re.compile(' L\\.I\\.P.'): ' Loco Inspection Point',
-        re.compile(' L\\.L\\.| Ll'): ' Low Level',
-        re.compile(' Lmd'): ' Light Maintenance Depot',
-        re.compile(' Ln'): ' Lane',
-        re.compile(' L\\.N\\.W\\. Junction Derby'): ' Derby LNW Junction',
-        re.compile(' Loco Hs'): ' Loco Holding Sidings',
-        re.compile(' M\\.& E\\.E\\.'): ' Mechanical & Electrical Engineer',
-        re.compile(' M\\.R\\.C\\.'): ' Midland Railway Centre',
-        re.compile(' N\\.L\\.F\\.C\\.'): ' North London FC',
-        re.compile(' Ntl '): ' National ',
-        re.compile(' N\\.Y\\.| NY'): ' New Yard',
-        re.compile(' P\\.A\\.D\\.'): ' Pre-Assembly Depot',
-        re.compile(' P\\.S\\.'): ' Power Station',
-        re.compile(" P'Way"): ' Permanent Way',
-        re.compile(' Pwr '): ' Power ',
-        re.compile(' Prdc'): ' Princess Royal Distribution Centre',
-        re.compile(' R\\.C\\.T\\.'): ' Riverside Container Terminal',
-        re.compile(' Rd'): ' Road',
-        re.compile(' Recp\\.'): ' Reception',
-        re.compile(' \\(RFD\\)'): ' Railfreight Distribution',
-        re.compile(' R\\.T\\.S\\.'): ' Refuse Transfer Station',
-        re.compile(' R\\.S GB '): ' Refuge Siding GB ',
-        re.compile(' S\\.B\\.| Sb'): ' Signal Box',
-        re.compile(' S C C E'): " Sandiacre Chief Civil Engineer's",
-        re.compile(' Sdg| Siding\\.'): ' Siding',
-        re.compile(' Sdgs'): ' Sidings', re.compile(' Sdgs '): ' Sidings ',
-        re.compile(' S[Ii][Gg]\\.? '): ' Signal ',
-        re.compile('Sig\\.Ty357'): 'Signal TY357',
-        re.compile(' Sth\\.? '): ' South ',
-        re.compile(' South C\\.E\\.'): " South Civil Engineer's Sidings",
-        re.compile(' S\\.S\\.'): ' Signal Box',
-        re.compile(' Steetley Coy'): ' Steetley Company',
-        re.compile(' Terml'): 'Terminal',
-        re.compile(' T\\.C\\.'): ' Terminal Complex',
-        re.compile(' Terminal\\.'): ' Terminal',
-        re.compile(' T\\.?M\\.?D\\.?'): ' Traction Maintenance Depot',
-        re.compile(' T\\.?&R\\.S\\.M\\.D\\.?'): ' Traction & Rolling Stock Maintenance Depot',
-        re.compile(' T\\.C\\.'): ' Terminal Complex',
-        re.compile(' U&Dgl'): ' Up & Down Goods Loop',
-        re.compile(' U\\.G\\.L\\.'): ' Up Goods Loop',
-        re.compile(' U\\.P\\.L\\.'): ' Up Passenger Loop',
-        re.compile(' U\\.R\\.S\\.'): ' Up Relief Siding',
-        re.compile(' Usn'): ' Up Sidings North',
-        re.compile(' Uss'): ' Up Sidings South',
-        re.compile(' \\(VWL\\)'): ' Victa Westlink Rail',
-        re.compile(' W\\.R\\.D\\.'): ' Wagon Repair Depot',
-        re.compile(' W Yard'): ' West Yard',
-        re.compile('west533'): 'Westerton Signal YH533',
-        re.compile(' Wks Lafarg'): ' Works Lafarg',
-        re.compile(' TURNBACK'): ' Turnback Siding',
-        re.compile(' Wtr Wh?f '): ' Water Wharf ',
-        re.compile('Warrington C\\.E\\. Sidings'): "Warrington NCL/Civil Engineer's Sidings",
-        re.compile(' Wm Csd\\.'): ' West Marina Carriage Servicing Depot',
-        re.compile(' Yd '): ' Yard ',
-        re.compile(' N\\.R\\.M\\.'): ' National Railway Museum'}
-    if k is not None:
-        return {k: loc_regexp_repl_dict}
-    else:
-        return loc_regexp_repl_dict
-
-
-# Compare the difference between two columns and replace items if appropriate
-def compare_and_replace(loc, to_replace, with_col):
-    # Given length
-    temp = loc[[to_replace, with_col]].applymap(len)
-    replace_list = temp[temp[to_replace] <= temp[with_col]].index.tolist()
-    loc[to_replace][replace_list] = loc[with_col][replace_list]
 
 
 # ====================================================================================================================
