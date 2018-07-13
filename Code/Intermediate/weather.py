@@ -1,7 +1,12 @@
+import itertools
 import os
+import zipfile
+
+import natsort
 import pandas as pd
-from utils import cdd, load_pickle, save_pickle
+
 from converters import osgb36_to_wgs84
+from utils import cdd, load_pickle, save_pickle
 
 
 # Change directory to "Weather"
@@ -12,42 +17,104 @@ def cdd_weather(*directories):
     return path
 
 
-# Gridded observations of daily maximum temperature
-def read_daily_timeseries_maximum_temperature(update=False):
-    filename = "ukcp09_gridded-land-obs-daily_timeseries_maximum-temperature_000000E_500000N_19600101-20161231.csv"
-    path_to_file = cdd_weather(os.path.splitext(filename)[0] + ".pickle")
-    if os.path.isfile(path_to_file) and not update:
-        temperature_data = load_pickle(path_to_file)
+#
+def find_square_corners(centre_point, side_length=5000, rotation=None):
+    """
+
+    :param centre_point: (easting, northing)
+    :param side_length:
+    :param rotation: angle
+    :return:
+
+    Easting and northing coordinates are commonly measured in metres from the axes of some horizontal datum.
+    However, other units (e.g. survey feet) are also used.
+
+    """
+    assert (isinstance(centre_point, tuple) or isinstance(centre_point, list)) and len(centre_point) == 2
+
+    x, y = centre_point
+
+    if rotation:
+        sin_theta, cos_theta = pd.np.sin(rotation), pd.np.cos(rotation)
+        lower_left = (x - 1 / 2 * side_length * sin_theta, y - 1 / 2 * side_length * cos_theta)
+        upper_left = (x - 1 / 2 * side_length * cos_theta, y + 1 / 2 * side_length * sin_theta)
+        upper_right = (x + 1 / 2 * side_length * sin_theta, y + 1 / 2 * side_length * cos_theta)
+        lower_right = (x + 1 / 2 * side_length * cos_theta, y - 1 / 2 * side_length * sin_theta)
     else:
-        try:
-            cartesian_coords_temp = pd.read_csv(cdd_weather(filename), header=None, index_col=0, nrows=2)
-            cartesian_coordinates = [tuple(x) for x in cartesian_coords_temp.T.values]
-            long_lat = [osgb36_to_wgs84(x[0], x[1]) for x in cartesian_coordinates]
+        lower_left = (x - 1/2*side_length, y - 1/2*side_length)
+        upper_left = (x - 1/2*side_length, y + 1/2*side_length)
+        upper_right = (x + 1/2*side_length, y + 1/2*side_length)
+        lower_right = (x + 1/2*side_length, y - 1/2*side_length)
+    return lower_left, upper_left, upper_right, lower_right
 
-            max_temperatures = pd.read_csv(cdd_weather(filename), header=None, skiprows=[0, 1],
-                                           parse_dates=[0], dayfirst=True)
-            max_temperatures[0] = max_temperatures[0].map(lambda x: x.date())
-            max_temperatures.set_index(0, inplace=True)
 
-            idx = pd.MultiIndex.from_product([long_lat, max_temperatures.index.tolist()], names=['LongLat', 'Date'])
-            temperature_data = pd.DataFrame(data=max_temperatures.T.values.flatten(), index=idx,
-                                            columns=['Maximum_Temperature'])
+# Gridded observations of daily maximum temperature
+def read_daily_gridded_weather_obs(filename, col_name='variable_name', start_date='2006-01-01'):
+    # Centres
+    cartesian_centres_temp = pd.read_csv(filename, header=None, index_col=0, nrows=2)
+    cartesian_centres = [tuple(x) for x in cartesian_centres_temp.T.values]
 
-            save_pickle(temperature_data, path_to_file)
+    # Temperature observations
+    timeseries_data = pd.read_csv(filename, header=None, skiprows=[0, 1], parse_dates=[0], dayfirst=True)
+    timeseries_data[0] = timeseries_data[0].map(lambda x: x.date())
+    if start_date is not None:
+        mask = (timeseries_data[0] >= pd.to_datetime(start_date).date())
+        timeseries_data = timeseries_data.loc[mask]
+    timeseries_data.set_index(0, inplace=True)
 
-        except Exception as e:
-            temperature_data = None
+    # Reshape the dataframe
+    idx = pd.MultiIndex.from_product([cartesian_centres, timeseries_data.index.tolist()], names=['Centre', 'Date'])
+    data = pd.DataFrame(timeseries_data.T.values.flatten(), index=idx, columns=[col_name])
+    data.reset_index(inplace=True)
 
-            print("Failed to get temperate data, {}, due to {}".format(filename, e))
-            print("Data directory is located at {}.".format(os.path.dirname(path_to_file)))
+    # Add levels of Grid corners (and LongLat centres)
+    grid = [find_square_corners(centre, 5000, rotation=None) for centre in cartesian_centres]
+    data['Grid'] = list(
+        itertools.chain.from_iterable(itertools.repeat(x, len(timeseries_data)) for x in grid))
 
-    return temperature_data
+    long_lat = [osgb36_to_wgs84(x[0], x[1]) for x in cartesian_centres]
+    data['LongLat'] = list(
+        itertools.chain.from_iterable(itertools.repeat(x, len(timeseries_data)) for x in long_lat))
+
+    data.set_index(['Grid', 'Centre', 'LongLat', 'Date'], inplace=True)
+
+    return data
+
+
+def get_daily_gridded_weather_obs(filename, col_name='variable_name', start_date='2006-01-01', update=False):
+    """
+
+    :param filename:
+    :param col_name:
+    :param start_date:
+    :param update:
+    :return:
+    """
+    path_to_file = cdd_weather("UKCP gridded data", filename + ".pickle")
+
+    if os.path.isfile(path_to_file) and not update:
+        gridded_obs = load_pickle(path_to_file)
+    else:
+        path_to_zip_file = cdd_weather("UKCP gridded data", filename.replace('_', ' ').capitalize() + ".zip")
+
+        with zipfile.ZipFile(path_to_zip_file, 'r') as zf:
+            filename_list = natsort.natsorted(zf.namelist())
+            temp_dat = [read_daily_gridded_weather_obs(zf.open(f), col_name, start_date) for f in filename_list]
+
+        gridded_obs = pd.concat(temp_dat, axis=0, sort=False)
+
+        save_pickle(gridded_obs, path_to_file)
+
+    return gridded_obs
 
 
 #
-def append_temperature_variables():
-    dmax_temp = read_daily_timeseries_maximum_temperature()
+def integrate_daily_gridded_weather_obs():
+    daily_max_temp = get_daily_gridded_weather_obs("daily_maximum_temperature", col_name='Maximum_Temperature')
+    daily_min_temp = get_daily_gridded_weather_obs("daily_minimum_temperature", col_name='Minimum_Temperature')
+    daily_rainfall = get_daily_gridded_weather_obs("daily_rainfall", col_name='Rainfall')
 
+    daily_gridded_weather_obs = pd.concat([daily_max_temp, daily_min_temp, daily_rainfall], axis=1)
+    save_pickle(daily_gridded_weather_obs, cdd_weather("UKCP gridded data", "daily_gridded_weather_obs.pickle"))
 
-
-    return data
+    return daily_gridded_weather_obs
