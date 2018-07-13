@@ -20,7 +20,7 @@ from utils import is_float, load_pickle, save_pickle
 
 
 # Change directory to "[2017-04] RailwayCodes-pyutils" and sub-directories
-def cdd_rc(*directories):
+def cdd_rc_base(*directories):
     path = os.path.join(os.path.dirname(os.getcwd()), "2017-04 RailwayCodes-Python-utils")
     for directory in directories:
         path = os.path.join(path, directory)
@@ -29,7 +29,7 @@ def cdd_rc(*directories):
 
 # Change directory to "[2017-04] RailwayCodes-pyutils\\dat" and sub-directories
 def cdd_rc_dat(*directories):
-    path = cdd_rc('dat')
+    path = cdd_rc_base('dat')
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -129,6 +129,8 @@ def parse_tr(header, trs):
         n = len(header) - len(tbl_lst[k])
         if n > 0:
             tbl_lst[k].extend(['\xa0'] * n)
+        elif n < 0 and tbl_lst[k][2] == '\xa0':
+            del tbl_lst[k][2]
 
     return tbl_lst
 
@@ -272,7 +274,7 @@ def parse_node_and_connection(node):
 
     def preprocess_node(node_x):
         if re.match('\w+.*( with)?( \(\d+\.\d+\))?(/| and )\w+.*( with)?[ A-Z0-9]?( \(\d+\.\d+\))?', node_x):
-            init_conn_info = [match.group() for match in re.finditer(' with \w+( \(\d+\.\d+\))?', node_x)]
+            init_conn_info = [match.group(0) for match in re.finditer(' with \w+( \(\d+\.\d+\))?', node_x)]
             if '/' in node_x:
                 node_info = [y.replace(conn_inf, '') for y, conn_inf in zip(node_x.split('/'), init_conn_info)]
             else:
@@ -452,7 +454,7 @@ def get_conn_end_start_mileages(start_elr, end_elr, update=False):
             if end_elr in start_conn[i]:
                 start_conn_mileage = start_elr_mileage_file.Mileage.loc[i]
                 if re.match('\w+(?= \(\d+\.\d+\))', start_conn[i]):
-                    end_conn_mileage = miles_chains_to_mileage(re.search('(?<=\w \()\d+\.\d+', start_conn[i]).group())
+                    end_conn_mileage = miles_chains_to_mileage(re.search('(?<=\w \()\d+\.\d+', start_conn[i]).group(0))
                     break
                 elif end_elr == start_conn[i]:
 
@@ -476,7 +478,7 @@ def get_conn_end_start_mileages(start_elr, end_elr, update=False):
 
             else:
                 try:
-                    link_elr = re.search('\w+(?= \(\d+\.\d+\))', start_conn[i]).group()
+                    link_elr = re.search('\w+(?= \(\d+\.\d+\))', start_conn[i]).group(0)
                 except AttributeError:
                     link_elr = start_conn[i]
 
@@ -500,7 +502,7 @@ def get_conn_end_start_mileages(start_elr, end_elr, update=False):
                                 if end_elr in link_conn[l]:
                                     if re.match('\w+(?= \(\d+\.\d+\))', link_conn[l]):
                                         end_conn_mileage = miles_chains_to_mileage(
-                                            re.search('(?<=\w \()\d+\.\d+', link_conn[l]).group())
+                                            re.search('(?<=\w \()\d+\.\d+', link_conn[l]).group(0))
                                     elif end_elr == link_conn[l]:
                                         end_conn_mileage = link_elr_mileage_file.Mileage.loc[l]
                                     break
@@ -584,26 +586,26 @@ def scrape_location_codes(keyword, update=False):
             """ Extract additional information as note """
 
             # Location
-            def clean_loc_note(x):
+            def parse_loc_note(x):
                 # Data
                 d = re.search('[\w ,]+(?=[ \n]\[)', x)
                 if d is not None:
-                    dat = d.group()
+                    dat = d.group(0)
                 else:
                     m_pat = re.compile('[Oo]riginally |[Ff]ormerly |[Ll]ater |[Pp]resumed |\?|\"|\n')
-                    # dat = re.search('["\w ,]+(?= [[(?\'])|["\w ,]+', x).group() if re.search(m_pat, x) else x
+                    # dat = re.search('["\w ,]+(?= [[(?\'])|["\w ,]+', x).group(0) if re.search(m_pat, x) else x
                     dat = ' '.join(x.replace(x[x.find('('):x.find(')') + 1], '').split()) if re.search(m_pat, x) else x
                 # Note
-                n = re.search('(?<=[\n ][[(\'])[\w ,\'\"/?]+', x)
-                if n is not None and (n.group() == "'" or n.group() == '"'):
-                    n = re.search('(?<=[[(])[\w ,?]+(?=[])])', x)
-                note = n.group() if n is not None else ''
+                n = re.search('(?<=[\n ][\[(\'])[\w ,\'\"/?]+', x)
+                if n is not None and (n.group(0) == "'" or n.group(0) == '"'):
+                    n = re.search(r'(?<=[\[(])[\w ,?]+(?=[])])', x)
+                note = n.group(0) if n is not None else ''
                 if 'STANOX ' in dat and 'STANOX ' in x and note == '':
                     dat = x[0:x.find('STANOX')].strip()
                     note = x[x.find('STANOX'):]
                 return dat, note
 
-            data[['Location', 'Location_Note']] = data.Location.map(clean_loc_note).apply(pd.Series)
+            data[['Location', 'Location_Note']] = data.Location.map(parse_loc_note).apply(pd.Series)
 
             # CRS, NLC, TIPLOC, STANME
             drop_pattern = re.compile('[Ff]ormerly|[Ss]ee[ also]|Also .[\w ,]+')
@@ -611,13 +613,13 @@ def scrape_location_codes(keyword, update=False):
             data.drop(labels=idx, axis=0, inplace=True)
 
             def extract_others_note(x):
-                n = re.search('(?<=[[(\'])[\w,? ]+(?=[])\'])', x)
-                note = n.group() if n is not None else ''
+                n = re.search('(?<=[\[(\'])[\w,? ]+(?=[)\]\'])', x)
+                note = n.group(0) if n is not None else ''
                 return note
 
             def strip_others_note(x):
-                d = re.search('[\w ,]+(?= [[(\'])', x)
-                dat = d.group() if d is not None else x
+                d = re.search('[\w ,]+(?= [\[(\'])', x)
+                dat = d.group(0) if d is not None else x
                 return dat
 
             other_codes_col = ['CRS', 'NLC', 'TIPLOC', 'STANME']
@@ -627,18 +629,18 @@ def scrape_location_codes(keyword, update=False):
             data[other_codes_col] = data[other_codes_col].applymap(strip_others_note)
 
             # STANOX
-            def clean_stanox_note(x):
-                d = re.search('[\w *,]+(?= [[(\'])', x)
-                dat = d.group() if d is not None else x
+            def parse_stanox_note(x):
+                d = re.search('[\w *,]+(?= [\[(\'])', x)
+                dat = d.group(0) if d is not None else x
                 note = 'Pseudo STANOX' if '*' in dat else ''
-                n = re.search('(?<=[[(\'])[\w, ]+.(?=[])\'])', x)
+                n = re.search('(?<=[\[(\'])[\w, ]+.(?=[)\]\'])', x)
                 if n is not None:
-                    note = '; '.join(x for x in [note, n.group()] if x != '')
+                    note = '; '.join(x for x in [note, n.group(0)] if x != '')
                 dat = dat.rstrip('*') if '*' in dat else dat
                 return dat, note
 
             if not data.empty:
-                data[['STANOX', 'STANOX_Note']] = data.STANOX.map(clean_stanox_note).apply(pd.Series)
+                data[['STANOX', 'STANOX_Note']] = data.STANOX.map(parse_stanox_note).apply(pd.Series)
             else:  # It is likely that no data is available on the web page for the given 'key_word'
                 data['STANOX_Note'] = data.STANOX
 
@@ -746,19 +748,28 @@ def get_location_codes(update=False):
 
 
 # Get a dict for location code data for the given keyword
-def get_location_dictionary(keyword, drop_duplicates=True, main_key=None):
+def get_location_dictionary(initial, keyword, drop_duplicates=True, main_key=None):
     """
-    :param drop_duplicates: [bool]
+    :param initial: [str] one of string.ascii_letters
+    :param drop_duplicates: [bool] If drop_duplicates is False, loc_dict will take the last item to be the value
     :param keyword: [str] 'CRS', 'NLC', 'TIPLOC', 'STANOX'
     :param main_key: [str] or None
     :return:
     """
-    location_code = get_location_codes()['Locations']
+
+    if initial in string.ascii_letters:
+        location_code = scrape_location_codes(initial)['Locations_' + initial.capitalize()]
+    else:
+        location_code = get_location_codes()['Locations']
 
     try:
-        temp0 = location_code[['Location', keyword]]
-        temp = temp0.drop_duplicates(subset=keyword, keep=False) if drop_duplicates else temp0
-        loc_dict = temp.set_index(keyword).to_dict()
+        loc_code_original = location_code[['Location', keyword]]
+        loc_code_original = loc_code_original[loc_code_original[keyword] != '']
+        if drop_duplicates:
+            loc_code = loc_code_original.drop_duplicates(subset=keyword, keep='first')
+        else:  # If drop_duplicates is False, loc_dict will take the last item to be the value in dictionary
+            loc_code = loc_code_original
+        loc_dict = loc_code.set_index(keyword).to_dict()
         if main_key is not None:
             loc_dict[main_key] = loc_dict.pop('Location')
             location_dictionary = loc_dict
