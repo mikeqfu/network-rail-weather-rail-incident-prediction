@@ -1,3 +1,5 @@
+""" Gridded weather observations """
+
 import itertools
 import os
 import zipfile
@@ -17,7 +19,7 @@ def cdd_weather(*directories):
     return path
 
 
-#
+# Find coordinates for each corner of the weather observation grid
 def find_square_corners(centre_point, side_length=5000, rotation=None):
     """
 
@@ -48,7 +50,7 @@ def find_square_corners(centre_point, side_length=5000, rotation=None):
     return lower_left, upper_left, upper_right, lower_right
 
 
-# Gridded observations of daily maximum temperature
+# Read gridded weather observations from the raw zipped file
 def read_daily_gridded_weather_obs(filename, col_name='variable_name', start_date='2006-01-01'):
     # Centres
     cartesian_centres_temp = pd.read_csv(filename, header=None, index_col=0, nrows=2)
@@ -81,6 +83,7 @@ def read_daily_gridded_weather_obs(filename, col_name='variable_name', start_dat
     return data
 
 
+# Get gridded weather observations
 def get_daily_gridded_weather_obs(filename, col_name='variable_name', start_date='2006-01-01', update=False):
     """
 
@@ -90,7 +93,7 @@ def get_daily_gridded_weather_obs(filename, col_name='variable_name', start_date
     :param update:
     :return:
     """
-    path_to_file = cdd_weather("UKCP gridded data", filename + ".pickle")
+    path_to_file = cdd_weather("UKCP gridded data", filename + "_{}".format(start_date.replace("-", "")) + ".pickle")
 
     if os.path.isfile(path_to_file) and not update:
         gridded_obs = load_pickle(path_to_file)
@@ -108,13 +111,27 @@ def get_daily_gridded_weather_obs(filename, col_name='variable_name', start_date
     return gridded_obs
 
 
-#
-def integrate_daily_gridded_weather_obs():
-    daily_max_temp = get_daily_gridded_weather_obs("daily_maximum_temperature", col_name='Maximum_Temperature')
-    daily_min_temp = get_daily_gridded_weather_obs("daily_minimum_temperature", col_name='Minimum_Temperature')
-    daily_rainfall = get_daily_gridded_weather_obs("daily_rainfall", col_name='Rainfall')
+# Combine weather observations of different variables
+def integrate_daily_gridded_weather_obs(update=False, start_date='2006-01-01'):
+    filename = "daily_gridded_weather_obs_{}".format(start_date.replace('-', ''))
+    path_to_file = cdd_weather("UKCP gridded data", filename + ".pickle")
+    if os.path.isfile(path_to_file) and not update:
+        daily_gridded_weather_obs = load_pickle(path_to_file)
+    else:
+        try:
+            daily_max_temp = \
+                get_daily_gridded_weather_obs("daily_maximum_temperature", 'Maximum_Temperature', start_date)
+            daily_min_temp = \
+                get_daily_gridded_weather_obs("daily_minimum_temperature", 'Minimum_Temperature', start_date)
+            daily_rainfall = \
+                get_daily_gridded_weather_obs("daily_rainfall", 'Rainfall', start_date)
 
-    daily_gridded_weather_obs = pd.concat([daily_max_temp, daily_min_temp, daily_rainfall], axis=1)
-    save_pickle(daily_gridded_weather_obs, cdd_weather("UKCP gridded data", "daily_gridded_weather_obs.pickle"))
+            daily_gridded_weather_obs = pd.concat([daily_max_temp, daily_min_temp, daily_rainfall], axis=1)
+
+            save_pickle(daily_gridded_weather_obs, path_to_file)
+
+        except Exception as e:
+            print("Failed to get integrated daily gridded weather observations due to {}.".format(e))
+            daily_gridded_weather_obs = None
 
     return daily_gridded_weather_obs
