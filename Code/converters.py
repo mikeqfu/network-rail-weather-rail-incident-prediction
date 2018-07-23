@@ -99,17 +99,17 @@ def osgb36_to_wgs84(easting, northing):
         lat = np.arctan2(z_2 + e2_2 * nu_2 * np.sin(lat_old), p)
 
     # Lon and height are then pretty easy
-    lon = np.arctan2(y_2, x_2)
+    long = np.arctan2(y_2, x_2)
     # h = p / cos(lat) - nu_2
 
     # Print the results
     # print([(lat - lat_1) * 180 / pi, (lon - lon_1) * 180 / pi])
 
     # Convert to degrees
-    lon = lon * 180 / np.pi
+    long = long * 180 / np.pi
     lat = lat * 180 / np.pi
 
-    return lon, lat
+    return long, lat
 
 
 # Convert latitude and longitude (WGS84) to british national grid (OSBG36) (Reference: http://www.hannahfry.co.uk)
@@ -267,6 +267,6 @@ def year_to_financial_year(date):
 
 # Convert a .svg file to, and save locally, a .emf file
 def svg_to_emf(path_to_svg, path_to_emf):
-    print('Converting ".svg" to ".emf" ... ', end="")
+    print("Converting \".svg\" to \".emf\" ... ", end="")
     subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_svg, '-M', path_to_emf])
     print("Done.")
