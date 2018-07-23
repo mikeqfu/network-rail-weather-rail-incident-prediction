@@ -305,7 +305,7 @@ def parse_node_and_connection(node):
     if all(len(c) == 1 for c in conn_node_list):
         conn_node = pd.DataFrame([c + [None] for c in conn_node_list], columns=['Connection1', 'Connection2'])
     else:
-
+        assert isinstance(conn_node_list, list)
         for i in [conn_node_list.index(c) for c in conn_node_list if len(c) > 1]:
             conn_node_list[i] = [v for lst in [x.rstrip(',').lstrip('later ').split(' and ')
                                                for x in conn_node_list[i]] for v in lst]
@@ -578,7 +578,7 @@ def scrape_location_codes(keyword, update=False):
             tbl_lst, header = parse_table(source, parser='lxml')
 
             # Get a raw DataFrame
-            reps = {'-': '', '\xa0': '', '&half;': ' and 1/2'}
+            reps = {'\b-\b': '', '\xa0': '', '&half;': ' and 1/2'}
             pattern = re.compile("|".join(reps.keys()))
             tbl_lst = [[pattern.sub(lambda x: reps[x.group(0)], item) for item in record] for record in tbl_lst]
             data = pd.DataFrame(tbl_lst, columns=header)
@@ -605,7 +605,7 @@ def scrape_location_codes(keyword, update=False):
                     note = x[x.find('STANOX'):]
                 return dat, note
 
-            data[['Location', 'Location_Note']] = data.Location.map(parse_loc_note).apply(pd.Series)
+            data[['Locations', 'Location_Note']] = data.Location.map(parse_loc_note).apply(pd.Series)
 
             # CRS, NLC, TIPLOC, STANME
             drop_pattern = re.compile('[Ff]ormerly|[Ss]ee[ also]|Also .[\w ,]+')
@@ -748,35 +748,91 @@ def get_location_codes(update=False):
 
 
 # Get a dict for location code data for the given keyword
-def get_location_dictionary(initial, keyword, drop_duplicates=True, main_key=None):
+def get_location_dictionary(keyword, initial=None, drop_duplicates=True, main_key=None):
     """
-    :param initial: [str] one of string.ascii_letters
-    :param drop_duplicates: [bool] If drop_duplicates is False, loc_dict will take the last item to be the value
     :param keyword: [str] 'CRS', 'NLC', 'TIPLOC', 'STANOX'
+    :param initial: [str] or None: one of string.ascii_letters, or (default) None
+    :param drop_duplicates: [bool] If drop_duplicates is False, loc_dict will take the last item to be the value
     :param main_key: [str] or None
     :return:
     """
+    assert keyword in ['CRS', 'NLC', 'TIPLOC', 'STANOX', 'STANME']
 
-    if initial in string.ascii_letters:
+    if initial is not None and initial in string.ascii_letters:
         location_code = scrape_location_codes(initial)['Locations_' + initial.capitalize()]
     else:
         location_code = get_location_codes()['Locations']
+
+    assert isinstance(location_code, pd.DataFrame)
 
     try:
         loc_code_original = location_code[['Location', keyword]]
         loc_code_original = loc_code_original[loc_code_original[keyword] != '']
         if drop_duplicates:
-            loc_code = loc_code_original.drop_duplicates(subset=keyword, keep='first')
-        else:  # If drop_duplicates is False, loc_dict will take the last item to be the value in dictionary
-            loc_code = loc_code_original
-        loc_dict = loc_code.set_index(keyword).to_dict()
+            if drop_duplicates is True:
+                loc_code = loc_code_original.drop_duplicates(subset=keyword, keep='first')
+            else:
+                loc_code = loc_code_original
+            loc_dict = loc_code.set_index(keyword).to_dict()
+        else:  # drop_duplicates is False
+            loc_code = loc_code_original.groupby(keyword).aggregate(list)
+            loc_code.Location = loc_code.Location.map(lambda x: x[0] if len(x) == 1 else x)
+            loc_dict = loc_code.to_dict()
+
         if main_key is not None:
             loc_dict[main_key] = loc_dict.pop('Location')
             location_dictionary = loc_dict
         else:
             location_dictionary = loc_dict['Location']
-    except KeyError:
-        print('Choose a "keyword" from "CRS", "NLC", "TIPLOC", "STANME", and "STANOX"')
+    except Exception as e:
+        print("Failed to get location code reference dictionary. This is due to {}.".format(e))
         location_dictionary = None
 
     return location_dictionary
+
+
+def get_location_dictionary_v2(keywords, initial=None, as_dict=False, main_key=None):
+    """
+    :param keywords: [list] e.g. ['CRS', 'NLC', 'TIPLOC', 'STANOX', 'STANME']
+    :param initial: [str] one of string.ascii_letters
+    :param as_dict:
+    :param main_key: [str] or None
+    :return:
+    """
+    assert isinstance(keywords, list) and all(x in ['CRS', 'NLC', 'TIPLOC', 'STANOX', 'STANME'] for x in keywords)
+
+    if initial is not None and initial in string.ascii_letters:
+        location_code = scrape_location_codes(initial)['Locations_' + initial.capitalize()]
+    else:
+        location_code = get_location_codes()['Locations']
+
+    # Deep cleansing location_code
+    try:
+        loc_code = location_code[['Location'] + keywords]
+        loc_code = loc_code.query(' | '.join(["{} != ''".format(k) for k in keywords]))
+
+        loc_code_unique = loc_code.drop_duplicates(subset=keywords, keep=False)
+        loc_code_unique.set_index(keywords, inplace=True)
+
+        duplicated_temp1 = loc_code[loc_code.duplicated(subset=['Location'] + keywords, keep=False)]
+        duplicated_temp2 = loc_code[loc_code.duplicated(subset=keywords, keep=False)]
+        duplicated_temp = duplicated_temp2[~duplicated_temp1.eq(duplicated_temp2)].dropna()
+        loc_code_duplicated = duplicated_temp.groupby(keywords).agg(list)
+
+        loc_code_ref = pd.concat([loc_code_unique, loc_code_duplicated], axis=0)
+
+        if as_dict:
+            loc_code_ref_dict = loc_code_ref.to_dict()
+            if main_key is not None:
+                loc_code_ref_dict[main_key] = loc_code_ref_dict.pop('Location')
+                location_code_ref_dict = loc_code_ref_dict
+            else:
+                location_code_ref_dict = loc_code_ref_dict['Location']
+        else:
+            location_code_ref_dict = loc_code_ref
+
+    except Exception as e:
+        print("Failed to get multiple location code indexed reference. This is due to {}.".format(e))
+        location_code_ref_dict = None
+
+    return location_code_ref_dict
