@@ -8,6 +8,7 @@ import pickle
 import re
 import subprocess
 
+import Levenshtein
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot
@@ -75,14 +76,6 @@ def cdd_rc(*directories):
     return path
 
 
-# Change directory to "Delay attribution"
-def cdd_delay_attr(*directories):
-    path = cdd("Schedule 8 incidents", "Delay attribution")
-    for directory in directories:
-        path = os.path.join(path, directory)
-    return path
-
-
 # ====================================================================================================================
 """ Save and Load files """
 
@@ -97,11 +90,11 @@ def save_pickle(pickle_data, path_to_pickle):
     pickle_filename = os.path.basename(path_to_pickle)
     print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_pickle) else "Saving", pickle_filename), end="")
     try:
-        os.makedirs(os.path.dirname(path_to_pickle), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(path_to_pickle)), exist_ok=True)
         pickle_out = open(path_to_pickle, 'wb')
         pickle.dump(pickle_data, pickle_out)
         pickle_out.close()
-        print("Done.")
+        print("Successfully.")
     except Exception as e:
         print("failed due to {}.".format(e))
 
@@ -112,10 +105,16 @@ def load_pickle(path_to_pickle):
     :param path_to_pickle: [str] local file path
     :return: the object retrieved from the pickle
     """
-    pickle_in = open(path_to_pickle, 'rb')
-    data = pickle.load(pickle_in)
-    pickle_in.close()
-    return data
+    print("Loading \"{}\" ... ".format(os.path.basename(path_to_pickle)), end="")
+    try:
+        pickle_in = open(path_to_pickle, 'rb')
+        pickle_data = pickle.load(pickle_in)
+        pickle_in.close()
+        print("Successfully.")
+    except Exception as e:
+        print("failed due to {}.".format(e))
+        pickle_data = None
+    return pickle_data
 
 
 # Save json file
@@ -128,11 +127,11 @@ def save_json(json_data, path_to_json):
     json_filename = os.path.basename(path_to_json)
     print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_json) else "Saving", json_filename), end="")
     try:
-        os.makedirs(os.path.dirname(path_to_json), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(path_to_json)), exist_ok=True)
         json_out = open(path_to_json, 'w')
         json.dump(json_data, json_out)
         json_out.close()
-        print("Done.")
+        print("Successfully.")
     except Exception as e:
         print("failed due to {}.".format(e))
 
@@ -143,36 +142,42 @@ def load_json(path_to_json):
     :param path_to_json: [str] local file path
     :return: the json data retrieved
     """
-    json_in = open(path_to_json, 'r')
-    data = json.load(json_in)
-    json_in.close()
-    return data
+    print("Loading \"{}\" ... ".format(os.path.basename(path_to_json)), end="")
+    try:
+        json_in = open(path_to_json, 'r')
+        json_data = json.load(json_in)
+        json_in.close()
+        print("Successfully.")
+    except Exception as e:
+        print("failed due to {}.".format(e))
+        json_data = None
+    return json_data
 
 
 # Save Excel workbook
-def save_workbook(excel_data, path_to_excel, sep, sheet_name, engine='xlsxwriter'):
+def save_spreadsheet(excel_data, path_to_sheet, sep, sheet_name, engine='xlsxwriter'):
     """
     :param excel_data: any [DataFrame] that could be dumped saved as a Excel workbook, e.g. '.csv', '.xlsx'
-    :param path_to_excel: [str] local file path
+    :param path_to_sheet: [str] local file path
     :param sep: [str] separator for saving excel_data to a '.csv' file
     :param sheet_name: [str] name of worksheet for saving the excel_data to a e.g. '.xlsx' file
     :param engine: [str] ExcelWriter engine; pandas writes Excel files using the 'xlwt' module for '.xls' files and the
                         'openpyxl' or 'xlsxWriter' modules for '.xlsx' files.
     :return: whether the data has been successfully saved or updated
     """
-    excel_filename = os.path.basename(path_to_excel)
+    excel_filename = os.path.basename(path_to_sheet)
     filename, save_as = os.path.splitext(excel_filename)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_excel) else "Saving", excel_filename), end="")
+    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_sheet) else "Saving", excel_filename), end="")
     try:
-        os.makedirs(os.path.dirname(path_to_excel), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(path_to_sheet)), exist_ok=True)
         if save_as == ".csv":  # Save the data to a .csv file
-            excel_data.to_csv(path_to_excel, index=False, sep=sep)
+            excel_data.to_csv(path_to_sheet, index=False, sep=sep)
         else:  # Save the data to a .xlsx or .xls file
-            xlsx_writer = pd.ExcelWriter(path_to_excel, engine)
+            xlsx_writer = pd.ExcelWriter(path_to_sheet, engine)
             excel_data.to_excel(xlsx_writer, sheet_name, index=False)
             xlsx_writer.save()
             xlsx_writer.close()
-        print("Done.")
+        print("Successfully.")
     except Exception as e:
         print("failed due to {}.".format(e))
 
@@ -202,7 +207,7 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
 
     # Save the data according to the file extension
     if save_as == ".csv" or save_as == ".xlsx" or save_as == ".xls":
-        save_workbook(dat, path_to_file, sep, sheet_name, engine)
+        save_spreadsheet(dat, path_to_file, sep, sheet_name, engine)
     elif save_as == ".json":
         save_json(dat, path_to_file)
     else:
@@ -255,6 +260,12 @@ def find_match(x, lookup):
         for y in lookup:
             if re.match(x, y, re.IGNORECASE):
                 return y
+
+
+#
+def find_closet_text(x, lookup):
+    ratios = [Levenshtein.ratio(x, y) for y in lookup]
+    return lookup[np.argmax(ratios)]
 
 
 #
