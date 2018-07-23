@@ -135,3 +135,21 @@ def integrate_daily_gridded_weather_obs(update=False, start_date='2006-01-01'):
             daily_gridded_weather_obs = None
 
     return daily_gridded_weather_obs
+
+
+# Met station locations
+def get_met_station_locations(update=False):
+    spreadsheet_filename = "Met station locations.xlsx"
+    path_to_spreadsheet = cdd_weather(spreadsheet_filename)
+    path_to_pickle = path_to_spreadsheet.replace(".xlsx", ".pickle")
+    if os.path.isfile(path_to_pickle) and not update:
+        met_stn_loc = load_pickle(path_to_pickle)
+    else:
+        try:
+            met_stn_loc = pd.read_excel(path_to_spreadsheet)
+            met_stn_loc.Name = met_stn_loc.Name.str.strip()
+            save_pickle(met_stn_loc, path_to_pickle)
+        except Exception as e:
+            print("Failed to get {} due to {}".format(spreadsheet_filename, e))
+            met_stn_loc = None
+    return met_stn_loc
