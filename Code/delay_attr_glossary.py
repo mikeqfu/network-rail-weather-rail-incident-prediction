@@ -21,14 +21,15 @@ def cdd_delay_attr(*directories):
 
 
 def path_to_original_file():
-    return cdd_delay_attr("Historic delay attribution glossary.xlsx")
+    return cdd_delay_attr("Delay attribution glossary.xlsx")
 
 
 # ====================================================================================================================
+""" """
 
 
 # Download delay attribution glossary
-def download_historic_delay_attribution_glossary():
+def download_delay_attribution_glossary():
     spreadsheet_file = "Historic-Delay-Attribution-Glossary.xlsx"
 
     years = [str(x) for x in range(2018, 2030)]
@@ -38,7 +39,7 @@ def download_historic_delay_attribution_glossary():
         url = 'https://cdn.networkrail.co.uk/wp-content/uploads/{}/{}'.format(y + '/' + m, spreadsheet_file)
         response = requests.get(url)
         if response.ok:
-            path_to_file = cdd_delay_attr(spreadsheet_file.capitalize().replace("-", " "))
+            path_to_file = cdd_delay_attr(spreadsheet_file.replace("-", " ").replace("Historic ", "").capitalize())
             directory = cdd_delay_attr().replace(cdd(), '.\\Data')
             print("Downloading \"{}\" to \"{}\" ... ".format(spreadsheet_file, directory), end="")
             try:
@@ -50,6 +51,7 @@ def download_historic_delay_attribution_glossary():
 
 
 # ====================================================================================================================
+""" """
 
 
 # Stanox Codes
@@ -60,7 +62,7 @@ def get_stanox_codes(update=False, hard_update=False):
         stanox_codes = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -82,7 +84,7 @@ def get_period_dates(update=False, hard_update=False):
         period_dates = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -121,15 +123,15 @@ def get_incident_reason_metadata(update=False, hard_update=False):
         incident_reason_metadata = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
             # Get data from the original glossary file
             incident_reason_metadata = pd.read_excel(path_to_original_file(), sheet_name="Incident Reason")
-            incident_reason_metadata.columns = [x.replace(' ', '') for x in incident_reason_metadata.columns]
+            incident_reason_metadata.columns = [x.replace(' ', '_') for x in incident_reason_metadata.columns]
             incident_reason_metadata.drop(incident_reason_metadata.tail(1).index, inplace=True)
-            incident_reason_metadata.set_index('IncidentReason', inplace=True)
+            incident_reason_metadata.set_index('Incident_Reason', inplace=True)
             # Save the data
             save_pickle(incident_reason_metadata, path_to_pickle)
         except Exception as e:
@@ -146,7 +148,7 @@ def get_responsible_manager(update=False, hard_update=False):
         responsible_manager = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -168,7 +170,7 @@ def get_reactionary_reason_code(update=False, hard_update=False):
         reactionary_reason_code = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -189,7 +191,7 @@ def get_performance_event_code(update=False, hard_update=False):
         performance_event_code = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -214,7 +216,7 @@ def get_train_service_code(update=False, hard_update=False):
         train_service_code = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -235,7 +237,7 @@ def get_operator_name(update=False, hard_update=False):
         operator_name = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -256,7 +258,7 @@ def get_service_group_code(update=False, hard_update=False):
         service_group_code = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
@@ -271,13 +273,13 @@ def get_service_group_code(update=False, hard_update=False):
 
 # Historic delay attribution glossary
 def get_delay_attr_glossary(update=False, hard_update=False):
-    pickle_filename = "delay_attr_glossary.pickle"
+    pickle_filename = "delay_attribution_glossary.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         delay_attr_glossary = load_pickle(path_to_pickle)
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_historic_delay_attribution_glossary()
+            download_delay_attribution_glossary()
         else:
             pass
         try:
