@@ -19,7 +19,7 @@ from utils import is_float, load_pickle, save_pickle
 """ Change directories """
 
 
-# Change directory to "[2017-04] RailwayCodes-pyutils" and sub-directories
+# Change directory to "2017-04 RailwayCodes-Python-utils" and sub-directories
 def cdd_rc_base(*directories):
     path = os.path.join(os.path.dirname(os.getcwd()), "2017-04 RailwayCodes-Python-utils")
     for directory in directories:
@@ -27,7 +27,7 @@ def cdd_rc_base(*directories):
     return path
 
 
-# Change directory to "[2017-04] RailwayCodes-pyutils\\dat" and sub-directories
+# Change directory to "2017-04 RailwayCodes-Python-utils\\dat" and sub-directories
 def cdd_rc_dat(*directories):
     path = cdd_rc_base('dat')
     for directory in directories:
@@ -265,7 +265,6 @@ def parse_mileage(mileage):
 
 
 # Separate node and connection
-# noinspection PyTypeChecker
 def parse_node_and_connection(node):
     """
     :param node:
@@ -590,22 +589,22 @@ def scrape_location_codes(keyword, update=False):
                 # Data
                 d = re.search('[\w ,]+(?=[ \n]\[)', x)
                 if d is not None:
-                    dat = d.group(0)
+                    dat = d.group()
                 else:
                     m_pat = re.compile('[Oo]riginally |[Ff]ormerly |[Ll]ater |[Pp]resumed |\?|\"|\n')
                     # dat = re.search('["\w ,]+(?= [[(?\'])|["\w ,]+', x).group(0) if re.search(m_pat, x) else x
                     dat = ' '.join(x.replace(x[x.find('('):x.find(')') + 1], '').split()) if re.search(m_pat, x) else x
                 # Note
                 n = re.search('(?<=[\n ][\[(\'])[\w ,\'\"/?]+', x)
-                if n is not None and (n.group(0) == "'" or n.group(0) == '"'):
+                if n is not None and (n.group() == "'" or n.group() == '"'):
                     n = re.search(r'(?<=[\[(])[\w ,?]+(?=[])])', x)
-                note = n.group(0) if n is not None else ''
+                note = n.group() if n is not None else ''
                 if 'STANOX ' in dat and 'STANOX ' in x and note == '':
                     dat = x[0:x.find('STANOX')].strip()
                     note = x[x.find('STANOX'):]
                 return dat, note
 
-            data[['Locations', 'Location_Note']] = data.Location.map(parse_loc_note).apply(pd.Series)
+            data[['Location', 'Location_Note']] = data.Location.map(parse_loc_note).apply(pd.Series)
 
             # CRS, NLC, TIPLOC, STANME
             drop_pattern = re.compile('[Ff]ormerly|[Ss]ee[ also]|Also .[\w ,]+')
@@ -814,10 +813,12 @@ def get_location_dictionary_v2(keywords, initial=None, as_dict=False, main_key=N
         loc_code_unique = loc_code.drop_duplicates(subset=keywords, keep=False)
         loc_code_unique.set_index(keywords, inplace=True)
 
-        duplicated_temp1 = loc_code[loc_code.duplicated(subset=['Location'] + keywords, keep=False)]
-        duplicated_temp2 = loc_code[loc_code.duplicated(subset=keywords, keep=False)]
-        duplicated_temp = duplicated_temp2[~duplicated_temp1.eq(duplicated_temp2)].dropna()
-        loc_code_duplicated = duplicated_temp.groupby(keywords).agg(list)
+        duplicated_temp_1 = loc_code[loc_code.duplicated(subset=['Location'] + keywords, keep=False)]
+        duplicated_temp_2 = loc_code[loc_code.duplicated(subset=keywords, keep=False)]
+        duplicated_1 = duplicated_temp_2[duplicated_temp_1.eq(duplicated_temp_2)].dropna().drop_duplicates()
+        duplicated_2 = duplicated_temp_2[~duplicated_temp_1.eq(duplicated_temp_2)].dropna()
+        duplicated = pd.concat([duplicated_1, duplicated_2], axis=0)
+        loc_code_duplicated = duplicated.groupby(keywords).agg(list)
 
         loc_code_ref = pd.concat([loc_code_unique, loc_code_duplicated], axis=0)
 
