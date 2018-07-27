@@ -13,8 +13,9 @@ import database_utils as db
 import database_veg as dbv
 import railwaycodes_utils as rc
 from converters import yards_to_mileage
+from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import *
-from utils import cd, cdd_delay_attr, cdd_rc, find_match, load_json, load_pickle, save, save_json, save_pickle
+from utils import cd, cdd_rc, find_match, load_json, load_pickle, save, save_json, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
@@ -63,49 +64,6 @@ def cdd_metex_db_fig_pub(pid, *directories):
 def metex_pk(table_name):
     pri_key = db.get_pri_keys(db_name="NR_METEX", table_name=table_name)
     return pri_key
-
-
-# Get Performance Event Code
-def get_performance_event_code(update=False):
-    filename = "performance_event_code"
-    path_to_file = cdd_delay_attr(filename + ".pickle")
-    if os.path.isfile(path_to_file) and not update:
-        performance_event_code = load_pickle(path_to_file)
-    else:
-        try:
-            performance_event_code = pd.read_excel(cdd_delay_attr("Delay attribution glossary.xlsx"),
-                                                   sheetname="Performance Event Code")
-            # Rename columns
-            performance_event_code.columns = [x.replace(' ', '') for x in performance_event_code.columns]
-            # Set an index
-            performance_event_code.set_index('PerformanceEventCode', inplace=True)
-            # Save the data as .pickle
-            save_pickle(performance_event_code, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
-            performance_event_code = None
-
-    return performance_event_code
-
-
-# Get metadata about incident reasons
-def get_incident_reason_metadata(update=False):
-    path_to_file = cdd_delay_attr("incident_reason_metadata.pickle")
-    if os.path.isfile(path_to_file) and not update:
-        incident_reason_metadata = load_pickle(path_to_file)
-    else:
-        try:
-            # Get data from the original glossary file
-            path_to_original_file = cdd_delay_attr("Delay attribution glossary.xlsx")
-            incident_reason_metadata = pd.read_excel(path_to_original_file, sheetname="Incident Reason")
-            incident_reason_metadata.columns = [x.replace(' ', '') for x in incident_reason_metadata.columns]
-            incident_reason_metadata.set_index('IncidentReason', inplace=True)
-            # Save the data
-            save_pickle(incident_reason_metadata, path_to_file)
-        except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(path_to_file, e))
-            incident_reason_metadata = None
-    return incident_reason_metadata
 
 
 # Transform a DataFrame to dictionary
@@ -225,8 +183,10 @@ def get_incident_reason_info(database_plus=True, update=False):
             incident_reason_info.index.rename('IncidentReason', inplace=True)
 
             if database_plus:
-                reason_info_plus = get_incident_reason_metadata()
-                incident_reason_info = reason_info_plus.join(incident_reason_info, how='outer', rsuffix='_orig')
+                incident_reason_metadata = get_incident_reason_metadata()
+                incident_reason_metadata.index.name = 'IncidentReason'
+                incident_reason_metadata.columns = [x.replace('_', '') for x in incident_reason_metadata.columns]
+                incident_reason_info = incident_reason_metadata.join(incident_reason_info, rsuffix='_orig')
                 incident_reason_info.dropna(axis=1, inplace=True)
 
             save_pickle(incident_reason_info, path_to_file)
@@ -336,6 +296,8 @@ def get_pfpi(update=False):
             pfpi.index.rename('PfPIId', inplace=True)
             # To replace Performance Event Code
             performance_event_code = get_performance_event_code()
+            performance_event_code.index.name = 'PerformanceEventCode'
+            performance_event_code.columns = [x.replace('_', '') for x in performance_event_code.columns]
             # Merge pfpi and pe_code
             pfpi = pfpi.join(performance_event_code, on='PerformanceEventCode')
             # Change columns' order
@@ -394,13 +356,13 @@ def get_stanox_location(nr_mileage_format=True, update=False):
                 stanmes = load_json(cdd_rc("STANME.json"))
                 stanme_dict = {key: stanmes}
             except FileNotFoundError:
-                stanme_dict = rc.get_location_dictionary('STANME', drop_duplicates=True, main_key=key)
+                stanme_dict = rc.get_location_dictionary(keyword='STANME', drop_duplicates=True, main_key=key)
                 save_json(stanme_dict[key], cdd_rc("STANME.json"))
             try:
                 tiplocs = load_json(cdd_rc("TIPLOC.json"))
                 tiploc_dict = {key: tiplocs}
             except FileNotFoundError:
-                tiploc_dict = rc.get_location_dictionary('TIPLOC', drop_duplicates=True, main_key=key)
+                tiploc_dict = rc.get_location_dictionary(keyword='TIPLOC', drop_duplicates=True, main_key=key)
                 save_json(tiploc_dict[key], cdd_rc("TIPLOC.json"))
 
             # Replace existing location names with likely full name
@@ -416,7 +378,7 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             try:
                 stanox_dict = load_json(cdd_rc("STANOX.json"))
             except FileNotFoundError:
-                stanox_dict = rc.get_location_dictionary('STANOX')
+                stanox_dict = rc.get_location_dictionary(keyword='STANOX')
                 save_json(stanox_dict, cdd_rc("STANOX.json"))
             loc['STANOX'] = loc.index
             loc['Location_full_2'] = loc.STANOX.replace(stanox_dict).apply(lambda x: '' if x.isdigit() else x)
@@ -480,14 +442,14 @@ def get_stanox_section(update=False):
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             stanox_loc = get_stanox_location(nr_mileage_format=True)
             stanox_dict_1 = stanox_loc.Location.to_dict()
-            stanox_dict_2 = rc.get_location_dictionary('STANOX', drop_duplicates=False)
+            stanox_dict_2 = rc.get_location_dictionary(keyword='STANOX', drop_duplicates=False)
             # Processing 'StartStanox'
             stanox_section['StartStanox_loc'] = stanox_section.StartStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Processing 'EndStanox'
             stanox_section['EndStanox_loc'] = stanox_section.EndStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Secondly, process 'STANME' and 'TIPLOC'
-            stanme_dict = rc.get_location_dictionary('STANME')
-            tiploc_dict = rc.get_location_dictionary('TIPLOC')
+            stanme_dict = rc.get_location_dictionary(keyword='STANME')
+            tiploc_dict = rc.get_location_dictionary(keyword='TIPLOC')
             loc_name_replacement_dict = create_loc_name_replacement_dict()
             loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict()
             # Processing 'StartStanox_loc'
@@ -772,27 +734,27 @@ get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as="
 """ Utils for creating views """
 
 
-# Finalise the required data given 'route' and 'weather'
+# Subset the required data given 'route' and 'weather'
 def subset(data, route=None, weather=None, reset_index=False):
     if data is None:
-        dat = None
+        data_subset = None
     else:
         route_lookup = get_route()
         weather_category_lookup = get_weather_category_lookup()
         # Select data for a specific route and weather category
         if not route and not weather:
-            dat = data.copy(deep=True)
+            data_subset = data.copy()
         elif route and not weather:
-            dat = data[data.Route == find_match(route, route_lookup.Route)]
+            data_subset = data[data.Route == find_match(route, route_lookup.Route)]
         elif not route and weather:
-            dat = data[data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory)]
+            data_subset = data[data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory)]
         else:
-            dat = data[(data.Route == find_match(route, route_lookup.Route)) &
-                       (data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory))]
+            data_subset = data[(data.Route == find_match(route, route_lookup.Route)) &
+                               (data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory))]
         # Reset index
         if reset_index:
-            dat.reset_index(inplace=True)  # dat.index = range(len(dat))
-    return dat
+            data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
+    return data_subset
 
 
 # Calculate the DelayMinutes and DelayCosts for grouped data

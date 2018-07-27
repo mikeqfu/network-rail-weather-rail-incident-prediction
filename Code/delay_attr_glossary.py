@@ -14,7 +14,7 @@ from utils import cdd, load_pickle, save_pickle
 
 # Change directory to "Delay attribution"
 def cdd_delay_attr(*directories):
-    path = cdd("Schedule 8 incidents", "Delay attribution")
+    path = cdd("Incidents", "Delay attribution")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
