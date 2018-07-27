@@ -6,6 +6,7 @@ import json
 import os
 import pickle
 import re
+import string
 import subprocess
 
 import Levenshtein
@@ -263,7 +264,7 @@ def find_match(x, lookup):
 
 
 #
-def find_closet_text(x, lookup):
+def find_closest_text(x, lookup):
     ratios = [Levenshtein.ratio(x, y) for y in lookup]
     return lookup[np.argmax(ratios)]
 
@@ -283,8 +284,8 @@ def find_nearest(vector, target):
 
 
 # Check whether a string contains digits
-def contains_digits(string):
-    return bool(re.compile('\d').search(string))
+def contains_digits(text):
+    return bool(re.compile('\d').search(text))
 
 
 # Find the closest date of the given 'data' from a list of dates
@@ -388,3 +389,20 @@ def csr_matrix_to_dict(csr_matrix, vectorizer):
         dict_data.append(dict(zip(row_feat, row_data)))
 
     return pd.Series(dict_data).to_frame('word_count')
+
+
+# Split a dataframe by initial letter (in the alphabetic order) of a string column
+def split_dataframe_by_initials(dataframe, by_column_name):
+    dataframe[by_column_name].fillna('', inplace=True)
+    dataframe['temp'] = dataframe[by_column_name].map(lambda x: x[0].capitalize() if len(x) > 0 else x)
+
+    data_slices = []
+    for initial in string.ascii_uppercase:
+        data_slice = dataframe[dataframe.temp == initial]
+        data_slice.drop('temp', axis=1, inplace=True)
+        data_slices.append(data_slice)
+
+    dataframe.drop('temp', axis=1, inplace=True)
+    keys = ['_'.join([by_column_name, initial]) for initial in list(string.ascii_uppercase)]
+
+    return dict(zip(keys, data_slices))

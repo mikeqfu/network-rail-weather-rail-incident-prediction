@@ -17,9 +17,9 @@ import pandas as pd
 from utils import cdd, load_pickle, save_pickle
 
 
-# Change directory to "Schedule 8 incidents"
+# Change directory to "Incidents"
 def cdd_schedule8(*directories):
-    path = cdd("Schedule 8 incidents")
+    path = cdd("Incidents")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -95,14 +95,14 @@ def read_thresholds_from_html():
     return thr
 
 
-# The threshold data is also available in the following file: "S8_Weather 02_06_2006 - 31-03-2014.xlsm"
+# The threshold data is also available in the following file: "Schedule8WeatherIncidents_02062006_31032014.xlsm"
 def read_thresholds_from_workbook(update=False):
     path_to_file = cdd_schedule8("Spreadsheets", "Worksheet_Thresholds.pickle")
     if os.path.isfile(path_to_file) and not update:
         thresholds = load_pickle(path_to_file)
     else:
         try:
-            thresholds = pd.read_excel(cdd_schedule8("Spreadsheets", "S8_Weather 02_06_2006 - 31-03-2014.xlsm"),
+            thresholds = pd.read_excel(cdd_schedule8("Spreadsheets", "Schedule8WeatherIncidents_02062006_31032014.xlsm"),
                                        sheetname="Thresholds", parse_cols="A:F")
             thresholds.dropna(inplace=True)
             thresholds.index = range(len(thresholds))
