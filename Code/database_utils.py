@@ -55,7 +55,10 @@ def database_server():
     import socket
     socket.gethostname()
     """
-    return 'SERVER={};'.format(os.environ['COMPUTERNAME'])  # '\\SQLEXPRESS'
+    server_name = os.environ['COMPUTERNAME']
+    if 'EEE' in server_name:
+        server_name += '\\SQLEXPRESS'
+    return 'SERVER={};'.format(server_name)
 
 
 # Database name ======================================================================================================
