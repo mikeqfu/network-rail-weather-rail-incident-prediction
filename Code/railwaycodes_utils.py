@@ -120,8 +120,8 @@ def parse_tr(header, trs):
                 # assert isinstance(idx, int)
                 if i[1] >= len(tbl_lst[idx]):
                     tbl_lst[idx].insert(i[1], i[3])
-                elif tbl_lst[idx][i[1]] != tbl_lst[i[0]][i[1]]:
-                    tbl_lst[idx].insert(i[1], i[3])
+                elif i[3] in tbl_lst[idx - 1]:
+                    tbl_lst[idx].insert(tbl_lst[idx - 1].index(i[3]), i[3])
                 else:
                     tbl_lst[idx].insert(i[1] + 1, i[3])
 
@@ -535,6 +535,25 @@ def cdd_loc_codes(*directories):
     return path
 
 
+# Location name modifications
+def create_location_name_mod_dict():
+    location_name_mod_dict = {
+        'Location': {re.compile(' And | \+ '): ' & ',
+                     re.compile('-By-'): '-by-',
+                     re.compile('-In-'): '-in-',
+                     re.compile('-En-Le-'): '-en-le-',
+                     re.compile('-La-'): '-la-',
+                     re.compile('-Le-'): '-le-',
+                     re.compile('-On-'): '-on-',
+                     re.compile('-The-'): '-the-',
+                     re.compile(' Of '): ' of ',
+                     re.compile('-Super-'): '-super-',
+                     re.compile('-Upon-'): '-upon-',
+                     re.compile('-Under-'): '-under-',
+                     re.compile('-Y-'): '-y-'}}
+    return location_name_mod_dict
+
+
 # Addition note page
 def parse_additional_note_page(url, parser='lxml'):
     source = requests.get(url)
@@ -652,6 +671,11 @@ def scrape_location_codes(keyword, update=False):
                 additional_note = dict(zip(data.CRS.iloc[loc_idx], additional_notes))
             else:
                 additional_note = None
+
+            location_name_mod_dict = create_location_name_mod_dict()
+            data = data.replace(location_name_mod_dict, regex=True)
+
+            data.STANOX = data.STANOX.replace({'-': ''})
 
             data.index = range(len(data))  # Rearrange index
 
