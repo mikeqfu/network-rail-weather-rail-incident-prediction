@@ -302,6 +302,7 @@ def parse_node_and_connection(node):
         conn_node_list.append(cnode)
 
     if all(len(c) == 1 for c in conn_node_list):
+        # noinspection PyTypeChecker
         conn_node = pd.DataFrame([c + [None] for c in conn_node_list], columns=['Connection1', 'Connection2'])
     else:
         assert isinstance(conn_node_list, list)
