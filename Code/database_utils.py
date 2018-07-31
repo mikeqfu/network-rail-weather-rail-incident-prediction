@@ -296,7 +296,7 @@ def read_metex_table(table_name, schema='dbo', index_col=None, route=None, weath
     if save_as:
         path_to_file = cdd_metex_db("Tables_original", table_name + save_as)
         if not os.path.isfile(path_to_file) or update:
-            save(table_data, path_to_file)
+            save(table_data, path_to_file, index=False if index_col is None else True)
     return table_data
 
 
@@ -326,6 +326,6 @@ def read_veg_table(table_name, schema='dbo', index_col=None, route=None, save_as
     if save_as:
         path_to_file = cdd_veg_db("Tables_original", table_name + save_as)
         if not os.path.isfile(path_to_file) or update:
-            save(data, path_to_file)
+            save(data, path_to_file, index=False if index_col is None else True)
     # Return the data frame of the queried table
     return data
