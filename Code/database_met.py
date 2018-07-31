@@ -95,7 +95,7 @@ def get_imdm(as_dict=False, update=False):
         imdm = load_pickle(path_to_file)
     else:
         try:
-            imdm = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            imdm = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             imdm.index.rename(name='IMDM', inplace=True)  # Rename a column and index
             imdm.rename(columns={'Name': 'IMDM'}, inplace=True)
             if as_dict:
@@ -122,7 +122,7 @@ def get_imdm_alias(as_dict=False, update=False):
         imdm_alias = load_pickle(path_to_file)
     else:
         try:
-            imdm_alias = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            imdm_alias = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             imdm_alias.rename(columns={'Imdm': 'IMDM'}, inplace=True)  # Rename a column
             imdm_alias.index.rename(name='ImdmAlias', inplace=True)  # Rename index
             if as_dict:
@@ -149,12 +149,17 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
     else:
         try:
             # Read IMDMWeatherCellMap table
-            weather_cell_map = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            weather_cell_map = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+
             weather_cell_map.rename(columns={'WeatherCell': 'WeatherCellId'}, inplace=True)  # Rename a column
             weather_cell_map.index.rename('IMDMWeatherCellMapId', inplace=True)  # Rename index
+
             if grouped:  # Transform the dataframe into a dictionary-like form
                 weather_cell_map = group_items(weather_cell_map, by='WeatherCellId', to_group='IMDM', group_name='IMDM')
+
             save_pickle(weather_cell_map, path_to_file)
+
         except Exception as e:
             print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             weather_cell_map = None
@@ -174,7 +179,8 @@ def get_incident_reason_info(database_plus=True, update=False):
     else:
         try:
             # Get data from the database
-            incident_reason_info = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            incident_reason_info = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename columns
             incident_reason_info.rename(columns={'Description': 'IncidentReasonDescription',
                                                  'Category': 'IncidentCategory',
@@ -210,7 +216,8 @@ def get_weather_category_lookup(as_dict=False, update=False):
         weather_category_lookup = load_pickle(path_to_file)
     else:
         try:
-            weather_category_lookup = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            weather_category_lookup = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column and index label
             weather_category_lookup.rename(columns={'Name': 'WeatherCategory'}, inplace=True)
             weather_category_lookup.index.rename(name='WeatherCategoryCode', inplace=True)
@@ -235,7 +242,8 @@ def get_incident_record(update=False):
     else:
         try:
             # Read the 'IncidentRecord' table
-            incident_record = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            incident_record = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename column names
             incident_record.rename(columns={'CreateDate': 'IncidentRecordCreateDate',
                                             'Reason': 'IncidentReason'}, inplace=True)
@@ -265,7 +273,7 @@ def get_location(update=False):
     else:
         try:
             # Read 'Location' table
-            location = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            location = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column and index label
             location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
             location.index.rename('LocationId', inplace=True)
@@ -291,7 +299,7 @@ def get_pfpi(update=False):
     else:
         try:
             # Read the 'PfPI' table
-            pfpi = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            pfpi = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column name
             pfpi.index.rename('PfPIId', inplace=True)
             # To replace Performance Event Code
@@ -321,7 +329,7 @@ def get_route(update=False):
         route = load_pickle(path_to_file)
     else:
         try:
-            route = db.read_metex_table(table_name, save_as=".csv")
+            route = db.read_metex_table(table_name, save_as=".csv", update=update)
             # Rename a column
             route.rename(columns={'Name': 'Route'}, inplace=True)
             # Save the processed data
@@ -346,7 +354,8 @@ def get_stanox_location(nr_mileage_format=True, update=False):
     else:
         try:
             # Read StanoxLocation table from the database
-            stanox_location = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            stanox_location = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Pre-cleaning the original data - replacing location names
             stanox_location.rename(columns={'Description': 'Location', 'Name': 'LocationAlias'}, inplace=True)
 
@@ -435,7 +444,8 @@ def get_stanox_section(update=False):
     else:
         try:
             # Read StanoxSection table from the database
-            stanox_section = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            stanox_section = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Pre-cleaning the original data
             stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: int(x) if not pd.np.isnan(x) else '')
             stanox_section.index.name = 'StanoxSectionId'
@@ -496,7 +506,8 @@ def get_trust_incident(financial_years_06_14=True, update=False):
     else:
         try:
             # Read 'TrustIncident' table
-            trust_incident = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            trust_incident = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             # Rename column names
             trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
             # Rename index label
@@ -527,7 +538,8 @@ def get_weather(update=False):
     else:
         try:
             # Read 'Weather' table
-            weather_data = db.read_metex_table(table_name, index_col=metex_pk(table_name))
+            weather_data = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), update=update)
             # Save original data read from the database (the file is too big)
             if not os.path.isfile(db.cdd_metex_db("Tables_original", table_name + ".csv")):
                 save(weather_data, db.cdd_metex_db("Tables_original", table_name + ".csv"))
@@ -587,7 +599,8 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
     else:
         try:
             # Read 'WeatherCell' table
-            weather_cell_map = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv")
+            weather_cell_map = \
+                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
             weather_cell_map.index.rename('WeatherCellId', inplace=True)  # Rename index
             # Lower left corner:
             ll_longitude = weather_cell_map.Longitude  # - weather_cell_map.width / 2
