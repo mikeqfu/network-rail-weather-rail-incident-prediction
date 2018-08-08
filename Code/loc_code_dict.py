@@ -1,10 +1,12 @@
 """ Dictionary for errata """
 
 import re
+import pandas as pd
 
 
 # Create a dict for replace location names
-def create_loc_name_replacement_dict(k=None):
+def create_loc_name_replacement_dict(k=None, as_dataframe=False):
+
     location_name_replacement_dict = {
         '"Tyndrum Upper" (Upper Tyndrum)': '"Tyndrum Upper" [Upper Tyndrum]',
         'AISH EMERGENCY CROSSOVER': 'Aish Emergency Crossovers',
@@ -201,14 +203,21 @@ def create_loc_name_replacement_dict(k=None):
         'Worcester S.H. Long Sdg': 'Worcester Shrub Hill Long Siding',
         'Wylye Ahb': 'Wylye Automatic Half Barrier Level Crossing',
         'Yeovil Pen Mill (Main)': 'Yeovil Pen Mill'}
+
     if k:
-        return {k: location_name_replacement_dict}
+        replacement_dict = {k: location_name_replacement_dict}
     else:
-        return location_name_replacement_dict
+        replacement_dict = location_name_replacement_dict
+
+    if as_dataframe:
+        replacement_dict = pd.DataFrame.from_dict(replacement_dict)
+
+    return replacement_dict
 
 
 # Create a regex dict for replace location names
-def create_loc_name_regexp_replacement_dict(k=None):
+def create_loc_name_regexp_replacement_dict(k=None, as_dataframe=False):
+
     location_regexp_replacement_dict = {
         re.compile(' \(DC lines\)'): ' [DC lines]',
         re.compile(' And | \+ '): ' & ',
@@ -355,10 +364,16 @@ def create_loc_name_regexp_replacement_dict(k=None):
         re.compile('Warrington C\.E\. Sidings'): "Warrington NCL/Civil Engineer's Sidings",
         re.compile(' Wm Csd\.'): ' West Marina Carriage Servicing Depot',
         re.compile(' Yd '): ' Yard '}
+
     if k is not None:
-        return {k: location_regexp_replacement_dict}
+        replacement_dict = {k: location_regexp_replacement_dict}
     else:
-        return location_regexp_replacement_dict
+        replacement_dict = location_regexp_replacement_dict
+
+    if as_dataframe:
+        replacement_dict = pd.DataFrame.from_dict(replacement_dict)
+
+    return replacement_dict
 
 
 # Compare the difference between two columns and replace items if appropriate
