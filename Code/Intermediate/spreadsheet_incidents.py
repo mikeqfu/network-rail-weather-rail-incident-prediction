@@ -78,61 +78,75 @@ def subset(data, route=None, weather=None, reset_index=False):
 
 
 # Cleanse STANOX locations data
-def cleanse_location_metadata(stanox):
+def cleanse_location_metadata(metadata, ref_cols):
     """
-    :param stanox:
+    :param metadata:
+    :param ref_cols:
     :return:
     """
-    stanox.columns = [x.upper().replace(' ', '_') for x in stanox.columns]
-    stanox['LOOKUP_NAME_Raw'] = stanox.LOOKUP_NAME
+    metadata.columns = [x.upper().replace(' ', '_') for x in metadata.columns]
+    metadata = metadata.replace({'\xa0\xa0': ' '}, regex=True).replace({'\xa0': ''}, regex=True)
+    metadata['LOOKUP_NAME_Raw'] = metadata.LOOKUP_NAME
 
-    print("Starting to cleanse \"stanox\" ... ")
-    # Clean 'STANOX'
-    stanox.STANOX = stanox.STANOX.fillna('')
-    stanox.STANOX = stanox.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
+    print("Starting to cleanse ... ")
 
-    errata_stanox = load_json(cdd_rc("Errata.json"))['STANOX']
-    stanox.STANOX = stanox.STANOX.replace(errata_stanox)
+    # Clean 'STANOX' ('N/A's exist in both the 'LOOKUP_NAME' and 'LINE_DESCRIPTION' columns)
+    metadata.STANOX = metadata.STANOX.fillna('')
+    metadata.STANOX = metadata.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
 
+    # Correct errors in STANOX
+    errata_stanox, errata_tiploc, errata_stanme = load_json(cdd_rc("Errata.json")).items()
+    metadata.replace(errata_stanox, inplace=True)
+    metadata.replace(errata_stanme, inplace=True)
+    if 'TIPLOC' in ref_cols:
+        metadata.replace(errata_tiploc, inplace=True)
+
+    # Correct known issues for the location names in the data set
     loc_name_replacement_dict = create_loc_name_replacement_dict('LOOKUP_NAME')
-    stanox = stanox.replace(loc_name_replacement_dict)
-
+    metadata = metadata.replace(loc_name_replacement_dict)
     loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('LOOKUP_NAME')
-    stanox = stanox.replace(loc_name_regexp_replacement_dict)
+    metadata = metadata.replace(loc_name_regexp_replacement_dict)
 
-    # The 'stanox' dataframe has many 'N/A's in both the 'LOOKUP_NAME' and 'LINE_DESCRIPTION' columns
-    stanox_dict = get_location_codes_dictionary_v2(['STANOX'])
-    na_name = stanox[stanox.LOOKUP_NAME.isnull()]
-    temp = na_name.join(stanox_dict, on='STANOX')[['STANME', 'Location']]
-    stanox.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
+    # Fill missing location names
+    na_name = metadata[metadata.LOOKUP_NAME.isnull()]
+    stanox_stanme_dict = get_location_codes_dictionary_v2(ref_cols)
+    comparable_col = ['TIPLOC', 'Location'] if 'TIPLOC' in ref_cols else ['STANME', 'Location']
+    temp = na_name.join(stanox_stanme_dict, on=ref_cols)[comparable_col]
+    metadata.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
         lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
 
-    temp = stanox.join(stanox_dict, on='STANOX')[['LOOKUP_NAME', 'Location']]
-    stanox.LOOKUP_NAME = temp.apply(lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+    temp = metadata.join(stanox_stanme_dict, on=ref_cols)[['LOOKUP_NAME', 'Location']]
+    temp = temp[temp.Location.notnull()]
+    metadata.loc[temp.index, 'LOOKUP_NAME'] = \
+        temp.apply(lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
 
-    stanox.dropna(subset=['LOOKUP_NAME'], inplace=True)
-    stanox.fillna('', inplace=True)
-    stanox.LINE_DESCRIPTION = stanox.LINE_DESCRIPTION.replace({re.compile('[Ss]tn'): 'Station',
-                                                               re.compile('[Ll]oc'): 'Location',
-                                                               re.compile('[Jj]n'): 'Junction',
-                                                               re.compile('[Ss]dg'): 'Siding',
-                                                               re.compile('[Ss]dgs'): 'Sidings'})
-    stanox.drop_duplicates(inplace=True)
+    # metadata.dropna(subset=['LOOKUP_NAME'], inplace=True)  # if there is NaN values (though none actually remains)
+
+    metadata.replace({'LINE_DESCRIPTION': {re.compile('[Ss]tn'): 'Station',
+                           re.compile('[Ll]oc'): 'Location',
+                           re.compile('[Jj]n'): 'Junction',
+                           re.compile('[Ss]dg'): 'Siding',
+                           re.compile('[Ss]dgs'): 'Sidings'}}, inplace=True)
+
+    # metadata.fillna('', inplace=True)
+    metadata.drop_duplicates(inplace=True)
 
     # Get reference metadata from RailwayCodes
     station_data = get_station_locations()['Station']
-    station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].drop_duplicates('Station')
+    station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
+    station_data.drop_duplicates(subset=['Station'], inplace=True)
     station_data.set_index('Station', inplace=True)
-    temp = stanox.join(station_data, on='LOOKUP_NAME')
-    idx = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
-    stanox.loc[idx, 'DEG_LAT':'DEG_LONG'] = temp.loc[idx, ['Degrees Latitude', 'Degrees Longitude']].values
+    temp = metadata.join(station_data, on='LOOKUP_NAME')
+    na_i = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
+    metadata.loc[na_i, 'DEG_LAT':'DEG_LONG'] = temp.loc[na_i, ['Degrees Latitude', 'Degrees Longitude']].values
 
-    stanox.sort_values(['STANOX', 'SHAPE_LENG'], ascending=[True, False], inplace=True)
-    stanox.index = range(len(stanox))
+    metadata.fillna('', inplace=True)
+    metadata.sort_values(ref_cols + ['SHAPE_LENG'], ascending=[True] * len(ref_cols) + [False], inplace=True)
+    metadata.index = range(len(metadata))
 
     print("Done.")
 
-    return stanox
+    return metadata
 
 
 # STANOX locations data
@@ -148,22 +162,19 @@ def get_location_metadata(update=False):
             workbook = pd.ExcelFile(cdd_rc(pickle_filename.replace(".pickle", ".xlsx")))
 
             # 'TIPLOC_LocationsLyr' -----------------------------------------------
-            tiploc_locations_lyr = workbook.parse(sheet_name='TIPLOC_LocationsLyr',
-                                                  parse_dates=['LASTEDITED', 'LAST_UPD_1'], dayfirst=True,
-                                                  converters={'STANOX': str})
-            fillna_columns_str = ['STANOX', 'STANME', 'TIPLOC', 'LOOKUP_NAME', 'STATUS',
-                                  'LINE_DESCRIPTION', 'QC_STATUS', 'DESCRIPTIO', 'BusinessRef']
-            tiploc_locations_lyr.fillna({x: '' for x in fillna_columns_str}, inplace=True)
-            tiploc_locations_lyr.STANOX = \
-                tiploc_locations_lyr.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
+            tiploc_loc_lyr = workbook.parse(sheet_name='TIPLOC_LocationsLyr',
+                                            parse_dates=['LASTEDITED', 'LAST_UPD_1'], dayfirst=True,
+                                            converters={'STANOX': str})
+            tiploc_loc_lyr.fillna({x: '' for x in ['STANOX', 'STANME', 'TIPLOC', 'LOOKUP_NAME', 'STATUS',
+                                  'LINE_DESCRIPTION', 'QC_STATUS', 'DESCRIPTIO', 'BusinessRef']}, inplace=True)
+            tiploc_loc_lyr = cleanse_location_metadata(tiploc_loc_lyr, ref_cols=['STANOX', 'STANME', 'TIPLOC'])
 
             # 'STANOX' -----------------------------------------------------------------------------
             stanox = workbook.parse(sheet_name='STANOX', converters={'STANOX': str, 'gridref': str})
-
-            stanox = cleanse_location_metadata(stanox)
+            stanox = cleanse_location_metadata(stanox, ref_cols=['STANOX', 'STANME'])
 
             # Collect the above two dataframes and store them in a dictionary ---------------------
-            stanox_locations_data = dict(zip(workbook.sheet_names, [tiploc_locations_lyr, stanox]))
+            stanox_locations_data = dict(zip(workbook.sheet_names, [tiploc_loc_lyr, stanox]))
 
             workbook.close()
 
