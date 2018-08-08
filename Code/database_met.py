@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.basemap
 import pandas as pd
 import shapely.geometry
+from fuzzywuzzy.process import extractOne
 
 import database_utils as db
 import database_veg as dbv
@@ -15,7 +16,7 @@ import railwaycodes_utils as rc
 from converters import yards_to_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import *
-from utils import cd, cdd_rc, find_match, load_json, load_pickle, save, save_json, save_pickle
+from utils import cd, find_match, load_pickle, save, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
@@ -356,63 +357,119 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             # Read StanoxLocation table from the database
             stanox_location = \
                 db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
-            # Pre-cleaning the original data - replacing location names
+
+            # Cleanse stanox_location ---------------------------
+            stanox_location.reset_index(inplace=True)
+            location_codes = rc.get_location_codes()['Locations']
+
+            errata_stanox = {'05597': '05997',
+                             '08751': '87151',
+                             '13045': '31050',
+                             '13048': '31048',
+                             '24428': '74428',
+                             '26427': '26247',
+                             '3165': '03165',
+                             '36155': '38155',
+                             '36400': '85716',
+                             '52374': '52734',
+                             '56120': '76120',
+                             '56309': '59309',
+                             '56310': '59310',
+                             '56450': '56540',
+                             '58560': '82311',
+                             '59328': '59238',
+                             '64321': '64231',
+                             '64327': '64237',
+                             '76710': '78710',
+                             '82017': '80217',
+                             '82985': '82085',
+                             '8606': '08606',
+                             '86236': '86240',
+                             '86793': '86973',
+                             # '03330': '',
+                             '8825': '08825'}
+            stanox_location.Stanox = stanox_location.Stanox.replace(errata_stanox)
+
+            errata_tiploc = {'WLNDGL': 'WLNGDGL',
+                             'STRNHDS': 'STRBHDS',
+                             'AND008': 'ANDO8',
+                             'CLHMABL': 'CHLMABL',
+                             'CLAPS47': 'CLPHS47'}  # The last one might be problematic.
+            stanox_location.Description = stanox_location.Description.replace(errata_tiploc)
+
+            errata_stanme = {'Craiginches South Aberdeen': '',
+                             'Inverkeithing PPM Point': '',
+                             'NewCraighall turnback': 'NEWCRGHTB'}
+            stanox_location.Name = stanox_location.Name.replace(errata_stanme)
+
+            #
+            na_desc = stanox_location.Description.isnull()
+            for i, v in stanox_location[na_desc].Stanox.iteritems():
+                idx = location_codes[location_codes.STANOX == v].index
+                if len(idx) != 1:
+                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
+                    break
+                else:
+                    idx = idx[0]
+                    stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].Location[idx]
+                    stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].STANME[idx]
+
+            #
+            na_name = stanox_location.Name.isnull()
+            for i, v in stanox_location[na_name].Stanox.iteritems():
+                if location_codes[location_codes.STANOX == v].shape[0] > 1:
+                    desc = stanox_location[stanox_location.Stanox == v].Description[i]
+                    if desc in list(location_codes[location_codes.STANOX == v].TIPLOC):
+                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.TIPLOC == desc)].index
+                    elif desc in list(location_codes[location_codes.STANOX == v].STANME):
+                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.STANME == desc)].index
+                    else:
+                        print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
+                        break
+                else:
+                    idx = location_codes[location_codes.STANOX == v].index
+                if len(idx) != 1:
+                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
+                    break
+                else:
+                    idx = idx[0]
+                stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].loc[idx, 'Location']
+                stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].loc[idx, 'STANME']
+
+            location_stanme_dict = location_codes[['Location', 'STANME']].set_index('Location').to_dict()['STANME']
+            stanox_location.Name = stanox_location.Name.replace(location_stanme_dict)
+
+            loc_name_replacement_dict = create_loc_name_replacement_dict('Description')
+            stanox_location = stanox_location.replace(loc_name_replacement_dict)
+            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('Description')
+            stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
+
+            # STANOX dictionary
+            stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            temp = stanox_location.join(stanox_dict, on='Stanox')[['Description', 'Location']]
+            na_loc = temp.Location.isnull()
+            temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
+            stanox_location.Description = temp.apply(
+                lambda x: extractOne(x[0], x[1], score_cutoff=10)[0] if isinstance(x[1], list) else x[1], axis=1)
+
+            stanox_location.Name = stanox_location.Name.str.upper()
+
+            location_codes_cut = location_codes[['Location', 'STANME', 'STANOX']]
+            location_codes_cut = location_codes_cut.groupby(['STANOX', 'Location']).agg({'STANME': list})
+            location_codes_cut.STANME = location_codes_cut.STANME.map(
+                lambda x: x if isinstance(x, list) and len(x) > 1 else x[0])
+            temp = stanox_location.join(location_codes_cut, on=['Stanox', 'Description'])
+            stanox_location.Name = temp.STANME
+
+            # Change location names
             stanox_location.rename(columns={'Description': 'Location', 'Name': 'LocationAlias'}, inplace=True)
 
-            # Create dictionaries for location names: {STANME: Location name}, {TIPLOC: Location name}
-            key = 'Location'
-            try:
-                stanmes = load_json(cdd_rc("STANME.json"))
-                stanme_dict = {key: stanmes}
-            except FileNotFoundError:
-                stanme_dict = rc.get_location_dictionary(keyword='STANME', drop_duplicates=True, main_key=key)
-                save_json(stanme_dict[key], cdd_rc("STANME.json"))
-            try:
-                tiplocs = load_json(cdd_rc("TIPLOC.json"))
-                tiploc_dict = {key: tiplocs}
-            except FileNotFoundError:
-                tiploc_dict = rc.get_location_dictionary(keyword='TIPLOC', drop_duplicates=True, main_key=key)
-                save_json(tiploc_dict[key], cdd_rc("TIPLOC.json"))
-
-            # Replace existing location names with likely full name
-            loc = stanox_location[['Location', 'LocationAlias']].fillna('').replace(stanme_dict).replace(tiploc_dict)
-            # Firstly, match 'STANME' and/or 'TIPLOC' -------------------------------
-            loc['LocationAlias_upper'] = loc.LocationAlias.apply(lambda x: x.upper())
-            loc['Location_full_1'] = loc.LocationAlias_upper.replace(stanme_dict[key]).replace(tiploc_dict[key])
-            # Remove items of which all letters are upper-case from 'Location_full_2'
-            loc['Location_full_1'] = loc.Location_full_1.apply(lambda x: '' if x.isupper() else x)
-            compare_and_replace(loc, 'Location', 'Location_full_1')
-
-            # Secondly, match 'STANOX' ----------------------------------------------
-            try:
-                stanox_dict = load_json(cdd_rc("STANOX.json"))
-            except FileNotFoundError:
-                stanox_dict = rc.get_location_dictionary(keyword='STANOX')
-                save_json(stanox_dict, cdd_rc("STANOX.json"))
-            loc['STANOX'] = loc.index
-            loc['Location_full_2'] = loc.STANOX.replace(stanox_dict).apply(lambda x: '' if x.isdigit() else x)
-            valid_data_idx = loc[loc.Location_full_2 != ''].index.tolist()
-            loc['Location'][valid_data_idx] = loc.Location_full_2[valid_data_idx]
-            loc.drop('STANOX', axis=1, inplace=True)
-
-            # Thirdly, use loc_name_replacement_dict -------------------------------
-            loc_name_replacement_dict = create_loc_name_replacement_dict(k='Location')
-            loc.replace(loc_name_replacement_dict, inplace=True)
-
-            # Fourthly, use an extra dictionary ------------------------------------------------------
-            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict(k='Location')
-            loc.replace(loc_name_regexp_replacement_dict, regex=True, inplace=True)
-            loc.drop(['Location_full_1', 'LocationAlias_upper', 'Location_full_2'], axis=1, inplace=True)
-
-            # Finally, -----------------------------
-            loc_cols = ['Location', 'LocationAlias']
-            stanox_location = loc.join(stanox_location.drop(loc_cols, axis=1))
-            stanox_location[loc_cols] = stanox_location[loc_cols].applymap(lambda x: x.strip(' '))
-
             # For 'ELR', replace NaN with ''
-            stanox_location.ELR = stanox_location.ELR.fillna(value='')
+            stanox_location.ELR.fillna('', inplace=True)
+
             # For 'LocationId'
             stanox_location.LocationId = stanox_location.LocationId.map(lambda x: int(x) if not pd.np.isnan(x) else '')
+
             # For 'Mileages'
             if nr_mileage_format:
                 yards = stanox_location.Yards.map(lambda x: yards_to_mileage(x) if not pd.isnull(x) else '')
@@ -421,12 +478,13 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             stanox_location.Yards = yards
             stanox_location.rename(columns={'Yards': 'Mileage'}, inplace=True)
 
-            # Revise '52053'
-            stanox_location.loc['52053', 2:] = ['BOK1', '3.0792', 534877]
-            # Revise '52074'
-            stanox_location.loc['52074', 2:] = ['ELL1', '0.0440', 610096]
+            stanox_location.set_index('Stanox', inplace=True)
+
+            stanox_location.loc['52053', 'ELR':'LocationId'] = ['BOK1', '3.0792', 534877]  # Revise '52053'
+            stanox_location.loc['52074', 'ELR':'LocationId'] = ['ELL1', '0.0440', 610096]  # Revise '52074'
 
             save_pickle(stanox_location, path_to_file)
+
         except Exception as e:
             print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
             stanox_location = None
@@ -452,14 +510,14 @@ def get_stanox_section(update=False):
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             stanox_loc = get_stanox_location(nr_mileage_format=True)
             stanox_dict_1 = stanox_loc.Location.to_dict()
-            stanox_dict_2 = rc.get_location_dictionary(keyword='STANOX', drop_duplicates=False)
+            stanox_dict_2 = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
             # Processing 'StartStanox'
             stanox_section['StartStanox_loc'] = stanox_section.StartStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Processing 'EndStanox'
             stanox_section['EndStanox_loc'] = stanox_section.EndStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Secondly, process 'STANME' and 'TIPLOC'
-            stanme_dict = rc.get_location_dictionary(keyword='STANME')
-            tiploc_dict = rc.get_location_dictionary(keyword='TIPLOC')
+            stanme_dict = rc.get_location_codes_dictionary(keyword='STANME')
+            tiploc_dict = rc.get_location_codes_dictionary(keyword='TIPLOC')
             loc_name_replacement_dict = create_loc_name_replacement_dict()
             loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict()
             # Processing 'StartStanox_loc'
