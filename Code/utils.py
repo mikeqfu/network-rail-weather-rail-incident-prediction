@@ -156,11 +156,12 @@ def load_json(path_to_json):
 
 
 # Save Excel workbook
-def save_spreadsheet(excel_data, path_to_sheet, sep, sheet_name, engine='xlsxwriter'):
+def save_spreadsheet(excel_data, path_to_sheet, sep, index, sheet_name, engine='xlsxwriter'):
     """
     :param excel_data: any [DataFrame] that could be dumped saved as a Excel workbook, e.g. '.csv', '.xlsx'
     :param path_to_sheet: [str] local file path
     :param sep: [str] separator for saving excel_data to a '.csv' file
+    :param index:
     :param sheet_name: [str] name of worksheet for saving the excel_data to a e.g. '.xlsx' file
     :param engine: [str] ExcelWriter engine; pandas writes Excel files using the 'xlwt' module for '.xls' files and the
                         'openpyxl' or 'xlsxWriter' modules for '.xlsx' files.
@@ -172,10 +173,10 @@ def save_spreadsheet(excel_data, path_to_sheet, sep, sheet_name, engine='xlsxwri
     try:
         os.makedirs(os.path.dirname(os.path.abspath(path_to_sheet)), exist_ok=True)
         if save_as == ".csv":  # Save the data to a .csv file
-            excel_data.to_csv(path_to_sheet, index=False, sep=sep)
+            excel_data.to_csv(path_to_sheet, index=index, sep=sep)
         else:  # Save the data to a .xlsx or .xls file
             xlsx_writer = pd.ExcelWriter(path_to_sheet, engine)
-            excel_data.to_excel(xlsx_writer, sheet_name, index=False)
+            excel_data.to_excel(xlsx_writer, sheet_name, index=index)
             xlsx_writer.save()
             xlsx_writer.close()
         print("Successfully.")
@@ -184,11 +185,12 @@ def save_spreadsheet(excel_data, path_to_sheet, sep, sheet_name, engine='xlsxwri
 
 
 # Save data locally (.pickle, .csv or .xlsx)
-def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details', deep_copy=True):
+def save(data, path_to_file, sep=',', index=True, sheet_name='Details', engine='xlsxwriter', deep_copy=True):
     """
     :param data: any object that could be dumped
     :param path_to_file: [str] local file path
     :param sep: [str] separator for '.csv'
+    :param index:
     :param engine: [str] 'xlwt' for .xls; 'xlsxwriter' or 'openpyxl' for .xlsx
     :param sheet_name: [str] name of worksheet
     :param deep_copy: [bool] whether make a deep copy of the data before saving it
@@ -208,7 +210,7 @@ def save(data, path_to_file, sep=',', engine='xlsxwriter', sheet_name='Details',
 
     # Save the data according to the file extension
     if save_as == ".csv" or save_as == ".xlsx" or save_as == ".xls":
-        save_spreadsheet(dat, path_to_file, sep, sheet_name, engine)
+        save_spreadsheet(dat, path_to_file, sep, index, sheet_name, engine)
     elif save_as == ".json":
         save_json(dat, path_to_file)
     else:
