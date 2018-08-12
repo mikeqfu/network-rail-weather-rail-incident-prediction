@@ -7,9 +7,9 @@ import re
 import pandas as pd
 from fuzzywuzzy.process import extractOne
 
+import railwaycodes_utils as rc
 from delay_attr_glossary import get_incident_reason_metadata
 from loc_code_dict import create_loc_name_regexp_replacement_dict, create_loc_name_replacement_dict
-from railwaycodes_utils import get_location_codes, get_location_codes_dictionary_v2, get_station_locations
 from utils import cdd, cdd_rc, load_json, load_pickle, save_pickle
 
 
@@ -95,7 +95,8 @@ def cleanse_location_metadata(metadata, ref_cols):
     metadata.STANOX = metadata.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
 
     # Correct errors in STANOX
-    errata_stanox, errata_tiploc, errata_stanme = load_json(cdd_rc("Errata.json")).items()
+    errata = load_json(cdd_rc("Errata.json"))
+    errata_stanox, errata_tiploc, errata_stanme = [{k: v} for k, v in errata.items()]
     metadata.replace(errata_stanox, inplace=True)
     metadata.replace(errata_stanme, inplace=True)
     if 'TIPLOC' in ref_cols:
@@ -109,7 +110,7 @@ def cleanse_location_metadata(metadata, ref_cols):
 
     # Fill missing location names
     na_name = metadata[metadata.LOOKUP_NAME.isnull()]
-    stanox_stanme_dict = get_location_codes_dictionary_v2(ref_cols)
+    stanox_stanme_dict = rc.get_location_codes_dictionary_v2(ref_cols)
     comparable_col = ['TIPLOC', 'Location'] if 'TIPLOC' in ref_cols else ['STANME', 'Location']
     temp = na_name.join(stanox_stanme_dict, on=ref_cols)[comparable_col]
     metadata.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
@@ -123,16 +124,16 @@ def cleanse_location_metadata(metadata, ref_cols):
     # metadata.dropna(subset=['LOOKUP_NAME'], inplace=True)  # if there is NaN values (though none actually remains)
 
     metadata.replace({'LINE_DESCRIPTION': {re.compile('[Ss]tn'): 'Station',
-                           re.compile('[Ll]oc'): 'Location',
-                           re.compile('[Jj]n'): 'Junction',
-                           re.compile('[Ss]dg'): 'Siding',
-                           re.compile('[Ss]dgs'): 'Sidings'}}, inplace=True)
+                                           re.compile('[Ll]oc'): 'Location',
+                                           re.compile('[Jj]n'): 'Junction',
+                                           re.compile('[Ss]dg'): 'Siding',
+                                           re.compile('[Ss]dgs'): 'Sidings'}}, inplace=True)
 
     # metadata.fillna('', inplace=True)
     metadata.drop_duplicates(inplace=True)
 
     # Get reference metadata from RailwayCodes
-    station_data = get_station_locations()['Station']
+    station_data = rc.get_station_locations()['Station']
     station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
     station_data.drop_duplicates(subset=['Station'], inplace=True)
     station_data.set_index('Station', inplace=True)
@@ -188,172 +189,348 @@ def get_location_metadata(update=False):
     return stanox_locations_data
 
 
-#
-def get_location_metadata_plus(update=False):
+# Location data with LocationId and WeatherCell, available from NR_METEX
+def get_metex_db_location(update=False):
 
-    pickle_filename = "location-metadata-plus.pickle"
+    pickle_filename = "db-metex-location.pickle"
     path_to_pickle = cdd_rc(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        location_metadata_plus = load_pickle(path_to_pickle)
+        location = load_pickle(path_to_pickle)
     else:
         try:
+            filename = "Location.csv"
+            location = pd.read_csv(cdd_metex_db_tables_original(filename), dtype={'Id': str})
+            location.rename(columns={'Id': 'LocationId'}, inplace=True)
+            location.set_index('LocationId', inplace=True)
+            location.WeatherCell = location.WeatherCell.map(lambda x: '' if pd.isna(x) else str(int(x)))
+            # # Correct a known error
+            # location.loc['610096', 'StartLongitude':'EndLatitude'] = [-0.0751, 51.5461, -0.0751, 51.5461]
+            save_pickle(location, path_to_pickle)
+        except Exception as e:
+            print("Failed to get NR_METEX location data. {}".format(e))
+            location = pd.DataFrame()
 
-            # Location
-            location = pd.read_csv(cdd_metex_db_tables_original("Location.csv"), index_col='Id')
-            location.index.rename('LocationId', inplace=True)
-            location.loc[610096, 'StartLongitude':'EndLatitude'] = [-0.0751, 51.5461, -0.0751, 51.5461]
+    return location
 
-            # STANOX location --------------------------------------------------------------------------------------
-            stanox_location = pd.read_csv(cdd_metex_db_tables_original("StanoxLocation.csv"), dtype={'Stanox': str})
 
-            # Cleanse stanox_location
-            location_codes = get_location_codes()['Locations']
+# STANOX location data available from NR_METEX
+def get_metex_db_stanox_location(update=False):
 
-            errata_stanox, errata_tiploc, errata_stanme = load_json(cdd_rc("Errata.json")).values()
+    pickle_filename = "db-metex-stanox-location.pickle"
+    path_to_pickle = cdd_rc(pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        stanox_location = load_pickle(path_to_pickle)
+    else:
+        try:
+            filename = "StanoxLocation.csv"
+            stanox_location = pd.read_csv(cdd_metex_db_tables_original(filename), dtype={'Stanox': str})
+
+            # Cleanse "stanox_location"
+            errata = load_json(cdd_rc("Errata.json"))
+            errata_stanox, errata_tiploc, errata_stanme = errata.values()
             # Note that in errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
-            stanox_location.Stanox = stanox_location.Stanox.replace(errata_stanox)
-            stanox_location.Description = stanox_location.Description.replace(errata_tiploc)
-            stanox_location.Name = stanox_location.Name.replace(errata_stanme)
+            stanox_location.replace({'Stanox': errata_stanox}, inplace=True)
+            stanox_location.replace({'Description': errata_tiploc}, inplace=True)
+            stanox_location.replace({'Name': errata_stanme}, inplace=True)
 
-            #
-            na_desc = stanox_location.Description.isnull()
-            for i, v in stanox_location[na_desc].Stanox.iteritems():
-                idx = location_codes[location_codes.STANOX == v].index
-                if len(idx) != 1:
-                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
-                    break
-                else:
-                    idx = idx[0]
-                    stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].Location[idx]
-                    stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].STANME[idx]
+            # Get reference data from the Railway Codes website
+            rc_codes = rc.get_location_codes()['Locations']
+            rc_codes = rc_codes[['Location', 'TIPLOC', 'STANME', 'STANOX']].drop_duplicates()
 
-            #
-            na_name = stanox_location.Name.isnull()
-            for i, v in stanox_location[na_name].Stanox.iteritems():
-                if location_codes[location_codes.STANOX == v].shape[0] > 1:
-                    desc = stanox_location[stanox_location.Stanox == v].Description[i]
-                    if desc in list(location_codes[location_codes.STANOX == v].TIPLOC):
-                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.TIPLOC == desc)].index
-                    elif desc in list(location_codes[location_codes.STANOX == v].STANME):
-                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.STANME == desc)].index
-                    else:
-                        print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
-                        break
-                else:
-                    idx = location_codes[location_codes.STANOX == v].index
-                if len(idx) != 1:
-                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
-                    break
-                else:
-                    idx = idx[0]
-                stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].loc[idx, 'Location']
-                stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].loc[idx, 'STANME']
+            # Fill in NA 'Description's (i.e. Location names)
+            na_desc = stanox_location[stanox_location.Description.isnull()]
+            temp = na_desc.join(rc_codes.set_index('STANOX'), on='Stanox')
+            stanox_location.loc[na_desc.index, 'Description':'Name'] = temp[['Location', 'STANME']].values
 
+            # Fill in NA 'Name's (i.e. STANME)
+            na_name = stanox_location[stanox_location.Name.isnull()]
+            # Some 'Description's are recorded by 'TIPLOC's instead
+            rc_tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'])
+            temp = na_name.join(rc_tiploc_dict, on='Description')
+            temp = temp.join(rc_codes.set_index(['STANOX', 'TIPLOC', 'Location']),
+                             on=['Stanox', 'Description', 'Location'])
+            temp = temp[temp.Location.notnull() & temp.STANME.notnull()]
+            stanox_location.loc[temp.index, 'Description':'Name'] = temp[['Location', 'STANME']].values
+            # Still, there are some NA 'Name's remaining due to incorrect spelling of 'TIPLOC' ('Description')
+            na_name = stanox_location[stanox_location.Name.isnull()]
+            temp = na_name.join(rc_codes.set_index('STANOX'), on='Stanox')
+            stanox_location.loc[temp.index, 'Description':'Name'] = temp[['Location', 'STANME']].values
+
+            # Apply manually-created dictionaries
             loc_name_replacement_dict = create_loc_name_replacement_dict('Description')
-            stanox_location = stanox_location.replace(loc_name_replacement_dict)
+            stanox_location.replace(loc_name_replacement_dict, inplace=True)
             loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('Description')
-            stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
+            stanox_location.replace(loc_name_regexp_replacement_dict, inplace=True)
 
-            # STANME dictionary
-            location_stanme_dict = location_codes[['Location', 'STANME']].set_index('Location').to_dict()['STANME']
-            stanox_location.Name = stanox_location.Name.replace(location_stanme_dict)
+            # Check if 'Description' has STANOX code instead of location name using STANOX-dictionary
+            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            temp = stanox_location.join(rc_stanox_dict, on='Description')
+            valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
+            if not valid_loc.empty:
+                stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
+                    lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
-            # STANOX dictionary
-            stanox_dict = get_location_codes_dictionary_v2(['STANOX'])
-            temp = stanox_location.join(stanox_dict, on='Stanox')[['Description', 'Location']]
-            na_loc = temp.Location.isnull()
-            temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
+            # Check if 'Description' has TIPLOC code instead of location name using STANOX-TIPLOC-dictionary
+            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'])
+            temp = stanox_location.join(rc_stanox_tiploc_dict, on=['Stanox', 'Description'])
+            valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
+            if not valid_loc.empty:
+                stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
+                    lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
+
+            # Check if 'Description' has STANME code instead of location name using STANOX-STANME-dictionary
+            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'])
+            temp = stanox_location.join(rc_stanox_stanme_dict, on=['Stanox', 'Description'])
+            valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
+            if not valid_loc.empty:
+                stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
+                    lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
+
+            # Finalise cleansing 'Description' (i.e. location names)
+            temp = stanox_location.join(rc_stanox_dict, on='Stanox')
+            temp = temp[['Description', 'Name', 'Location']]
             stanox_location.Description = temp.apply(
-                lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+                lambda x: extractOne(x[0], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
+            # Cleanse 'Name' (i.e. STANME)
             stanox_location.Name = stanox_location.Name.str.upper()
 
-            location_codes_cut = location_codes[['Location', 'STANME', 'STANOX']]
-            location_codes_cut = location_codes_cut.groupby(['STANOX', 'Location']).agg({'STANME': list})
-            location_codes_cut.STANME = location_codes_cut.STANME.map(lambda x: x[0] if isinstance(x, list) else x)
-            temp = stanox_location.join(location_codes_cut, on=['Stanox', 'Description'])
-            stanox_location.Name = temp.STANME
+            loc_stanme_dict = rc_codes.groupby(['STANOX', 'Location']).agg({'STANME': list})
+            loc_stanme_dict.STANME = loc_stanme_dict.STANME.map(lambda x: x[0] if len(x) == 1 else x)
+            temp = stanox_location.join(loc_stanme_dict, on=['Stanox', 'Description'])
+            stanox_location.Name = temp.apply(
+                lambda x: extractOne(x[2], x[6])[0] if isinstance(x[6], list) else x[6], axis=1)
 
-            stanox_duplicated = stanox_location[stanox_location.duplicated('Stanox', keep=False)]
-            idx_duplicated = stanox_duplicated.index
-            stanox_duplicated.dropna(subset=['LocationId'], inplace=True)
-            stanox_duplicated.drop_duplicates(['Description', 'Name'], inplace=True)
-            idx_drop = [x for x in idx_duplicated if x not in stanox_duplicated.index]
-            stanox_location.drop(idx_drop, axis=0, inplace=True)
+            # Below is not available in any reference data
+            stanox_location.loc[298, 'Stanox':'Name'] = ['03330', 'Inverkeithing PPM Point', '']
 
+            # Cleanse remaining NA values in 'ELR', 'Yards' and 'LocationId'
             stanox_location.ELR.fillna('', inplace=True)
+            stanox_location.Yards = stanox_location.Yards.map(lambda x: '' if pd.isna(x) else str(int(x)))
 
-            stanox_location.set_index('Stanox', inplace=True)
+            # Clear duplicates by 'STANOX'
+            temp = stanox_location[stanox_location.duplicated(subset=['Stanox'], keep=False)]
+            # temp.sort_values(['Description', 'LocationId'], ascending=[True, False], inplace=True)
+            stanox_location.drop(index=temp[temp.LocationId.isna()].index, inplace=True)
 
-            # STANOX section --------------------------------------------------------------
-            stanox_section = pd.read_csv(cdd_metex_db_tables_original("StanoxSection.csv"),
-                                         dtype={'StartStanox': str, 'EndStanox': str})
-            stanox_section.rename(columns={'Id': 'StanoxSectionId',
-                                           'Description': 'StanoxSection',
-                                           'LocationId': 'SectionLocationId'}, inplace=True)
-            stanox_section[['StartStanox', 'EndStanox']] = \
-                stanox_section[['StartStanox', 'EndStanox']].replace(errata_stanox)
+            stanox_location.LocationId = stanox_location.LocationId.map(lambda x: '' if pd.isna(x) else str(int(x)))
 
-            # -----------------------------------------------------------------------------------------
-            stanox_location.rename(columns={'Description': 'Location', 'Name': 'Stanme'}, inplace=True)
-            location_metadata = stanox_section.join(stanox_location, on='StartStanox')
-            start_cols = ['Start' + x for x in stanox_location.columns]
-            location_metadata.rename(columns=dict(zip(list(stanox_location.columns), start_cols)), inplace=True)
+            # Finish
+            stanox_location.index = range(len(stanox_location))
 
-            location_metadata = location_metadata.join(stanox_location, on='EndStanox')
-            end_cols = ['End' + x for x in stanox_location.columns]
-            location_metadata.rename(columns=dict(zip(list(stanox_location.columns), end_cols)), inplace=True)
-
-            temp_start = location_metadata.join(location, on='SectionLocationId')
-            na_start = temp_start.StartLocation.isnull()
-            temp = temp_start[na_start].join(stanox_dict, on='StartStanox')
-            location_metadata.loc[na_start, 'StartLocation'] = \
-                temp.Location.map(lambda x: x[0] if isinstance(x, list) else x)
-
-            temp_end = location_metadata.join(location, on='SectionLocationId')
-            na_end = temp_end.EndLocation.isnull()
-            temp = temp_end[na_end].join(stanox_dict, on='EndStanox')
-            location_metadata.loc[na_end, 'EndLocation'] = \
-                temp.Location.map(lambda x: x[0] if isinstance(x, list) else x)
-
-            # --------------------------------------------------------------------------
-            location_metadata = location_metadata.join(location, on='SectionLocationId')
-            location_metadata.StanoxSection = location_metadata.StartLocation + ' : ' + location_metadata.EndLocation
-
-            start_columns = [x for x in location_metadata.columns if 'Start' in x]
-            start_locations = location_metadata[start_columns]
-            start_locations.rename(columns=dict(zip(start_columns, [x.replace('Start', '') for x in start_columns])),
-                                   inplace=True)
-
-            end_columns = [x for x in location_metadata.columns if 'End' in x]
-            end_locations = location_metadata[end_columns]
-            end_locations.rename(columns=dict(zip(end_columns, [x.replace('End', '') for x in end_columns])),
-                                 inplace=True)
-
-            loc_metadata = pd.concat([start_locations, end_locations], axis=0, ignore_index=True).drop_duplicates()
-
-            # Get reference metadata from RailwayCodes
-            station_data = get_station_locations()['Station']
-            station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].drop_duplicates('Station')
-            station_data.set_index('Station', inplace=True)
-            temp = loc_metadata.join(station_data, on='Location')
-            idx = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
-            loc_metadata.loc[idx, 'Longitude':'Latitude'] = \
-                temp.loc[idx, ['Degrees Longitude', 'Degrees Latitude']].values
-
-            loc_metadata.sort_values(['Stanox', 'Location', 'Longitude', 'Latitude'], inplace=True)
-            loc_metadata.index = range(len(loc_metadata))
-
-            location_metadata_plus = {'STANOX_section': location_metadata, 'STANOX_location': loc_metadata}
-
-            save_pickle(location_metadata_plus, path_to_pickle)
+            save_pickle(stanox_location, path_to_pickle)
 
         except Exception as e:
-            print("Failed to get \"stanox_location_metadata\". {}.".format(e))
-            location_metadata_plus = None
+            print("Failed to get NR_METEX STANOX location data. {}.".format(e))
+            stanox_location = pd.DataFrame()
 
-    return location_metadata_plus
+    return stanox_location
+
+
+# STANOX section data available from NR_METEX
+def get_metex_db_stanox_section(update=False):
+
+    pickle_filename = "db-metex-stanox-section.pickle"
+    path_to_pickle = cdd_rc(pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        stanox_section = load_pickle(path_to_pickle)
+    else:
+        try:
+            filename = "StanoxSection.csv"
+            str_cols = {'StartStanox': str, 'EndStanox': str}
+            stanox_section = pd.read_csv(cdd_metex_db_tables_original(filename), dtype=str_cols)
+
+            errata = load_json(cdd_rc("Errata.json"))
+            errata_stanox = errata['STANOX']
+
+            stanox_section.rename(columns={'Id': 'StanoxSectionId', 'Description': 'StanoxSection'}, inplace=True)
+            stanox_section.replace({'StartStanox': errata_stanox}, inplace=True)
+            stanox_section.replace({'EndStanox': errata_stanox}, inplace=True)
+            stanox_section.LocationId = stanox_section.LocationId.map(lambda x: '' if pd.isna(x) else str(int(x)))
+
+            stanox_sec = stanox_section.copy(deep=True)
+
+            stanox_sec[['Start_Raw', 'End_Raw']] = stanox_sec.StanoxSection.str.split(' : ').apply(pd.Series)
+            stanox_sec[['Start', 'End']] = stanox_sec[['Start_Raw', 'End_Raw']]
+            unknown_stanox_loc = load_json(cdd_rc("Problematic-STANOX-locations.json"))  # To solve duplicated STANOX
+            stanox_sec.replace({'Start': unknown_stanox_loc}, inplace=True)
+            stanox_sec.replace({'End': unknown_stanox_loc}, inplace=True)
+
+            #
+            stanox_location = get_metex_db_stanox_location()
+            stanox_loc = stanox_location.set_index(['Stanox', 'LocationId'])
+            temp = stanox_sec.join(stanox_loc, on=['StartStanox', 'LocationId'])
+            temp = temp[temp.Description.notnull()]
+            stanox_sec.loc[temp.index, 'Start'] = temp.Description
+            temp = stanox_sec.join(stanox_loc, on=['EndStanox', 'LocationId'])
+            temp = temp[temp.Description.notnull()]
+            stanox_sec.loc[temp.index, 'End'] = temp.Description
+
+            # Check if 'Start' and 'End' have STANOX codes instead of location names using STANOX-dictionary
+            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            temp = stanox_sec.join(rc_stanox_dict, on='Start')
+            valid_loc = temp[temp.Location.notnull()]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'Start'] = valid_loc.Location
+            temp = stanox_sec.join(rc_stanox_dict, on='End')
+            valid_loc = temp[temp.Location.notnull()]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.Location
+
+            # Check if 'Start' and 'End' have STANOX/TIPLOC codes using STANOX-TIPLOC-dictionary
+            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'])
+            temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['StartStanox', 'Start'])
+            valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'Start'] = valid_loc.apply(
+                    lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+            temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['EndStanox', 'End'])
+            valid_loc = temp[temp.Location.notnull()][['End', 'Location']]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.apply(
+                    lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+
+            # Check if 'Start' and 'End' have STANOX/STANME codes using STANOX-STANME-dictionary
+            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'])
+            temp = stanox_sec.join(rc_stanox_stanme_dict, on=['StartStanox', 'Start'])
+            valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'Start'] = valid_loc.apply(
+                    lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+            temp = stanox_sec.join(rc_stanox_stanme_dict, on=['EndStanox', 'End'])
+            valid_loc = temp[temp.Location.notnull()][['End', 'Location']]
+            if not valid_loc.empty:
+                stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.apply(
+                    lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+
+            # Apply manually-created dictionaries
+            loc_name_replacement_dict = create_loc_name_replacement_dict('Start')
+            stanox_sec.replace(loc_name_replacement_dict, inplace=True)
+            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('Start')
+            stanox_sec.replace(loc_name_regexp_replacement_dict, inplace=True)
+            loc_name_replacement_dict = create_loc_name_replacement_dict('End')
+            stanox_sec.replace(loc_name_replacement_dict, inplace=True)
+            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('End')
+            stanox_sec.replace(loc_name_regexp_replacement_dict, inplace=True)
+
+            # Finalise cleansing
+            stanox_sec.End.fillna(stanox_sec.Start, inplace=True)
+            temp = stanox_sec.join(rc_stanox_dict, on='StartStanox')
+            temp = temp[temp.Location.notnull()][['Start', 'Location']]
+            stanox_sec.loc[temp.index, 'Start'] = temp.apply(
+                lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+            temp = stanox_sec.join(rc_stanox_dict, on='EndStanox')
+            temp = temp[temp.Location.notnull()][['End', 'Location']]
+            stanox_sec.loc[temp.index, 'End'] = temp.apply(
+                lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+
+            #
+            section = stanox_sec.Start + ' : ' + stanox_sec.End
+            non_sec = stanox_sec.Start.eq(stanox_sec.End)
+            section[non_sec] = stanox_sec[non_sec].Start
+            stanox_section.StanoxSection = section
+            stanox_section.insert(2, 'StartLocation', stanox_sec.Start.values)
+            stanox_section.insert(3, 'EndLocation', stanox_sec.End.values)
+            stanox_section[['StartLocation', 'EndLocation']] = stanox_sec[['Start', 'End']]
+
+            # Add raw data to the original dataframe
+            raw_col_names = ['StanoxSection_Raw', 'StartLocation_Raw', 'EndLocation_Raw']
+            stanox_section[raw_col_names] = stanox_sec[['StanoxSection', 'Start_Raw', 'End_Raw']]
+
+            save_pickle(stanox_section, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to get NR_METEX STANOX section data. {}.".format(e))
+            stanox_section = pd.DataFrame()
+
+    return stanox_section
+
+
+# Assemble data from NR_METEX to serve as metadata for location codes
+def get_location_metadata_plus(update=False):
+
+    pickle_filename = "db-metex-location-metadata.pickle"
+    path_to_pickle = cdd_rc(pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        metadata = load_pickle(path_to_pickle)
+    else:
+        try:
+            # Location
+            location = get_metex_db_location()
+
+            # # STANOX location
+            stanox_location = get_metex_db_stanox_location()
+            stanox_location = stanox_location[['Stanox', 'Description', 'Name', 'ELR', 'Yards']]
+            stanox_location.drop([2964, 6049, 2258, 1068, 2361, 4390], inplace=True)
+            stanox_location.set_index(['Stanox', 'Description'], inplace=True)
+
+            # STANOX section
+            stanox_section = get_metex_db_stanox_section()
+
+            # Get metadata by 'LocationId'
+            metadata = stanox_section.join(location, on='LocationId')
+
+            # --------------------------------------------------------------------------
+            ref = get_location_metadata()['STANOX']
+            ref.drop_duplicates(subset=['STANOX', 'LOOKUP_NAME'], inplace=True)
+            ref.set_index(['STANOX', 'LOOKUP_NAME'], inplace=True)
+
+            # Replace metadata's coordinates data with ref coordinates if available
+            temp = metadata.join(ref, on=['StartStanox', 'StartLocation'])
+            temp = temp[temp.DEG_LAT.notnull() & temp.DEG_LONG.notnull()]
+            metadata.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['DEG_LONG', 'DEG_LAT']].values
+            metadata.loc[temp.index, 'ApproximateStartLocation'] = False
+            metadata.loc[metadata.index.difference(temp.index), 'ApproximateStartLocation'] = True
+
+            temp = metadata.join(ref, on=['EndStanox', 'EndLocation'])
+            temp = temp[temp.DEG_LAT.notnull() & temp.DEG_LONG.notnull()]
+            metadata.loc[temp.index, 'EndLongitude':'EndLatitude'] = temp[['DEG_LONG', 'DEG_LAT']].values
+            metadata.loc[temp.index, 'ApproximateEndLocation'] = False
+            metadata.loc[metadata.index.difference(temp.index), 'ApproximateEndLocation'] = True
+
+            # Get reference metadata from RailwayCodes
+            station_data = rc.get_station_locations()['Station']
+            station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
+            station_data.drop_duplicates(subset=['Station'], inplace=True)
+            station_data.set_index('Station', inplace=True)
+
+            temp = metadata.join(station_data, on='StartLocation')
+            na_i = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
+            metadata.loc[na_i, 'StartLongitude':'StartLatitude'] = \
+                temp.loc[na_i, ['Degrees Longitude', 'Degrees Latitude']].values
+            metadata.loc[na_i, 'ApproximateStartLocation'] = False
+            metadata.loc[~na_i, 'ApproximateStartLocation'] = True
+
+            temp = metadata.join(station_data, on='EndLocation')
+            na_i = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
+            metadata.loc[na_i, 'EndLongitude':'EndLatitude'] = \
+                temp.loc[na_i, ['Degrees Longitude', 'Degrees Latitude']].values
+            metadata.loc[na_i, 'ApproximateEndLocation'] = False
+            metadata.loc[~na_i, 'ApproximateEndLocation'] = True
+
+            metadata.ApproximateLocation = metadata.ApproximateStartLocation | metadata.ApproximateEndLocation
+
+            # Finalise
+            location_cols = stanox_location.columns
+            start_cols = ['Start' + x for x in location_cols]
+            metadata = metadata.join(stanox_location.drop_duplicates('Name'), on=['StartStanox', 'StartLocation'])
+            metadata.rename(columns=dict(zip(location_cols, start_cols)), inplace=True)
+            end_cols = ['End' + x for x in location_cols]
+            metadata = metadata.join(stanox_location.drop_duplicates('Name'), on=['EndStanox', 'EndLocation'])
+            metadata.rename(columns=dict(zip(location_cols, end_cols)), inplace=True)
+            metadata[start_cols + end_cols].fillna('', inplace=True)
+
+            save_pickle(metadata, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to get \"db-metex-location-metadata.\" {}.".format(e))
+            metadata = pd.DataFrame()
+
+    return metadata
 
 
 # ====================================================================================================================
@@ -381,7 +558,7 @@ def cleanse_location_data(data, loc_col_names='StanoxSection', sep=' : '):
         location_data = data[[old_column_name]]
 
     #
-    stanox_dict = get_location_codes_dictionary_v2(['STANOX'], as_dict=True)
+    stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], as_dict=True)
 
     print("Cleansing duplicates by \"STANOX\" ... ", end="")
 
@@ -394,12 +571,12 @@ def cleanse_location_data(data, loc_col_names='StanoxSection', sep=' : '):
     location_data_temp = tidy_duplicated_codes(stanox_dict, location_data)
     print("Successfully.")
     #
-    stanme_dict = get_location_codes_dictionary_v2(['STANME'], as_dict=True)
+    stanme_dict = rc.get_location_codes_dictionary_v2(['STANME'], as_dict=True)
     print("Cleansing duplicates by \"STANME\" ... ", end="")
     location_data_temp = tidy_duplicated_codes(stanme_dict, location_data_temp)
     print("Successfully.")
     #
-    tiploc_dict = get_location_codes_dictionary_v2(['TIPLOC'], as_dict=True)
+    tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], as_dict=True)
     print("Cleansing duplicates by \"TIPLOC\" ... ", end="")
     location_data_temp = tidy_duplicated_codes(tiploc_dict, location_data_temp)
     print("Successfully.")
@@ -480,7 +657,7 @@ def read_schedule8_weather_incidents(update=False):
             data.loc[temp1.index, 'EndLongitude':'EndLatitude'] = temp1[['Longitude', 'Latitude']].values
 
             # ref 2 -------------------------------------------
-            ref_metadata_2 = get_station_locations()['Station']
+            ref_metadata_2 = rc.get_station_locations()['Station']
             ref_metadata_2 = ref_metadata_2[['Station', 'Degrees Longitude', 'Degrees Latitude']]
             ref_metadata_2 = ref_metadata_2.dropna().drop_duplicates('Station')
             ref_metadata_2.columns = [x.replace('Degrees ', '') for x in ref_metadata_2.columns]
