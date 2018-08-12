@@ -127,6 +127,7 @@ def create_loc_name_replacement_dict(k=None, as_dataframe=False):
         'Ludgershall M.O.D.': 'Ludgershall MOD',
         'March Up R.S.': 'March Up Refuge Siding',
         'Marchwood M.O.D.': 'Marchwood MOD',
+        'MLRHM21': 'Millerhill Signal M21',
         'Morris Cowley M.A.T.': 'Morris Cowley MAT',
         'North Walsham Shell U.K.': 'North Walsham Shell UK',
         'OXWMNS': 'Oxwellmains Blue Circle',
