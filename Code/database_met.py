@@ -439,9 +439,9 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             location_stanme_dict = location_codes[['Location', 'STANME']].set_index('Location').to_dict()['STANME']
             stanox_location.Name = stanox_location.Name.replace(location_stanme_dict)
 
-            loc_name_replacement_dict = create_loc_name_replacement_dict('Description')
+            loc_name_replacement_dict = create_location_names_replacement_dict('Description')
             stanox_location = stanox_location.replace(loc_name_replacement_dict)
-            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict('Description')
+            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('Description')
             stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
 
             # STANOX dictionary
@@ -518,8 +518,8 @@ def get_stanox_section(update=False):
             # Secondly, process 'STANME' and 'TIPLOC'
             stanme_dict = rc.get_location_codes_dictionary(keyword='STANME')
             tiploc_dict = rc.get_location_codes_dictionary(keyword='TIPLOC')
-            loc_name_replacement_dict = create_loc_name_replacement_dict()
-            loc_name_regexp_replacement_dict = create_loc_name_regexp_replacement_dict()
+            loc_name_replacement_dict = create_location_names_replacement_dict()
+            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict()
             # Processing 'StartStanox_loc'
             stanox_section.StartStanox_loc = stanox_section.StartStanox_loc. \
                 replace(stanme_dict).replace(tiploc_dict). \
