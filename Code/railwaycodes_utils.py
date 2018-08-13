@@ -133,10 +133,11 @@ def parse_tr(header, trs):
         row_spanned = list(d.items())
 
         for x in row_spanned:
-            i = x[0]
-            to_repeat = x[1]
+            i, to_repeat = x[0], x[1]
             for y in to_repeat:
                 for j in range(1, y[0]):
+                    if y[2] in tbl_lst[i]:
+                        y[1] += pd.np.abs(tbl_lst[i].index(y[2]) - y[1])
                     tbl_lst[i + j].insert(y[1], y[2])
 
     # if row_spanned:
@@ -193,27 +194,42 @@ def parse_loc_note(x):
     # if d is not None:
     #     dat = d.group()
     # else:
+
+    # Location name
     d = re.search('.*(?= \[[\"\']\()', x)
     if d is not None:
         dat = d.group()
     elif ' [unknown feature, labelled "do not use"]' in x:
         dat = re.search('\w+(?= \[unknown feature, )', x).group()
+    elif ') [formerly' in x:
+        dat = re.search('.*(?= \[formerly)', x).group()
     else:
         m_pattern = re.compile(
-            '[Oo]riginally |[Ff]ormerly |[Ll]ater |[Pp]resumed | \(was | \(in | \(at | \(also known as |'
-            ' \(second code set |\?|\"|\n')
+            '[Oo]riginally |[Ff]ormerly |[Ll]ater |[Pp]resumed | \(was | \(in | \(at | \(also |'
+            ' \(second code |\?|\n| \(\[\'| \(definition unknown\)')
         # dat = re.search('["\w ,]+(?= [[(?\'])|["\w ,]+', x).group(0) if re.search(m_pattern, x) else x
-        dat = ' '.join(x.replace(x[x.find('('):x.find(')') + 1], '').split()) if re.search(m_pattern, x) else x
+        x_tmp = re.search('(?=[\[(]).*(?<=[\])])|(?=\().*(?<=\) \[)', x)
+        x_tmp = x_tmp.group() if x_tmp is not None else x
+        dat = ' '.join(x.replace(x_tmp, '').split()) if re.search(m_pattern, x) else x
+
     # Note
-    n = re.search('(?<=\[[\'\"]\().*(?=\)[\'\"]\])', x)
-    if n is None:
-        n = re.search('(?<=[\n ][\[\'(])[\w ,\'\"/?]+', x)
-    elif n.group() == "'" or n.group() == '"':
-        n = re.search(r'(?<=[\[(])[\w ,?]+(?=[])])', x)
-    note = n.group() if n is not None else ''
+    y = x.replace(dat, '').strip()
+    if y == '':
+        note = ''
+    else:
+        n = re.search('(?<=[\[(])[\w ,?]+(?=[])])', y)
+        if n is None:
+            n = re.search('(?<=(\[[\'\"]\()|(\([\'\"]\[)|(\) \[)).*(?=(\)[\'\"]\])|(\][\'\"]\))|\])', y)
+        # elif n.group() == '"' or n.group() == "'":
+        #     n = re.search('(?<=[\n ]((\[\'\()|(\(\[\')))[\w ,\'\"/?]+', y)
+        note = n.group() if n is not None else ''
+        if note.endswith('\'') or note.endswith('"'):
+            note = note[:-1]
+
     if 'STANOX ' in dat and 'STANOX ' in x and note == '':
         dat = x[0:x.find('STANOX')].strip()
         note = x[x.find('STANOX'):]
+
     return dat, note
 
 
@@ -660,7 +676,7 @@ def scrape_location_codes(keyword, update=False):
             pattern = re.compile("|".join(reps.keys()))
             tbl_lst = [[pattern.sub(lambda x: reps[x.group(0)], item) for item in record] for record in tbl_lst]
             data = pd.DataFrame(tbl_lst, columns=header)
-            data = data.replace({'\xa0': ''})
+            data.replace({'\xa0': ''}, regex=True, inplace=True)
 
             """ Extract additional information as note """
 
@@ -794,6 +810,13 @@ def get_location_codes(update=False):
         # Select DataFrames only
         location_codes_data = (item['Locations_{}'.format(x)] for item, x in zip(data, string.ascii_uppercase))
         location_codes_data_table = pd.concat(location_codes_data, axis=0, ignore_index=True)
+
+        # Likely errors (spotted empirically)
+        idx = location_codes_data_table[location_codes_data_table.Location == 'Selby Melmerby Estates'].index
+        values = location_codes_data_table.loc[idx, 'STANME':'STANOX'].values
+        location_codes_data_table.loc[idx, 'STANME':'STANOX'] = ['', '']
+        idx = location_codes_data_table[location_codes_data_table.Location == 'Selby Potter Group'].index
+        location_codes_data_table.loc[idx, 'STANME':'STANOX'] = values
 
         # Get the latest updated date
         last_updated_dates = (item['Last_updated_date_{}'.format(x)] for item, x in zip(data, string.ascii_uppercase))
