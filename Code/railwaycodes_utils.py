@@ -136,7 +136,7 @@ def parse_tr(header, trs):
             i, to_repeat = x[0], x[1]
             for y in to_repeat:
                 for j in range(1, y[0]):
-                    if y[2] in tbl_lst[i]:
+                    if y[2] in tbl_lst[i] and y[2] != '\xa0':
                         y[1] += pd.np.abs(tbl_lst[i].index(y[2]) - y[1])
                     tbl_lst[i + j].insert(y[1], y[2])
 
