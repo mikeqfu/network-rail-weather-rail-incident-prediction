@@ -28,7 +28,9 @@ def cdd_schedule8(*directories):
 #
 def read_thresholds_from_html():
     # thr: thresholds
-    thr = pd.read_html(cdd("METEX\\Weather\\Thresholds", "Weather-Thresholds_9306121.html"))
+    html_filename = "Weather-Thresholds_9306121.html"
+    path_to_html = cdd("METEX\\Weather\\Thresholds", html_filename)
+    thr = pd.read_html(path_to_html)
     thr = thr[0]
     # Specify column names
     hdr = thr.loc[0].tolist()
@@ -95,37 +97,40 @@ def read_thresholds_from_html():
     return thr
 
 
-# The threshold data is also available in the following file: "Schedule8WeatherIncidents_02062006_31032014.xlsm"
+# The threshold data is also available in the following file: "Schedule8WeatherIncidents-02062006-31032014.xlsm"
 def read_thresholds_from_workbook(update=False):
-    path_to_file = cdd_schedule8("Spreadsheets", "Worksheet_Thresholds.pickle")
-    if os.path.isfile(path_to_file) and not update:
-        thresholds = load_pickle(path_to_file)
+    pickle_filename = "Spreadsheets", "Worksheet_Thresholds.pickle"
+    path_to_pickle = cdd_schedule8(pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        thresholds = load_pickle(path_to_pickle)
     else:
         try:
-            thresholds = pd.read_excel(cdd_schedule8("Spreadsheets", "Schedule8WeatherIncidents_02062006_31032014.xlsm"),
-                                       sheetname="Thresholds", parse_cols="A:F")
+            thresholds = pd.read_excel(
+                cdd_schedule8("Spreadsheets", "Schedule8WeatherIncidents-02062006-31032014.xlsm"),
+                sheetname="Thresholds", parse_cols="A:F")
             thresholds.dropna(inplace=True)
             thresholds.index = range(len(thresholds))
             thresholds.columns = [col.replace(' ', '') for col in thresholds.columns]
             thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
-            save_pickle(thresholds, path_to_file)
+            save_pickle(thresholds, path_to_pickle)
         except Exception as e:
-            print("Reading weather thresholds from the workbook ... failed due to '{}'.".format(e))
+            print("Failed to read \"weather thresholds\" from the workbook. {}.".format(e))
             thresholds = None
     return thresholds
 
 
 def get_weather_thresholds(update=False):
-    path_to_file = cdd("METEX\\Weather\\Thresholds", "Thresholds.pickle")
-    if os.path.isfile(path_to_file) and not update:
-        thresholds = load_pickle(path_to_file)
+    pickle_filename = "Thresholds.pickle"
+    path_to_pickle = cdd("METEX\\Weather\\Thresholds", pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        thresholds = load_pickle(path_to_pickle)
     else:
         try:
             thr0 = read_thresholds_from_html()
             thr1 = read_thresholds_from_workbook(update)
             thresholds = [thr0, thr1]
-            save_pickle(thresholds, path_to_file)
+            save_pickle(thresholds, path_to_pickle)
         except Exception as e:
-            print("Getting weather thresholds ... failed due to '{}'.".format(e))
+            print("Failed to get \"weather thresholds\". {}.".format(e))
             thresholds = None
     return thresholds

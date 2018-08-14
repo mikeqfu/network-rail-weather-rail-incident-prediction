@@ -319,9 +319,9 @@ def download_subregion_osm_file(subregion, file_format=".shp.zip", update=False)
         else:
             try:
                 urllib.request.urlretrieve(download_url, file_path)
-                print("\n'{}' is downloaded for {}.".format(filename, subregion_name))
+                print("\n\"{}\" is downloaded for {}.".format(filename, subregion_name))
             except Exception as e:
-                print("\nDownload failed due to '{}'.".format(e))
+                print("\nDownload failed. {}.".format(e))
 
 
 # Remove the downloaded file
@@ -336,9 +336,9 @@ def remove_subregion_osm_file(subregion, file_format=".shp.zip"):
         filename, file_path = make_file_path(download_url)
         if os.path.isfile(file_path):
             os.remove(file_path)
-            print("'{}' has been removed.".format(filename))
+            print("\"{}\" has been removed.".format(filename))
         else:
-            print("The target file, '{}', does not exist.".format(filename))
+            print("The target file, \"{}\", does not exist.".format(filename))
 
 
 # Counties which are involved with the Anglia Route

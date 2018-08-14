@@ -189,11 +189,3 @@ def create_location_names_regexp_replacement_dict(k=None, as_dataframe=False):
         replacement_dict = pd.DataFrame.from_dict(replacement_dict)
 
     return replacement_dict
-
-
-# Compare the difference between two columns and replace items if appropriate
-def compare_and_replace(loc, to_replace, with_col):
-    # Given length
-    temp = loc[[to_replace, with_col]].applymap(len)
-    replace_list = temp[temp[to_replace] <= temp[with_col]].index.tolist()
-    loc[to_replace][replace_list] = loc[with_col][replace_list]

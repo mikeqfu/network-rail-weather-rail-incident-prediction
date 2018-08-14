@@ -1,4 +1,4 @@
-""" Weather attribution of Schedule 8 incidents """
+""" Weather attribution of Incidents """
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ import sklearn.linear_model
 import sklearn.model_selection
 
 import database_met as dbm
-from Prototype import spreadsheet_schedule8 as wbs
+from Prototype import spreadsheet_incidents as wbs
 
 # ====================================================================================================================
 """ Task 1: Broad classification of incidents into weather-related and non-weather-related """
@@ -195,7 +195,7 @@ def proportion_pie_plot(data, save_as='.png'):
 
     plt.subplots_adjust(left=0.0, bottom=0.0, right=1, top=0.95)
 
-    plt.savefig(wbs.cdd_schedule8("Exploratory analysis", "Proportions" + save_as), dpi=600)
+    plt.savefig(wbs.cdd_incidents("Exploratory analysis", "Proportions" + save_as), dpi=600)
 
 
 # Plot 'Total monetary cost incurred by weather-related incidents'

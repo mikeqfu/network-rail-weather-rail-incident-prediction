@@ -97,7 +97,7 @@ def save_pickle(pickle_data, path_to_pickle):
         pickle_out.close()
         print("Successfully.")
     except Exception as e:
-        print("failed due to {}.".format(e))
+        print("Failed. {}.".format(e))
 
 
 # Load pickles
@@ -113,7 +113,7 @@ def load_pickle(path_to_pickle):
         pickle_in.close()
         print("Successfully.")
     except Exception as e:
-        print("failed due to {}.".format(e))
+        print("Failed. {}.".format(e))
         pickle_data = None
     return pickle_data
 
@@ -134,7 +134,7 @@ def save_json(json_data, path_to_json):
         json_out.close()
         print("Successfully.")
     except Exception as e:
-        print("failed due to {}.".format(e))
+        print("Failed. {}.".format(e))
 
 
 # Load json file
@@ -150,7 +150,7 @@ def load_json(path_to_json):
         json_in.close()
         print("Successfully.")
     except Exception as e:
-        print("failed due to {}.".format(e))
+        print("Failed. {}.".format(e))
         json_data = None
     return json_data
 
@@ -168,7 +168,7 @@ def save_spreadsheet(excel_data, path_to_sheet, sep, index, sheet_name, engine='
     :return: whether the data has been successfully saved or updated
     """
     excel_filename = os.path.basename(path_to_sheet)
-    filename, save_as = os.path.splitext(excel_filename)
+    _, save_as = os.path.splitext(excel_filename)
     print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_sheet) else "Saving", excel_filename), end="")
     try:
         os.makedirs(os.path.dirname(os.path.abspath(path_to_sheet)), exist_ok=True)
@@ -181,7 +181,7 @@ def save_spreadsheet(excel_data, path_to_sheet, sep, index, sheet_name, engine='
             xlsx_writer.close()
         print("Successfully.")
     except Exception as e:
-        print("failed due to {}.".format(e))
+        print("Failed. {}.".format(e))
 
 
 # Save data locally (.pickle, .csv or .xlsx)
@@ -219,12 +219,17 @@ def save(data, path_to_file, sep=',', index=True, sheet_name='Details', engine='
 
 # Save a figure using plt.savefig()
 def save_fig(path_to_fig_file, dpi):
-    matplotlib.pyplot.savefig(path_to_fig_file, dpi=dpi)
-
-    save_as = os.path.splitext(path_to_fig_file)[1]
-    if save_as == ".svg":
-        path_to_emf = path_to_fig_file.replace(save_as, ".emf")
-        subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
+    fig_filename = os.path.basename(path_to_fig_file)
+    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_fig_file) else "Saving", fig_filename), end="")
+    try:
+        matplotlib.pyplot.savefig(path_to_fig_file, dpi=dpi)
+        _, save_as = os.path.splitext(path_to_fig_file)
+        if save_as == ".svg":
+            path_to_emf = path_to_fig_file.replace(save_as, ".emf")
+            subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
+        print("Successfully.")
+    except Exception as e:
+        print("Failed. {}.".format(e))
 
 
 # ====================================================================================================================

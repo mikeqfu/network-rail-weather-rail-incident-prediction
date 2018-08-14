@@ -1,9 +1,8 @@
-""" Spreadsheets on Schedule 8 incidents """
+""" Incidents data available in spreadsheets """
 
 import datetime
 import glob
 import os
-import re
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
@@ -14,12 +13,20 @@ import pandas as pd
 import database_met as dbm
 import database_veg as dbv
 import railwaycodes_utils as rc
-from utils import cdd, load_pickle, save
+from utils import cdd, load_pickle, save, save_fig
 
 
-# Change directory to "Schedule 8 incidents"
-def cdd_schedule8(*directories):
-    path = cdd("Schedule 8 incidents")
+# Change directory to "Incidents"
+def cdd_incidents(*directories):
+    path = cdd("Incidents")
+    for directory in directories:
+        path = os.path.join(path, directory)
+    return path
+
+
+# Change directory to "Incidents\\Spreadsheets"
+def cdd_spreadsheet(*directories):
+    path = cdd_incidents("Spreadsheets")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -30,40 +37,47 @@ def cdd_schedule8(*directories):
 
 
 #
-def get_schedule8_weather_cost_report_all_data(route=None, weather=None, update=False):
+def get_schedule8_weather_cost_report(route=None, weather=None, update=False):
     """
     Summary report for Schedule 8 weather costs covering the UK.
     """
-    filename = "Schedule8WeatherCostReport_AllData"
-    path_to_file = cdd_schedule8("Spreadsheets", filename + ".pickle")
+    pickle_filename = "Schedule8WeatherCostReport.pickle"
+    path_to_pickle = cdd_spreadsheet(pickle_filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        all_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        all_data = load_pickle(path_to_pickle)
     else:
         try:
-            workbook = pd.ExcelFile(cdd_schedule8("Spreadsheets", "Schedule8WeatherCostReport.xlsx"))
+            spreadsheet_filename = "Schedule8WeatherCostReport.xlsx"
+            sheet_name = 'AllData'
+            workbook = pd.ExcelFile(cdd_incidents("Spreadsheets", spreadsheet_filename))
             # 'AllData'
-            all_data = workbook.parse(sheet_name='AllData')
+            all_data = workbook.parse(sheet_name=sheet_name)
             all_data.columns = [c.replace(' ', '') for c in all_data.columns]
             all_data.rename(columns={'Weather': 'WeatherCategoryCode',
                                      'Cost': 'DelayCost',
                                      'WeatherDescription': 'WeatherCategory'}, inplace=True)
             all_data.sort_values(by=['Year', 'Route', 'WeatherCategory'], inplace=True)
             all_data = all_data.round({'DelayCost': 2, 'DelayMinutes': 4})
+
             workbook.close()
-            save(all_data, path_to_file)
+
+            save(all_data, path_to_pickle)
+
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
-            all_data = None
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(pickle_filename)[0], e))
+            all_data = pd.DataFrame()
+
     s8_cost_report_all_data = dbm.subset(all_data, route, weather)
     s8_cost_report_all_data.index = range(len(s8_cost_report_all_data))
+
     return s8_cost_report_all_data
 
 
 #
 def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, show_title=False, save_as=".png"):
     # Get data
-    report_data = get_schedule8_weather_cost_report_all_data(update=update)
+    report_data = get_schedule8_weather_cost_report(update=update)
     colours = matplotlib.cm.get_cmap('Set2')(np.flip(np.linspace(0.0, 1.0, 9), 0))
     colour = colours[list(set(report_data.WeatherCategory)).index(weather)] if weather else '#c0bc7c'
     report_data = dbm.subset(report_data, route, weather)
@@ -118,14 +132,14 @@ def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, s
         plt.tight_layout()
 
     if save_as:
-        filename = "_".join(["Schedule8WeatherCostReport"] + [s for s in (route, weather) if s is not None])
-        plt.savefig(cdd_schedule8("Exploratory analysis", filename + save_as), dpi=600)
+        filename = "-".join(["Schedule8WeatherCostReport"] + [s for s in (route, weather) if s is not None])
+        save_fig(cdd_incidents("Exploratory analysis", filename + save_as), dpi=600)
 
 
 #
 def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show_title=False, save_as=".png"):
     # Get data
-    report_data = get_schedule8_weather_cost_report_all_data(route, weather=None, update=update)
+    report_data = get_schedule8_weather_cost_report(route, weather=None, update=update)
     # Total delay minutes and costs for all weather-related incidents
     data = report_data.groupby(['Year', 'WeatherCategory']).aggregate({'DelayCost': np.sum, 'DelayMinutes': np.sum})
     data.reset_index(inplace=True)
@@ -147,7 +161,7 @@ def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show
         if len(dat) < 9:
             diff = list(set(xdata1) - set(dat.index))
             for y in diff:
-                dat.ix[y] = 0
+                dat.loc[y] = 0
             dat.WeatherCategory = w
         ydata1 = np.array(dat.DelayMinutes)  # data for y-axis (left-hand side)
         ax.bar(xdata1, ydata1, bottom=bottom, align='center', width=0.7, edgecolor='black',
@@ -173,8 +187,8 @@ def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show
         plt.tight_layout()
 
     if save_as:
-        filename = "_".join(["Schedule8WeatherCostReport_by_weather"] + [s for s in [route] if route is not None])
-        plt.savefig(cdd_schedule8("Exploratory analysis", filename + save_as), dpi=600)
+        filename = "-".join(["Schedule8WeatherCostReport-by-weather"] + [s for s in [route] if route is not None])
+        save_fig(cdd_incidents("Exploratory analysis", filename + save_as), dpi=600)
 
 
 # ====================================================================================================================
@@ -191,13 +205,14 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
     with detailed data for each incident." (Retrieved directly from the Database)
 
     """
-    filename = "S8WeatherIncidentsByDay"
-    path_to_file = cdd_schedule8("Spreadsheets", filename + ".pickle")
-    if os.path.isfile(path_to_file) and not update:
-        workbook_data = load_pickle(path_to_file)
+    pickle_filename = "S8WeatherIncidentsByDay.pickle"
+    path_to_pickle = cdd_spreadsheet(pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        workbook_data = load_pickle(path_to_pickle)
     else:
         try:
-            workbook = pd.ExcelFile(path_to_file.replace(".pickle", ".xlsx"))  # Open the file
+            path_to_spreadsheet = path_to_pickle.replace(".pickle", ".xlsx")
+            workbook = pd.ExcelFile(path_to_spreadsheet)  # Open the workbook
             # Read the first worksheet: "Summary"
             summary = workbook.parse('Summary', parse_cols='A:G', parse_dates=False, dayfirst=True)
 
@@ -206,10 +221,10 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
             details.rename(columns={'DU': 'IMDM', 'delayMinutes': 'DelayMinutes'}, inplace=True)
             workbook_data = dict(zip(workbook.sheet_names, [summary, details]))
             workbook.close()
-            save(workbook_data, cdd_schedule8("Spreadsheets", filename + ".pickle"))
+            save(workbook_data, cdd_spreadsheet(pickle_filename))
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
-            workbook_data = None
+            print("Failed to get \"{}\". {}.".format(os.path.basename(pickle_filename), e))
+            workbook_data = pd.DataFrame()
 
     workbook_data['Summary'] = dbm.subset(workbook_data['Summary'], route, weather)
     workbook_data['Details'] = dbm.subset(workbook_data['Details'], route, weather)
@@ -320,13 +335,13 @@ def plot_schedule8_weather_delays_by_season(route=None, weather=None, update=Fal
         plt.tight_layout()
 
     if save_as:
-        filename = "_".join(["S8WeatherIncidentsByDay_delays_by_season"] +
+        filename = "-".join(["S8WeatherIncidentsByDay-delays-by-season"] +
                             [s for s in (route, weather) if s is not None])
-        plt.savefig(cdd_schedule8("Exploratory analysis", filename + save_as), dpi=600)
+        save_fig(cdd_incidents("Exploratory analysis", filename + save_as), dpi=600)
 
 
 # ====================================================================================================================
-""" S8_Weather 02_06_2006 - 31-03-2014.xlsm """
+""" Schedule8WeatherIncidents-02062006-31032014.xlsm """  # Need to be modified
 
 
 def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, update=False):
@@ -339,16 +354,16 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
     """
     # Path to the file
-    filename = "S8_Weather 02_06_2006 - 31-03-2014"
-    filename_modified = "_".join(filter(None, [re.sub('[_-]', '', x) for x in filename.split(" ")]))
-    path_to_file = cdd_schedule8("Spreadsheets", filename_modified + ".pickle")
+    pickle_filename = "Schedule8WeatherIncidents-02062006-31032014.pickle"
+    path_to_pickle = cdd_spreadsheet(pickle_filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        workbook_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        workbook_data = load_pickle(path_to_pickle)
     else:
         try:
             # Open the original file
-            workbook = pd.ExcelFile(cdd_schedule8("Spreadsheets", filename + ".xlsm"))
+            spreadsheet_filename = pickle_filename.replace(".pickle", ".xlsm")
+            workbook = pd.ExcelFile(cdd_incidents("Spreadsheets", spreadsheet_filename))
 
             # 'Thresholds' ================================================================
             thresholds = workbook.parse(sheet_name='Thresholds', parse_cols='A:F').dropna()
@@ -358,7 +373,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
             # 'Data' =========================================================================================
             data = workbook.parse('Data', parse_dates=False, dayfirst=True, converters={'stanoxSection': str})
-            data.columns = [c.replace('(C)', '(degrees Celcius)').replace(' ', '') for c in data.columns]
+            data.columns = [c.replace('(C)', '(degrees Celsius)').replace(' ', '') for c in data.columns]
             data.rename(columns={'imdm': 'IMDM',
                                  'stanoxSection': 'StanoxSection',
                                  'Minutes': 'DelayMinutes',
@@ -384,15 +399,15 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             stanox_section.EndLocation.fillna(stanox_section.StartLocation, inplace=True)
 
             stanox_dict_1 = dbm.get_stanox_location().Location.to_dict()
-            stanox_dict_2 = rc.get_location_dictionary('STANOX', drop_duplicates=False)
+            stanox_dict_2 = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
 
             stanox_section.StartLocation = stanox_section.StartLocation.replace(stanox_dict_1).replace(stanox_dict_2)
             stanox_section.EndLocation = stanox_section.EndLocation.replace(stanox_dict_1).replace(stanox_dict_2)
 
-            stanme_dict = rc.get_location_dictionary('STANME')
-            tiploc_dict = rc.get_location_dictionary('TIPLOC')
-            loc_name_replacement_dict = dbm.create_loc_name_replacement_dict()
-            loc_name_regexp_replacement_dict = dbm.create_loc_name_regexp_replacement_dict()
+            stanme_dict = rc.get_location_codes_dictionary(keyword='STANME')
+            tiploc_dict = rc.get_location_codes_dictionary(keyword='TIPLOC')
+            loc_name_replacement_dict = dbm.create_location_names_replacement_dict()
+            loc_name_regexp_replacement_dict = dbm.create_location_names_regexp_replacement_dict()
             # Processing 'StartStanox'
             stanox_section.StartLocation = stanox_section.StartLocation. \
                 replace(stanme_dict).replace(tiploc_dict). \
@@ -426,10 +441,10 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             workbook_data = dict(zip(workbook.sheet_names, [thresholds, data, weather_category_lookup]))
             workbook.close()
             # Save the workbook data
-            save(workbook_data, path_to_file)
+            save(workbook_data, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
+            print("Failed to get \"{}\". {}.".format(os.path.basename(pickle_filename), e))
             workbook_data = None
 
         # Retain data for specific Route and weather category
@@ -439,19 +454,19 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
 
 # ====================================================================================================================
-""" TRUST """
+""" TRUST """  # Need to be modified
 
 
 # Get a reference for matching DU with Route
 def get_du_route_dict(as_dict=True, update=False):
-    filename = "DU_Route"
-    path_to_file = cdd_schedule8("TRUST", filename + ".pickle")
+    filename = "DU-Route"
+    path_to_pickle = cdd_incidents("TRUST", filename + ".pickle")
 
     if as_dict:
-        path_to_file = path_to_file.replace(filename, filename + "_dict")
+        path_to_pickle = path_to_pickle.replace(filename, filename + "-dict")
 
-    if os.path.isfile(path_to_file) and not update:
-        du_route = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        du_route = load_pickle(path_to_pickle)
     else:
         try:
             dr1 = dbm.get_imdm().reset_index()
@@ -466,9 +481,9 @@ def get_du_route_dict(as_dict=True, update=False):
                 du_route = dict(zip(du_route.DU, du_route.Route))
             else:
                 du_route.set_index('IMDM', inplace=True)
-            save(du_route, path_to_file)
+            save(du_route, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
+            print("Failed to get \"DU-Route reference\". {}.".format(e))
             du_route = None
     return du_route
 
@@ -478,14 +493,14 @@ def get_trust_schedule8_incidents_details(update=False):
     """
 
     Description:
-    "Output from TRUST database containing details of Schedule 8 incidents."
+    "Output from TRUST database containing details of Incidents."
     (from 01-Apr-2006 to 31-Mar-2015, i.e. financial year 2006-2014)
 
     """
-    filename = "Schedule8_incidents_details"
-    path_to_file = cdd_schedule8("TRUST", filename + ".pickle")
-    if os.path.isfile(path_to_file) and not update:
-        schedule8_incidents_details = load_pickle(path_to_file)
+    pickle_filename = "Schedule-8-incidents-details.pickle"
+    path_to_pickle = cdd_incidents("TRUST", pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        schedule8_incidents_details = load_pickle(path_to_pickle)
     else:
         try:
             # Get a reference for matching DU with Route (See also utils.py)
@@ -493,7 +508,7 @@ def get_trust_schedule8_incidents_details(update=False):
             # Get information of Performance Event Code
             prfm_event_code = dbm.get_performance_event_code()
 
-            loc_dict = rc.get_location_dictionary('STANOX', False)
+            loc_dict = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=True)
             # Get location data
             location = dbm.get_location()
             stanox_location = dbm.get_stanox_location()
@@ -556,14 +571,14 @@ def get_trust_schedule8_incidents_details(update=False):
             # To load the data
             schedule8_incidents_details_data = \
                 [read_trust_schedule8_incidents_details_archive(zip_archive) for zip_archive in
-                 glob.glob(cdd_schedule8("TRUST", "CLowe PSS Snapshot v1.4 Orig*.zip"))]
+                 glob.glob(cdd_incidents("TRUST", "CLowe PSS Snapshot v1.4 Orig*.zip"))]
 
             schedule8_incidents_details = pd.concat(schedule8_incidents_details_data, ignore_index=True, axis=0)
 
-            save(schedule8_incidents_details, cdd_schedule8("TRUST", "Schedule8_incidents_details.pickle"))
+            save(schedule8_incidents_details, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(filename, e))
+            print("Failed to get \"TRUST Schedule 8 Incidents details\". {}.".format(e))
             schedule8_incidents_details = None
 
     return schedule8_incidents_details

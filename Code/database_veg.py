@@ -80,15 +80,15 @@ def veg_pk(table_name):
 # Get AdverseWind
 def get_adverse_wind(update=False):
     table_name = 'AdverseWind'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        adverse_wind = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        adverse_wind = load_pickle(path_to_pickle)
     else:
         try:
             adverse_wind = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             adverse_wind = None
 
     return adverse_wind
@@ -97,16 +97,16 @@ def get_adverse_wind(update=False):
 # Get CuttingAngleClass
 def get_cutting_angle_class(update=False):
     table_name = 'CuttingAngleClass'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        cutting_angle = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        cutting_angle = load_pickle(path_to_pickle)
     else:
         try:
             cutting_angle = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(cutting_angle, path_to_file)
+            save_pickle(cutting_angle, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             cutting_angle = None
 
     return cutting_angle
@@ -115,16 +115,16 @@ def get_cutting_angle_class(update=False):
 # Get CuttingDepthClass
 def get_cutting_depth_class(update=False):
     table_name = 'CuttingDepthClass'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        cutting_depth = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        cutting_depth = load_pickle(path_to_pickle)
     else:
         try:
             cutting_depth = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(cutting_depth, path_to_file)
+            save_pickle(cutting_depth, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             cutting_depth = None
 
     return cutting_depth
@@ -133,18 +133,18 @@ def get_cutting_depth_class(update=False):
 # Get DUList
 def get_du_list(index=True, update=False):
     table_name = 'DUList'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        du_list = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        du_list = load_pickle(path_to_pickle)
     else:
         try:
             du_list = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(du_list, path_to_file)
+            save_pickle(du_list, path_to_pickle)
             if not index:
                 du_list = du_list.reset_index()
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             du_list = None
 
     return du_list
@@ -153,16 +153,16 @@ def get_du_list(index=True, update=False):
 # Get PathRoute
 def get_path_route(update=False):
     table_name = 'PathRoute'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        path_route = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        path_route = load_pickle(path_to_pickle)
     else:
         try:
             path_route = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(path_route, path_to_file)
+            save_pickle(path_route, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             path_route = None
 
     return path_route
@@ -171,10 +171,10 @@ def get_path_route(update=False):
 # Get Routes
 def get_du_route(update=False):
     table_name = 'Routes'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        routes = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        routes = load_pickle(path_to_pickle)
     else:
         try:
             # (Note that 'Routes' table contains information about Delivery Units)
@@ -185,9 +185,9 @@ def get_du_route(update=False):
                  'S/wel& Dud MDU - HS7': 'Sandwell & Dudley MDU - HS7'})
             # Replace values in column 'DUNameGIS'
             routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'}, inplace=True)
-            save_pickle(routes, path_to_file)
+            save_pickle(routes, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             routes = None
 
     return routes
@@ -196,16 +196,16 @@ def get_du_route(update=False):
 # Get S8Data
 def get_s8data_from_db_veg(update=False):
     table_name = 'S8Data'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        s8data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        s8data = load_pickle(path_to_pickle)
     else:
         try:
             s8data = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(s8data, path_to_file)
+            save_pickle(s8data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             s8data = None
 
     return s8data
@@ -214,16 +214,16 @@ def get_s8data_from_db_veg(update=False):
 # Get TreeAgeClass
 def get_tree_age_class(update=False):
     table_name = 'TreeAgeClass'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        tree_age_class = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        tree_age_class = load_pickle(path_to_pickle)
     else:
         try:
             tree_age_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(tree_age_class, path_to_file)
+            save_pickle(tree_age_class, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_age_class = None
 
     return tree_age_class
@@ -232,16 +232,16 @@ def get_tree_age_class(update=False):
 # Get TreeSizeClass
 def get_tree_size_class(update=False):
     table_name = 'TreeSizeClass'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        tree_size_class = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        tree_size_class = load_pickle(path_to_pickle)
     else:
         try:
             tree_size_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(tree_size_class, path_to_file)
+            save_pickle(tree_size_class, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_size_class = None
 
     return tree_size_class
@@ -250,16 +250,16 @@ def get_tree_size_class(update=False):
 # Get TreeType
 def get_tree_type(update=False):
     table_name = 'TreeType'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        tree_type = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        tree_type = load_pickle(path_to_pickle)
     else:
         try:
             tree_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(tree_type, path_to_file)
+            save_pickle(tree_type, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_type = None
 
     return tree_type
@@ -268,16 +268,16 @@ def get_tree_type(update=False):
 # Get FellingType
 def get_felling_type(update=False):
     table_name = 'FellingType'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        felling_type = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        felling_type = load_pickle(path_to_pickle)
     else:
         try:
             felling_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(felling_type, path_to_file)
+            save_pickle(felling_type, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             felling_type = None
 
     return felling_type
@@ -286,16 +286,16 @@ def get_felling_type(update=False):
 # Get AreaWorkType
 def get_area_work_type(update=False):
     table_name = 'AreaWorkType'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        area_work_type = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        area_work_type = load_pickle(path_to_pickle)
     else:
         try:
             area_work_type = db.read_veg_table(table_name, index_col=veg_pk('AreaWorkType'), save_as=".csv")
-            save_pickle(area_work_type, path_to_file)
+            save_pickle(area_work_type, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             area_work_type = None
 
     return area_work_type
@@ -304,16 +304,16 @@ def get_area_work_type(update=False):
 # Get ServiceDetail
 def get_service_detail(update=False):
     table_name = 'ServiceDetail'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        service_detail = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        service_detail = load_pickle(path_to_pickle)
     else:
         try:
             service_detail = db.read_veg_table(table_name, index_col=veg_pk('ServiceDetail'), save_as=".csv")
-            save_pickle(service_detail, path_to_file)
+            save_pickle(service_detail, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             service_detail = None
 
     return service_detail
@@ -322,16 +322,16 @@ def get_service_detail(update=False):
 # Get ServicePath
 def get_service_path(update=False):
     table_name = 'ServicePath'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        service_path = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        service_path = load_pickle(path_to_pickle)
     else:
         try:
             service_path = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(service_path, path_to_file)
+            save_pickle(service_path, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             service_path = None
 
     return service_path
@@ -340,16 +340,16 @@ def get_service_path(update=False):
 # Get Supplier
 def get_supplier(update=False):
     table_name = 'Supplier'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        supplier = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        supplier = load_pickle(path_to_pickle)
     else:
         try:
             supplier = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(supplier, path_to_file)
+            save_pickle(supplier, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             supplier = None
 
     return supplier
@@ -358,16 +358,16 @@ def get_supplier(update=False):
 # Get SupplierCosts
 def get_supplier_costs(update=False):
     table_name = 'SupplierCosts'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        supplier_costs = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        supplier_costs = load_pickle(path_to_pickle)
     else:
         try:
             supplier_costs = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(supplier_costs, path_to_file)
+            save_pickle(supplier_costs, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             supplier_costs = None
 
     return supplier_costs
@@ -376,16 +376,16 @@ def get_supplier_costs(update=False):
 # Get SupplierCostsArea
 def get_supplier_costs_area(update=False):
     table_name = 'SupplierCostsArea'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        costs_area = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        costs_area = load_pickle(path_to_pickle)
     else:
         try:
             costs_area = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(costs_area, path_to_file)
+            save_pickle(costs_area, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             costs_area = None
 
     return costs_area
@@ -394,16 +394,16 @@ def get_supplier_costs_area(update=False):
 # Get SupplierCostsSimple
 def get_supplier_cost_simple(update=False):
     table_name = 'SupplierCostsSimple'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        costs_simple = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        costs_simple = load_pickle(path_to_pickle)
     else:
         try:
             costs_simple = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(costs_simple, path_to_file)
+            save_pickle(costs_simple, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             costs_simple = None
 
     return costs_simple
@@ -412,16 +412,16 @@ def get_supplier_cost_simple(update=False):
 # Get TreeActionFractions
 def get_tree_action_fractions(update=False):
     table_name = 'TreeActionFractions'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        tree_action_fractions = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        tree_action_fractions = load_pickle(path_to_pickle)
     else:
         try:
             tree_action_fractions = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(tree_action_fractions, path_to_file)
+            save_pickle(tree_action_fractions, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_action_fractions = None
 
     return tree_action_fractions
@@ -430,16 +430,16 @@ def get_tree_action_fractions(update=False):
 # Get VegSurvTypeClass
 def get_veg_surv_type_class(update=False):
     table_name = 'VegSurvTypeClass'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        veg_surv_type_class = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        veg_surv_type_class = load_pickle(path_to_pickle)
     else:
         try:
             veg_surv_type_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(veg_surv_type_class, path_to_file)
+            save_pickle(veg_surv_type_class, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             veg_surv_type_class = None
 
     return veg_surv_type_class
@@ -448,16 +448,16 @@ def get_veg_surv_type_class(update=False):
 # Get WBFactors
 def get_wb_factors(update=False):
     table_name = 'WBFactors'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        wb_factors = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        wb_factors = load_pickle(path_to_pickle)
     else:
         try:
             wb_factors = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(wb_factors, path_to_file)
+            save_pickle(wb_factors, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             wb_factors = None
 
     return wb_factors
@@ -466,16 +466,16 @@ def get_wb_factors(update=False):
 # Get Weedspray
 def get_weed_spray(update=False):
     table_name = 'Weedspray'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        weed_spray = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        weed_spray = load_pickle(path_to_pickle)
     else:
         try:
             weed_spray = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(weed_spray, path_to_file)
+            save_pickle(weed_spray, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             weed_spray = None
 
     return weed_spray
@@ -484,16 +484,16 @@ def get_weed_spray(update=False):
 # Get WorkHours
 def get_work_hours(update=False):
     table_name = 'WorkHours'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        work_hours = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        work_hours = load_pickle(path_to_pickle)
     else:
         try:
             work_hours = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
-            save_pickle(work_hours, path_to_file)
+            save_pickle(work_hours, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             work_hours = None
 
     return work_hours
@@ -507,10 +507,10 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
     """
 
     table_name = 'FurlongData'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        furlong_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_data = load_pickle(path_to_pickle)
     else:
         try:
             furlong_data = db.read_veg_table(table_name)
@@ -596,10 +596,10 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
                                 err = pd.np.divide(errors.loc[i], len(features))
                                 furlong_data.loc[i, features] += err
 
-            save_pickle(furlong_data, path_to_file)
+            save_pickle(furlong_data, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             furlong_data = None
 
     return furlong_data
@@ -612,13 +612,13 @@ def get_furlong_location(useful_columns_only=True, update=False):
     """
 
     table_name = 'FurlongLocation'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
     if useful_columns_only:
-        path_to_file = path_to_file.replace(table_name, table_name + "_cut")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_cut")
 
-    if os.path.isfile(path_to_file) and not update:
-        furlong_location = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_location = load_pickle(path_to_pickle)
     else:
         try:
             # Read data from database
@@ -640,12 +640,12 @@ def get_furlong_location(useful_columns_only=True, update=False):
             if useful_columns_only:
                 useful_columns = ['Route', 'DU', 'ELR', 'StartMileage', 'EndMileage', 'Electrified', 'HazardOnly']
                 furlong_location = furlong_location[useful_columns]
-                # path_to_file = path_to_file.replace(table_name, table_name + "_cut")
+                # path_to_pickle = path_to_pickle.replace(table_name, table_name + "_cut")
 
-            save_pickle(furlong_location, path_to_file)
+            save_pickle(furlong_location, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             furlong_location = None
 
     return furlong_location
@@ -659,10 +659,10 @@ def get_hazard_tree(set_index=False, update=False):
     :return: 
     """
     table_name = 'HazardTree'
-    path_to_file = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        hazard_tree = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        hazard_tree = load_pickle(path_to_pickle)
     else:
         try:
             hazard_tree = db.read_veg_table(table_name)
@@ -731,7 +731,7 @@ def get_hazard_tree(set_index=False, update=False):
             hazard_tree[['Longitude', 'Latitude']] = hazard_tree[['Easting', 'Northing']].apply(
                 lambda x: converters.osgb36_to_wgs84(x.Easting, x.Northing), axis=1)
 
-            save_pickle(hazard_tree, path_to_file)
+            save_pickle(hazard_tree, path_to_pickle)
 
             if set_index:
                 hazard_tree.set_index(veg_pk(table_name), inplace=True)
@@ -739,7 +739,7 @@ def get_hazard_tree(set_index=False, update=False):
             hazard_tree.dropna(inplace=True)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             hazard_tree = None
 
     return hazard_tree
@@ -806,10 +806,10 @@ def get_furlong_vegetation_coverage(route=None, update=False):
     :return: 
     """
     filename = make_filename("furlong_vegetation_coverage", route)
-    path_to_file = cdd_veg_db_views(filename)
+    path_to_pickle = cdd_veg_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        furlong_vegetation_coverage = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_vegetation_coverage = load_pickle(path_to_pickle)
     else:
         try:
             furlong_data = get_furlong_data()  # (75247, 39)
@@ -849,10 +849,10 @@ def get_furlong_vegetation_coverage(route=None, update=False):
             # Rearrange index
             furlong_vegetation_coverage.index = range(len(furlong_vegetation_coverage))
 
-            save_pickle(furlong_vegetation_coverage, path_to_file)
+            save_pickle(furlong_vegetation_coverage, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             furlong_vegetation_coverage = None
 
     return furlong_vegetation_coverage
@@ -866,10 +866,10 @@ def get_hazardous_trees(route=None, update=False):
     :return: 
     """
     filename = make_filename("hazardous_trees_data", route)
-    path_to_file = cdd_veg_db_views(filename)
+    path_to_pickle = cdd_veg_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        hazardous_trees_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        hazardous_trees_data = load_pickle(path_to_pickle)
     else:
         try:
             hazard_tree = get_hazard_tree()  # (23950, 59) 1770 with FurlongID being -1
@@ -906,10 +906,10 @@ def get_hazardous_trees(route=None, update=False):
 
             hazardous_trees_data.index = range(len(hazardous_trees_data))  # Rearrange index
 
-            save_pickle(hazardous_trees_data, path_to_file)
+            save_pickle(hazardous_trees_data, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             hazardous_trees_data = None
 
     return hazardous_trees_data
@@ -923,10 +923,10 @@ def get_furlong_vegetation_conditions(route=None, update=False):
     :return: 
     """
     filename = make_filename("furlong_vegetation_data", route)
-    path_to_file = cdd_veg_db_views(filename)
+    path_to_pickle = cdd_veg_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        furlong_vegetation_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_vegetation_data = load_pickle(path_to_pickle)
     else:
         try:
             hazardous_trees_data = get_hazardous_trees()  # (22180, 66)
@@ -959,9 +959,9 @@ def get_furlong_vegetation_conditions(route=None, update=False):
                 furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == rte]
                 furlong_vegetation_data.index = range(len(furlong_vegetation_data))
 
-            save_pickle(furlong_vegetation_data, path_to_file)
+            save_pickle(furlong_vegetation_data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             furlong_vegetation_data = None
 
     return furlong_vegetation_data

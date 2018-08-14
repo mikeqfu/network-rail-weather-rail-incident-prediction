@@ -9,12 +9,12 @@ import numpy as np
 import pandas as pd
 
 import database_met as dbm
-from utils import cdd, load_pickle, reset_double_indexes, save
+from utils import cdd, load_pickle, reset_double_indexes, save_pickle
 
 
-# Change directory to "Schedule 8 incidents"
-def cdd_schedule8(*directories):
-    path = cdd("METEX\\Schedule 8 incidents")
+# Change directory to "Incidents"
+def cdd_incidents(*directories):
+    path = cdd("Incidents")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
@@ -32,57 +32,61 @@ def get_top10hotspots_details(route=None, weather=None, update=False):
 
     """
     # filename = dbm.make_filename("Top10Hotspots_Details", route, weather)
-    filename = "Top10Hotspots_Details.pickle"
-    path_to_file = cdd_schedule8("Top 10 hotspot", filename)
-    if os.path.isfile(path_to_file) and not update:
-        details_sheet = load_pickle(path_to_file)
+    pickle_filename = "Top10Hotspots-details.pickle"
+    path_to_pickle = cdd_incidents("Top 10 hotspot", pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        details_sheet = load_pickle(path_to_pickle)
     else:
         try:
             # Load excel file 'Top10Hotspots.xlsx'
-            workbook = pd.ExcelFile(cdd_schedule8("Top 10 hotspot", "Top10Hotspots.xlsx"))
+            workbook = pd.ExcelFile(cdd_incidents("Top 10 hotspot", "Top10Hotspots.xlsx"))
             # Read the 'Details' worksheet as a data frame
-            details_sheet = workbook.parse(sheetname='Details')
+            details_sheet = workbook.parse(sheet_name='Details')
             details_sheet.rename(columns={'section': 'StanoxSection',
                                           'cost': 'DelayCost', 'delay': 'DelayMinutes',
-                                          'reasonDescription': 'IncidentReasonDescription'},
-                                 inplace=True)
-            save(details_sheet, path_to_file)
+                                          'reasonDescription': 'IncidentReasonDescription'}, inplace=True)
+            save_pickle(details_sheet, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
-            details_sheet = None
+            print("Failed to get \"Top10Hotspots\" details. {}.".format(e))
+            details_sheet = pd.DataFrame()
     details_data = dbm.subset(details_sheet, route, weather)
     return details_data
 
 
-#
+# Top10Hotspots details by incident location stanox section (location)
 def get_top10hotspots_details_by_location(route=None, weather=None, update=False):
     # filename = dbm.make_filename("Top10Hotspots_Details_by_section", route, weather)
-    filename = "Top10Hotspots_Details_by_section.pickle"
-    path_to_file = cdd_schedule8("Top 10 hotspot", filename)
-    if os.path.isfile(path_to_file) and not update:
-        dat = load_pickle(path_to_file)
+    pickle_filename = "Top10Hotspots-details-by-location.pickle"
+    path_to_pickle = cdd_incidents("Top 10 hotspot", pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        dat = load_pickle(path_to_pickle)
     else:
         try:
-            top10hotspots_details = get_top10hotspots_details(route, weather, update)
-            dat0 = top10hotspots_details. \
-                groupby(['Route', 'StanoxSection', 'WeatherCategory',
-                         'StartLatitude', 'StartLongitude', 'EndLatitude', 'EndLongitude']). \
-                aggregate({'DelayMinutes': [np.sum, np.count_nonzero, np.mean],
-                           'DelayCost': [np.sum, np.count_nonzero, np.mean]})
+            top10hotspots_details = get_top10hotspots_details(route, weather)
+            group_cols = [
+                'Route',
+                'StanoxSection',
+                'WeatherCategory',
+                'StartLatitude',
+                'StartLongitude',
+                'EndLatitude',
+                'EndLongitude']
+            agg_func = {'DelayMinutes': [np.sum, np.count_nonzero, np.mean],
+                        'DelayCost': [np.sum, np.count_nonzero, np.mean]}
+            dat0 = top10hotspots_details.groupby(group_cols).agg(agg_func)
             dat = reset_double_indexes(dat0)
             dat.drop('DelayCost_count_nonzero', axis=1, inplace=True)
             dat.rename(columns={'DelayMinutes_sum': 'TotalDelays',
                                 'DelayMinutes_count_nonzero': 'IncidentCount',
                                 'DelayMinutes_mean': 'AverageDelay',
                                 'DelayCost_sum': 'TotalCost',
-                                'DelayCost_mean': 'AverageCost'},
-                       inplace=True)
+                                'DelayCost_mean': 'AverageCost'}, inplace=True)
             dat.sort_values(['TotalCost', 'IncidentCount', 'TotalDelays'], ascending=False, inplace=True)
             dat.index = range(len(dat))
-            save(dat, path_to_file)
+            save_pickle(dat, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... failed due to '{}'.".format(os.path.splitext(filename)[0], e))
-            dat = None
+            print("Failed to get \"Top10Hotspots\" details (by incident location). {}.".format(e))
+            dat = pd.DataFrame()
     data = dbm.subset(dat, route, weather)
     return data
 
@@ -134,30 +138,33 @@ def plot_top10_hotspots(route='Anglia', weather='Wind', update=False, show_title
         plt.tight_layout()
 
     if save_as:
-        filename = dbm.make_filename("Top10Hotspots", route, weather)
-        plt.savefig(cdd_schedule8("Exploratory analysis", filename.replace(".pickle", save_as)), facecolor='white',
-                    dpi=600)
+        filename = dbm.make_filename("Top10Hotspots", route, weather).replace(".pickle", save_as)
+        plt.savefig(cdd_incidents("Exploratory analysis", filename), facecolor='white', dpi=600)
 
 
 #
-def top10_pie(data, add_title=False):
+def top10_pie(add_title=False):
+    data = get_top10hotspots_details_by_location(route='Anglia', weather='Wind')
+    data.sort_values('TotalCost', ascending=False)
+    data = data.iloc[0:10]
     # Create labels for pie chart
-    incidents_no = ['No. of incidents: %s' % str(int(i)) for i in data.IncidentCount]
+    incidents_no = ['No. of incidents: {}'.format(int(i)) for i in data.IncidentCount]
     # costs = ['Cost: £%s' % format(int(i), ',') % i for i in data['Cost']]
-    minutes = ['Delay (minutes): %s' % format(int(i), ',') % i for i in data.TotalDelays]
+    minutes = ['Delay (minutes): {}'.format(int(i), ',') for i in data.TotalDelays]
 
     labels = data.StanoxSection + '\n' + incidents_no + '\n' + minutes
     data.index = range(len(data))
+
     exp_pos1 = data.sort_values(by='TotalDelays', ascending=False).index[0]
     exp_pos2 = data.sort_values(by='IncidentCount', ascending=False).index[0]
     explode_list = np.zeros(10)
     explode_list[[exp_pos1, exp_pos2]] = [0.2, 0.2]
+
     colours = matplotlib.cm.get_cmap('Set3')(np.arange(10) / 10)
 
     plt.figure(figsize=[10, 6])
     ax = plt.subplot2grid((1, 1), (0, 0), aspect='equal')
-    pie_collections = ax.pie(data.TotalCost, labels=labels, shadow=True,
-                             startangle=45, colors=colours,
+    pie_collections = ax.pie(data.TotalCost, labels=labels, shadow=True, startangle=45, colors=colours,
                              autopct='%1.1f%%', explode=explode_list)
     # pie_collections includes: patches, texts, autotexts
     for pie_text in pie_collections[1]:

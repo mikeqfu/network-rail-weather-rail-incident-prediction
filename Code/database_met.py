@@ -15,8 +15,8 @@ import database_veg as dbv
 import railwaycodes_utils as rc
 from converters import yards_to_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
-from loc_code_dict import *
-from utils import cd, find_match, load_pickle, save, save_pickle
+from loc_code_dict import create_location_names_replacement_dict, create_location_names_regexp_replacement_dict
+from utils import cd, cdd_rc, find_match, load_pickle, load_json, save, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
@@ -87,13 +87,13 @@ def group_items(data_frame, by, to_group, group_name, level=None, as_dict=False)
 # Get IMDM
 def get_imdm(as_dict=False, update=False):
     table_name = 'IMDM'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if as_dict:
-        path_to_file = path_to_file.replace(table_name, table_name + "_dict")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
 
-    if os.path.isfile(path_to_file) and not update:
-        imdm = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        imdm = load_pickle(path_to_pickle)
     else:
         try:
             imdm = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
@@ -103,10 +103,10 @@ def get_imdm(as_dict=False, update=False):
                 imdm_dict = imdm.to_dict()
                 imdm = imdm_dict['Route']
                 imdm.pop('None', None)
-            save_pickle(imdm, path_to_file)
+            save_pickle(imdm, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
-            imdm = None
+            print("Failed to get \"{}\". {}.".format(table_name, e))
+            imdm = pd.DataFrame()
 
     return imdm
 
@@ -114,13 +114,13 @@ def get_imdm(as_dict=False, update=False):
 # Get ImdmAlias
 def get_imdm_alias(as_dict=False, update=False):
     table_name = 'ImdmAlias'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if as_dict:
-        path_to_file = path_to_file.replace(table_name, table_name + "_dict")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
 
-    if os.path.isfile(path_to_file) and not update:
-        imdm_alias = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        imdm_alias = load_pickle(path_to_pickle)
     else:
         try:
             imdm_alias = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
@@ -129,9 +129,9 @@ def get_imdm_alias(as_dict=False, update=False):
             if as_dict:
                 imdm_alias_dict = imdm_alias.to_dict()
                 imdm_alias = imdm_alias_dict['IMDM']
-            save_pickle(imdm_alias, path_to_file)
+            save_pickle(imdm_alias, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             imdm_alias = None
 
     return imdm_alias
@@ -140,13 +140,13 @@ def get_imdm_alias(as_dict=False, update=False):
 # Get IMDMWeatherCellMap
 def get_imdm_weather_cell_map(grouped=False, update=False):
     table_name = 'IMDMWeatherCellMap'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if grouped:
-        path_to_file = path_to_file.replace(table_name, table_name + "_grouped")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_grouped")
 
-    if os.path.isfile(path_to_file) and not update:
-        weather_cell_map = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        weather_cell_map = load_pickle(path_to_pickle)
     else:
         try:
             # Read IMDMWeatherCellMap table
@@ -159,10 +159,10 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
             if grouped:  # Transform the dataframe into a dictionary-like form
                 weather_cell_map = group_items(weather_cell_map, by='WeatherCellId', to_group='IMDM', group_name='IMDM')
 
-            save_pickle(weather_cell_map, path_to_file)
+            save_pickle(weather_cell_map, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_cell_map = None
 
     return weather_cell_map
@@ -171,12 +171,12 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
 # Get IncidentReasonInfo
 def get_incident_reason_info(database_plus=True, update=False):
     table_name = 'IncidentReasonInfo'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
     if database_plus:
-        path_to_file = path_to_file.replace(table_name, table_name + "_plus")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_plus")
 
-    if os.path.isfile(path_to_file) and not update:
-        incident_reason_info = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        incident_reason_info = load_pickle(path_to_pickle)
     else:
         try:
             # Get data from the database
@@ -196,10 +196,10 @@ def get_incident_reason_info(database_plus=True, update=False):
                 incident_reason_info = incident_reason_metadata.join(incident_reason_info, rsuffix='_orig')
                 incident_reason_info.dropna(axis=1, inplace=True)
 
-            save_pickle(incident_reason_info, path_to_file)
+            save_pickle(incident_reason_info, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             incident_reason_info = None
 
     return incident_reason_info
@@ -208,13 +208,13 @@ def get_incident_reason_info(database_plus=True, update=False):
 # Get WeatherCategoryLookup
 def get_weather_category_lookup(as_dict=False, update=False):
     table_name = 'WeatherCategoryLookup'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if as_dict:
-        path_to_file = path_to_file.replace(table_name, table_name + "_dict")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
 
-    if os.path.isfile(path_to_file) and not update:
-        weather_category_lookup = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        weather_category_lookup = load_pickle(path_to_pickle)
     else:
         try:
             weather_category_lookup = \
@@ -225,9 +225,9 @@ def get_weather_category_lookup(as_dict=False, update=False):
             # Transform the DataFrame to a dictionary?
             if as_dict:
                 weather_category_lookup = weather_category_lookup.to_dict()
-            save_pickle(weather_category_lookup, path_to_file)
+            save_pickle(weather_category_lookup, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_category_lookup = None
 
     return weather_category_lookup
@@ -236,10 +236,10 @@ def get_weather_category_lookup(as_dict=False, update=False):
 # Get IncidentRecord and fill 'None' value with NaN
 def get_incident_record(update=False):
     table_name = 'IncidentRecord'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        incident_record = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        incident_record = load_pickle(path_to_pickle)
     else:
         try:
             # Read the 'IncidentRecord' table
@@ -256,9 +256,9 @@ def get_incident_record(update=False):
             incident_record.replace(weather_category_lookup, inplace=True)
             incident_record.fillna(value='', inplace=True)
             # Save the data
-            save_pickle(incident_record, path_to_file)
+            save_pickle(incident_record, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             incident_record = None
 
     return incident_record
@@ -267,10 +267,10 @@ def get_incident_record(update=False):
 # Get Location
 def get_location(update=False):
     table_name = 'Location'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        location = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        location = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'Location' table
@@ -282,9 +282,9 @@ def get_location(update=False):
             location.WeatherCell = location.WeatherCell.apply(lambda x: '' if pd.np.isnan(x) else int(x))
             location.loc[610096, 0:4] = [-0.0751, 51.5461, -0.0751, 51.5461]
             # Save the data
-            save_pickle(location, path_to_file)
+            save_pickle(location, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             location = None
 
     return location
@@ -293,10 +293,10 @@ def get_location(update=False):
 # Get PfPI (Process for Performance Improvement)
 def get_pfpi(update=False):
     table_name = 'PfPI'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        pfpi = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        pfpi = load_pickle(path_to_pickle)
     else:
         try:
             # Read the 'PfPI' table
@@ -313,9 +313,9 @@ def get_pfpi(update=False):
             cols = pfpi.columns.tolist()
             pfpi = pfpi[cols[0:2] + cols[-2:] + cols[2:4]]
             # Save the data
-            save_pickle(pfpi, path_to_file)
+            save_pickle(pfpi, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             pfpi = None
 
     return pfpi
@@ -324,19 +324,19 @@ def get_pfpi(update=False):
 # Get Route (Note that there is only one column in the original table)
 def get_route(update=False):
     table_name = "Route"
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        route = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        route = load_pickle(path_to_pickle)
     else:
         try:
             route = db.read_metex_table(table_name, save_as=".csv", update=update)
             # Rename a column
             route.rename(columns={'Name': 'Route'}, inplace=True)
             # Save the processed data
-            save_pickle(route, path_to_file)
+            save_pickle(route, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             route = None
 
     return route
@@ -345,13 +345,13 @@ def get_route(update=False):
 # Get StanoxLocation
 def get_stanox_location(nr_mileage_format=True, update=False):
     table_name = 'StanoxLocation'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if not nr_mileage_format:
-        path_to_file = path_to_file.replace(table_name, table_name + "_miles")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_miles")
 
-    if os.path.isfile(path_to_file) and not update:
-        stanox_location = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        stanox_location = load_pickle(path_to_pickle)
     else:
         try:
             # Read StanoxLocation table from the database
@@ -362,44 +362,10 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             stanox_location.reset_index(inplace=True)
             location_codes = rc.get_location_codes()['Locations']
 
-            errata_stanox = {'05597': '05997',
-                             '08751': '87151',
-                             '13045': '31050',
-                             '13048': '31048',
-                             '24428': '74428',
-                             '26427': '26247',
-                             '3165': '03165',
-                             '36155': '38155',
-                             '36400': '85716',
-                             '52374': '52734',
-                             '56120': '76120',
-                             '56309': '59309',
-                             '56310': '59310',
-                             '56450': '56540',
-                             '58560': '82311',
-                             '59328': '59238',
-                             '64321': '64231',
-                             '64327': '64237',
-                             '76710': '78710',
-                             '82017': '80217',
-                             '82985': '82085',
-                             '8606': '08606',
-                             '86236': '86240',
-                             '86793': '86973',
-                             # '03330': '',
-                             '8825': '08825'}
+            errata = load_json(cdd_rc("errata.json"))  # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
+            errata_stanox, errata_tiploc, errata_stanme = errata.values()
             stanox_location.Stanox = stanox_location.Stanox.replace(errata_stanox)
-
-            errata_tiploc = {'WLNDGL': 'WLNGDGL',
-                             'STRNHDS': 'STRBHDS',
-                             'AND008': 'ANDO8',
-                             'CLHMABL': 'CHLMABL',
-                             'CLAPS47': 'CLPHS47'}  # The last one might be problematic.
             stanox_location.Description = stanox_location.Description.replace(errata_tiploc)
-
-            errata_stanme = {'Craiginches South Aberdeen': '',
-                             'Inverkeithing PPM Point': '',
-                             'NewCraighall turnback': 'NEWCRGHTB'}
             stanox_location.Name = stanox_location.Name.replace(errata_stanme)
 
             #
@@ -445,7 +411,7 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
 
             # STANOX dictionary
-            stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
             temp = stanox_location.join(stanox_dict, on='Stanox')[['Description', 'Location']]
             na_loc = temp.Location.isnull()
             temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
@@ -483,10 +449,10 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             stanox_location.loc['52053', 'ELR':'LocationId'] = ['BOK1', '3.0792', 534877]  # Revise '52053'
             stanox_location.loc['52074', 'ELR':'LocationId'] = ['ELL1', '0.0440', 610096]  # Revise '52074'
 
-            save_pickle(stanox_location, path_to_file)
+            save_pickle(stanox_location, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             stanox_location = None
 
     return stanox_location
@@ -495,10 +461,10 @@ def get_stanox_location(nr_mileage_format=True, update=False):
 # Get StanoxSection
 def get_stanox_section(update=False):
     table_name = 'StanoxSection'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        stanox_section = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        stanox_section = load_pickle(path_to_pickle)
     else:
         try:
             # Read StanoxSection table from the database
@@ -543,9 +509,9 @@ def get_stanox_section(update=False):
                 'StanoxSection', 'StanoxSection_Start', 'StartStanox', 'StanoxSection_End', 'EndStanox',
                 'LocationId', 'ApproximateLocation']]
             # Save the data
-            save_pickle(stanox_section, path_to_file)
+            save_pickle(stanox_section, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             stanox_section = None
 
     return stanox_section
@@ -554,13 +520,13 @@ def get_stanox_section(update=False):
 # Get TrustIncident
 def get_trust_incident(financial_years_06_14=True, update=False):
     table_name = 'TrustIncident'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if financial_years_06_14:  # StartDate is between 01/04/2006 and 31/03/2014
-        path_to_file = path_to_file.replace(table_name, table_name + "_06_14")
+        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_06_14")
 
-    if os.path.isfile(path_to_file) and not update:
-        trust_incident = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        trust_incident = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'TrustIncident' table
@@ -578,9 +544,9 @@ def get_trust_incident(financial_years_06_14=True, update=False):
                 trust_incident = trust_incident[(trust_incident.FinancialYear >= 2006) &
                                                 (trust_incident.FinancialYear <= 2014)]
             # Save the processed data
-            save_pickle(trust_incident, path_to_file)
+            save_pickle(trust_incident, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             trust_incident = None
 
     return trust_incident
@@ -589,10 +555,10 @@ def get_trust_incident(financial_years_06_14=True, update=False):
 # Get Weather
 def get_weather(update=False):
     table_name = 'Weather'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        weather_data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        weather_data = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'Weather' table
@@ -619,9 +585,9 @@ def get_weather(update=False):
             weather_data.Snowfall = snowfall
             weather_data.TotalPrecipitation = precipitation
             # Save the processed data
-            save_pickle(weather_data, path_to_file)
+            save_pickle(weather_data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_data = None
 
     return weather_data
@@ -650,10 +616,10 @@ def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chu
 # Get WeatherCell
 def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_as=".png", dpi=600):
     table_name = 'WeatherCell'
-    path_to_file = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
-    if os.path.isfile(path_to_file) and not update:
-        weather_cell_map = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        weather_cell_map = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'WeatherCell' table
@@ -687,9 +653,9 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
             # Merge the acquired data set
             weather_cell_map = imdm_weather_cell_map.join(weather_cell_map, on='WeatherCellId').join(imdm, on='IMDM')
             # Save the processed data
-            save_pickle(weather_cell_map, path_to_file)
+            save_pickle(weather_cell_map, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(table_name, e))
+            print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_cell_map = None
 
     # Plot the weather cells on the map?
@@ -860,7 +826,7 @@ def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle")
         weather_category_lookup = get_weather_category_lookup()
         weather = find_match(weather, weather_category_lookup.WeatherCategory)
     filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
-    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
     return filename
 
 
@@ -974,19 +940,19 @@ def merge_schedule8_data(save_as=".pickle"):
 # Get the TRUST data
 def get_schedule8_details(route=None, weather=None, reset_index=False, update=False):
     filename = make_filename("Schedule8_details", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        schedule8_details = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        schedule8_details = load_pickle(path_to_pickle)
         if reset_index:
             schedule8_details.reset_index(inplace=True)
     else:
         try:
             schedule8_details = merge_schedule8_data(save_as=".pickle")
             schedule8_details = subset(schedule8_details, route, weather, reset_index)
-            save_pickle(schedule8_details, path_to_file)
+            save_pickle(schedule8_details, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             schedule8_details = None
 
     return schedule8_details
@@ -995,10 +961,10 @@ def get_schedule8_details(route=None, weather=None, reset_index=False, update=Fa
 # Essential details about incidents
 def get_schedule8_details_pfpi(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_details_pfpi", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get merged data sets
@@ -1025,9 +991,9 @@ def get_schedule8_details_pfpi(route=None, weather=None, update=False):
                 'ApproximateLocation']
             # Acquire the subset (260140, 40)
             data = schedule8_data[selected_features]
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1047,10 +1013,10 @@ def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12
     filename = make_filename("Schedule8_details_and_weather", route, weather)
     add_suffix = [str(s) for s in (ip_start_hrs, ip_end_hrs)]
     filename = "_".join([filename] + add_suffix) + ".pickle"
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Getting Schedule 8 details (i.e. 'Schedule8_details')
@@ -1072,10 +1038,10 @@ def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12
             data = schedule8_details.join(weather_data, on=['WeatherCell', 'critical_start'], how='inner')
             data.sort_index(inplace=True)  # (257608, 61)
             # Save the merged data
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1091,10 +1057,10 @@ def get_schedule8_cost_by_location(route=None, weather=None, update=False):
     """
 
     filename = make_filename("Schedule8_costs_by_location", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get Schedule8_details
@@ -1113,7 +1079,7 @@ def get_schedule8_cost_by_location(route=None, weather=None, update=False):
                 'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
             print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
             data = None
@@ -1124,10 +1090,10 @@ def get_schedule8_cost_by_location(route=None, weather=None, update=False):
 # Get Schedule 8 data by datetime and weather category
 def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get Schedule8_details
@@ -1144,9 +1110,9 @@ def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1155,10 +1121,10 @@ def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
 # Get Schedule 8 data by datetime and location
 def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get merged data sets
@@ -1180,9 +1146,9 @@ def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=Fal
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1193,10 +1159,10 @@ def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip
     filename = make_filename("Schedule8_costs_by_datetime_location_weather", route, weather)
     add_suffix = [str(s) for s in (ip_start, ip_end)]
     filename = "_".join([filename] + add_suffix) + ".pickle"
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get Schedule8_costs_by_datetime_location
@@ -1217,9 +1183,9 @@ def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip
             # Merge the two data sets
             data = schedule8_data.join(weather_data, on=['WeatherCell', 'critical_start'], how='inner')
             # Save the merged data
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1228,10 +1194,10 @@ def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip
 # Get Schedule 8 cost by incident reason
 def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_reason", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             # Get merged data sets
@@ -1254,9 +1220,9 @@ def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1265,10 +1231,10 @@ def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
 # Get Schedule 8 cost by location and incident reason
 def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_location_reason", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             schedule8_details = get_schedule8_details(route, weather).reset_index()
@@ -1293,9 +1259,9 @@ def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1304,10 +1270,10 @@ def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False
 # Get Schedule 8 cost by datetime, location and incident reason
 def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, update=False):
     filename = make_filename("Schedule8_costs_by_datetime_location_reason", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             schedule8_details = get_schedule8_details(route, weather, reset_index=True)
@@ -1334,32 +1300,36 @@ def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, upd
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
 
 
 # Get Schedule 8 cost by weather category
-def get_schedule8_cost_by_weathercategory(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_weathercategory", route, weather)
-    path_to_file = cdd_metex_db_views(filename)
+def get_schedule8_cost_by_weather_category(route=None, weather=None, update=False):
+    filename = make_filename("Schedule8_costs_by_weather_category", route, weather)
+    path_to_pickle = cdd_metex_db_views(filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        data = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
     else:
         try:
             schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            selected_features = ['PfPIId', 'FinancialYear',
-                                 'Route', 'IMDM', 'WeatherCategory',
-                                 'PfPICosts', 'PfPIMinutes']
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'Route',
+                                 'IMDM',
+                                 'WeatherCategory',
+                                 'PfPICosts',
+                                 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
             data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_file)
+            save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to '{}'.".format(os.path.splitext(filename)[0], e))
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
 
     return data
@@ -1380,5 +1350,5 @@ get_schedule8_cost_by_datetime_location_weather(route, weather, -12, 12, update=
 get_schedule8_cost_by_reason(route, weather, update=update)
 get_schedule8_cost_by_location_reason(route, weather, update=update)
 get_schedule8_cost_by_datetime_location_reason(route, weather, update=update)
-get_schedule8_cost_by_weathercategory(route, weather, update=update)
+get_schedule8_cost_by_weather_category(route, weather, update=update)
 """
