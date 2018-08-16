@@ -124,7 +124,7 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
 
 
 # Combine weather observations of different variables
-def integrate_daily_gridded_weather_obs(start_date='2006-01-01', update=False):
+def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', update=False):
     assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
     filename_suffix = "" if start_date is None else "-{}".format(start_date.replace("-", ""))
     pickle_filename = "daily-gridded-weather-obs{}.pickle".format(filename_suffix)
