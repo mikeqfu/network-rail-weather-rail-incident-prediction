@@ -16,9 +16,9 @@ import statsmodels.tools.tools as sm_tools
 
 import database_met as dbm
 import settings
+from Prototype.prototype_wind import calculate_weather_variables_stats, cdd_mod_dat
+from Prototype.prototype_wind import get_data_by_season, get_incident_location_vegetation
 from converters import svg_to_emf
-from Prototype.prototype_wind import cdd_mod_dat, get_incident_location_vegetation, calculate_weather_variables_stats, \
-    get_data_by_season
 from utils import cdd, load_pickle, save_fig, save_pickle
 
 # Apply the preferences ==============================================================================================
