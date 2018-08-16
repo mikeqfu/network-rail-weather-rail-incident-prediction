@@ -61,77 +61,101 @@ def subset(data, route=None, weather=None, reset_index=False):
 """ Location metadata """
 
 
-# Cleanse STANOX locations data
-def cleanse_location_metadata(metadata, ref_cols):
-    """
-    :param metadata:
-    :param ref_cols:
-    :return:
-    """
-    metadata.columns = [x.upper().replace(' ', '_') for x in metadata.columns]
-    metadata = metadata.replace({'\xa0\xa0': ' '}, regex=True).replace({'\xa0': ''}, regex=True)
-    metadata['LOOKUP_NAME_Raw'] = metadata.LOOKUP_NAME
-
-    print("Starting to cleanse ... ")
-
-    # Clean 'STANOX' ('N/A's exist in both the 'LOOKUP_NAME' and 'LINE_DESCRIPTION' columns)
-    metadata.STANOX = metadata.STANOX.fillna('')
-    metadata.STANOX = metadata.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
-
-    # Correct errors in STANOX
-    errata = load_json(cdd_rc("errata.json"))  # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
-    errata_stanox, errata_tiploc, errata_stanme = [{k: v} for k, v in errata.items()]
-    metadata.replace(errata_stanox, inplace=True)
-    metadata.replace(errata_stanme, inplace=True)
-    if 'TIPLOC' in ref_cols:
-        metadata.replace(errata_tiploc, inplace=True)
-
-    # Correct known issues for the location names in the data set
-    loc_name_replacement_dict = create_location_names_replacement_dict('LOOKUP_NAME')
-    metadata = metadata.replace(loc_name_replacement_dict)
-    loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('LOOKUP_NAME')
-    metadata = metadata.replace(loc_name_regexp_replacement_dict)
-
-    # Fill missing location names
-    na_name = metadata[metadata.LOOKUP_NAME.isnull()]
-    stanox_stanme_dict = rc.get_location_codes_dictionary_v2(ref_cols)
-    comparable_col = ['TIPLOC', 'Location'] if 'TIPLOC' in ref_cols else ['STANME', 'Location']
-    temp = na_name.join(stanox_stanme_dict, on=ref_cols)[comparable_col]
-    metadata.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
-        lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
-
-    temp = metadata.join(stanox_stanme_dict, on=ref_cols)[['LOOKUP_NAME', 'Location']]
-    temp = temp[temp.Location.notnull()]
-    metadata.loc[temp.index, 'LOOKUP_NAME'] = \
-        temp.apply(lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
-
-    # metadata.dropna(subset=['LOOKUP_NAME'], inplace=True)  # if there is NaN values (though none actually remains)
-
-    metadata.replace({'LINE_DESCRIPTION': {re.compile('[Ss]tn'): 'Station',
+# Pre-cleanse location metadata spreadsheet
+def pre_cleanse_location_metadata(metadata):
+    meta_dat = metadata.copy(deep=True)
+    meta_dat.columns = [x.upper().replace(' ', '_') for x in metadata.columns]
+    meta_dat.replace({'\xa0\xa0': ' '}, regex=True, inplace=True)
+    meta_dat.replace({'\xa0': ''}, regex=True, inplace=True)
+    meta_dat.replace({'LINE_DESCRIPTION': {re.compile('[Ss]tn'): 'Station',
                                            re.compile('[Ll]oc'): 'Location',
                                            re.compile('[Jj]n'): 'Junction',
                                            re.compile('[Ss]dg'): 'Siding',
                                            re.compile('[Ss]dgs'): 'Sidings'}}, inplace=True)
+    meta_dat['LOOKUP_NAME_Raw'] = meta_dat.LOOKUP_NAME
+    meta_dat.fillna({'STANOX': '', 'STANME': ''}, inplace=True)
+    meta_dat.STANOX = meta_dat.STANOX.map(lambda x: '0' * (5 - len(x)) + x if x != '' else x)
+    return meta_dat
 
-    # metadata.fillna('', inplace=True)
-    metadata.drop_duplicates(inplace=True)
 
-    # Get reference metadata from RailwayCodes
+# Cleanse 'TIPLOC_LocationsLyr' sheet
+def cleanse_location_metadata_tiploc_sheet(metadata, update_dict=False):
+    """
+    :param metadata:
+    :param update_dict:
+    :return:
+    """
+
+    meta_dat = pre_cleanse_location_metadata(metadata)
+
+    meta_dat.TIPLOC = meta_dat.TIPLOC.fillna('').str.upper()
+
+    ref_cols = ['STANOX', 'STANME', 'TIPLOC']
+    dat = meta_dat[ref_cols + ['LOOKUP_NAME', 'DEG_LONG', 'DEG_LAT', 'LOOKUP_NAME_Raw']]
+
+    # Rectify errors in STANOX
+    errata = load_json(cdd_rc("errata.json"))  # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
+    errata_stanox, errata_tiploc, errata_stanme = [{k: v} for k, v in errata.items()]
+    dat.replace(errata_stanox, inplace=True)
+    dat.replace(errata_stanme, inplace=True)
+    dat.replace(errata_tiploc, inplace=True)
+
+    # Rectify known issues for the location names in the data set
+    location_names_replacement_dict = create_location_names_replacement_dict('LOOKUP_NAME')
+    dat.replace(location_names_replacement_dict, inplace=True)
+    location_names_regexp_replacement_dict = create_location_names_regexp_replacement_dict('LOOKUP_NAME')
+    dat.replace(location_names_regexp_replacement_dict, inplace=True)
+
+    # Fill in missing location names
+    na_name = dat[dat.LOOKUP_NAME.isnull()]
+    ref_dict = rc.get_location_codes_dictionary_v2(ref_cols, update=update_dict)
+    temp = na_name.join(ref_dict, on=ref_cols)
+    temp = temp[['TIPLOC', 'Location']]
+    dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
+        lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
+
+    # Rectify 'LOOKUP_NAME' according to 'TIPLOC'
+    na_name = dat[dat.LOOKUP_NAME.isnull()]
+    ref_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update_dict)
+    temp = na_name.join(ref_dict, on='TIPLOC')
+    dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.Location.values
+
+    not_na_name = dat[dat.LOOKUP_NAME.notnull()]
+    temp = not_na_name.join(ref_dict, on='TIPLOC')
+
+    def extract_one(lookup_name, ref_loc):
+        if isinstance(ref_loc, list):
+            n = extractOne(lookup_name.replace(' ', ''), ref_loc)[0]
+        elif pd.isnull(ref_loc):
+            n = lookup_name
+        else:
+            n = ref_loc
+        return n
+
+    dat.loc[not_na_name.index, 'LOOKUP_NAME'] = temp.apply(lambda x: extract_one(x[3], x[7]), axis=1)
+
+    # Rectify 'STANOX'+'STANME'
+    location_codes = rc.get_location_codes()['Locations']
+    location_codes = location_codes.drop_duplicates(['TIPLOC', 'Location']).set_index(['TIPLOC', 'Location'])
+    temp = dat.join(location_codes, on=['TIPLOC', 'LOOKUP_NAME'], rsuffix='_Ref').fillna('')
+    dat.loc[temp.index, 'STANOX':'STANME'] = temp[['STANOX_Ref', 'STANME_Ref']].values
+
+    # Update coordinates with reference data from RailwayCodes
     station_data = rc.get_station_locations()['Station']
     station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
-    station_data.drop_duplicates(subset=['Station'], inplace=True)
-    station_data.set_index('Station', inplace=True)
-    temp = metadata.join(station_data, on='LOOKUP_NAME')
+    station_data = station_data.drop_duplicates(subset=['Station']).set_index('Station')
+    temp = dat.join(station_data, on='LOOKUP_NAME')
     na_i = temp['Degrees Longitude'].notnull() & temp['Degrees Latitude'].notnull()
-    metadata.loc[na_i, 'DEG_LAT':'DEG_LONG'] = temp.loc[na_i, ['Degrees Latitude', 'Degrees Longitude']].values
+    dat.loc[na_i, 'DEG_LONG':'DEG_LAT'] = temp.loc[na_i, ['Degrees Longitude', 'Degrees Latitude']].values
 
-    metadata.fillna('', inplace=True)
-    metadata.sort_values(ref_cols + ['SHAPE_LENG'], ascending=[True] * len(ref_cols) + [False], inplace=True)
-    metadata.index = range(len(metadata))
+    # Finalising...
+    meta_dat.update(dat)
+    meta_dat.dropna(subset=['LOOKUP_NAME'] + ref_cols, inplace=True)
+    meta_dat.fillna('', inplace=True)
+    meta_dat.sort_values(ref_cols + ['SHAPE_LENG'], ascending=[True] * len(ref_cols) + [False], inplace=True)
+    meta_dat.index = range(len(meta_dat))
 
-    print("Done.")
-
-    return metadata
+    return meta_dat
 
 
 # STANOX locations data
@@ -150,13 +174,25 @@ def get_location_metadata(update=False):
             tiploc_loc_lyr = workbook.parse(sheet_name='TIPLOC_LocationsLyr',
                                             parse_dates=['LASTEDITED', 'LAST_UPD_1'], dayfirst=True,
                                             converters={'STANOX': str})
-            tiploc_loc_lyr.fillna({x: '' for x in ['STANOX', 'STANME', 'TIPLOC', 'LOOKUP_NAME', 'STATUS',
-                                  'LINE_DESCRIPTION', 'QC_STATUS', 'DESCRIPTIO', 'BusinessRef']}, inplace=True)
-            tiploc_loc_lyr = cleanse_location_metadata(tiploc_loc_lyr, ref_cols=['STANOX', 'STANME', 'TIPLOC'])
+
+            cols_with_na = ['STATUS', 'LINE_DESCRIPTION', 'QC_STATUS', 'DESCRIPTIO', 'BusinessRef']
+            tiploc_loc_lyr.fillna({x: '' for x in cols_with_na}, inplace=True)
+
+            tiploc_loc_lyr = cleanse_location_metadata_tiploc_sheet(tiploc_loc_lyr, update_dict=update)
 
             # 'STANOX' -----------------------------------------------------------------------------
             stanox = workbook.parse(sheet_name='STANOX', converters={'STANOX': str, 'gridref': str})
-            stanox = cleanse_location_metadata(stanox, ref_cols=['STANOX', 'STANME'])
+
+            stanox = pre_cleanse_location_metadata(stanox)
+            stanox.fillna({'LOOKUP_NAME_Raw': ''}, inplace=True)
+
+            ref_cols = ['SHAPE_LENG', 'EASTING', 'NORTHING', 'GRIDREF']
+            ref_data = tiploc_loc_lyr.set_index(ref_cols)
+            stanox.drop_duplicates(ref_cols, inplace=True)
+            temp = stanox.join(ref_data, on=ref_cols, rsuffix='_Ref').drop_duplicates(ref_cols)
+
+            ref_cols_ok = [c for c in temp.columns if '_Ref' in c]
+            stanox.loc[:, [c.replace('_Ref', '') for c in ref_cols_ok]] = temp[ref_cols_ok].values
 
             # Collect the above two dataframes and store them in a dictionary ---------------------
             stanox_locations_data = dict(zip(workbook.sheet_names, [tiploc_loc_lyr, stanox]))
@@ -171,6 +207,10 @@ def get_location_metadata(update=False):
             stanox_locations_data = None
 
     return stanox_locations_data
+
+
+# ====================================================================================================================
+""" Location metadata available from NR_METEX """
 
 
 # Location data with LocationId and WeatherCell, available from NR_METEX
@@ -231,7 +271,7 @@ def get_metex_db_stanox_location(update=False):
             # Fill in NA 'Name's (i.e. STANME)
             na_name = stanox_location[stanox_location.Name.isnull()]
             # Some 'Description's are recorded by 'TIPLOC's instead
-            rc_tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'])
+            rc_tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update)
             temp = na_name.join(rc_tiploc_dict, on='Description')
             temp = temp.join(rc_codes.set_index(['STANOX', 'TIPLOC', 'Location']),
                              on=['Stanox', 'Description', 'Location'])
@@ -249,7 +289,7 @@ def get_metex_db_stanox_location(update=False):
             stanox_location.replace(loc_name_regexp_replacement_dict, inplace=True)
 
             # Check if 'Description' has STANOX code instead of location name using STANOX-dictionary
-            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
             temp = stanox_location.join(rc_stanox_dict, on='Description')
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -257,7 +297,7 @@ def get_metex_db_stanox_location(update=False):
                     lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
             # Check if 'Description' has TIPLOC code instead of location name using STANOX-TIPLOC-dictionary
-            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'])
+            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'], update=update)
             temp = stanox_location.join(rc_stanox_tiploc_dict, on=['Stanox', 'Description'])
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -265,7 +305,7 @@ def get_metex_db_stanox_location(update=False):
                     lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
             # Check if 'Description' has STANME code instead of location name using STANOX-STANME-dictionary
-            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'])
+            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'], update=update)
             temp = stanox_location.join(rc_stanox_stanme_dict, on=['Stanox', 'Description'])
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -344,7 +384,7 @@ def get_metex_db_stanox_section(update=False):
             stanox_sec.replace({'End': unknown_stanox_loc}, inplace=True)
 
             #
-            stanox_location = get_metex_db_stanox_location()
+            stanox_location = get_metex_db_stanox_location(update)
             stanox_loc = stanox_location.set_index(['Stanox', 'LocationId'])
             temp = stanox_sec.join(stanox_loc, on=['StartStanox', 'LocationId'])
             temp = temp[temp.Description.notnull()]
@@ -354,7 +394,7 @@ def get_metex_db_stanox_section(update=False):
             stanox_sec.loc[temp.index, 'End'] = temp.Description
 
             # Check if 'Start' and 'End' have STANOX codes instead of location names using STANOX-dictionary
-            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
             temp = stanox_sec.join(rc_stanox_dict, on='Start')
             valid_loc = temp[temp.Location.notnull()]
             if not valid_loc.empty:
@@ -365,7 +405,7 @@ def get_metex_db_stanox_section(update=False):
                 stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.Location
 
             # Check if 'Start' and 'End' have STANOX/TIPLOC codes using STANOX-TIPLOC-dictionary
-            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'])
+            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'], update=update)
             temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['StartStanox', 'Start'])
             valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
             if not valid_loc.empty:
@@ -378,7 +418,7 @@ def get_metex_db_stanox_section(update=False):
                     lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
 
             # Check if 'Start' and 'End' have STANOX/STANME codes using STANOX-STANME-dictionary
-            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'])
+            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'], update=update)
             temp = stanox_sec.join(rc_stanox_stanme_dict, on=['StartStanox', 'Start'])
             valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
             if not valid_loc.empty:
@@ -459,7 +499,7 @@ def get_location_metadata_plus(update=False):
             metadata = stanox_section.join(location, on='LocationId')
 
             # --------------------------------------------------------------------------
-            ref = get_location_metadata()['STANOX']
+            ref = get_location_metadata(update)['STANOX']
             ref.drop_duplicates(subset=['STANOX', 'LOOKUP_NAME'], inplace=True)
             ref.set_index(['STANOX', 'LOOKUP_NAME'], inplace=True)
 
@@ -522,11 +562,12 @@ def get_location_metadata_plus(update=False):
 
 
 # Cleanse location data
-def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : '):
+def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=False):
     """
     :param data:
     :param sep:
     :param col_name:
+    :param update_dict:
     :return:
     """
     #
@@ -560,13 +601,13 @@ def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : '):
         return raw_loc
 
     #
-    stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'])
+    stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update_dict)
     start_end = tidy_alt_codes(stanox_dict, start_end)
     #
-    stanme_dict = rc.get_location_codes_dictionary_v2(['STANME'])
+    stanme_dict = rc.get_location_codes_dictionary_v2(['STANME'], update=update_dict)
     start_end = tidy_alt_codes(stanme_dict, start_end)
     #
-    tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'])
+    tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update_dict)
     start_end = tidy_alt_codes(tiploc_dict, start_end)
 
     #
@@ -600,8 +641,60 @@ def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : '):
     return cleansed_data
 
 
+# Look up geographical coordinates for each incident location
+def lookup_geographical_coordinates(data, update_metadata=False):
+
+    dat = data.copy(deep=True)
+
+    # Find geographical coordinates for each incident location
+    ref_loc_dat_1, _ = get_location_metadata(update=update_metadata).values()
+    coords_cols = ['EASTING', 'NORTHING', 'DEG_LONG', 'DEG_LAT']
+    coords_cols_alt = ['Easting', 'Northing', 'Longitude', 'Latitude']
+    ref_loc_dat_1.rename(columns=dict(zip(coords_cols, coords_cols_alt)), inplace=True)
+
+    ref_loc_dat_1 = ref_loc_dat_1.drop_duplicates('LOOKUP_NAME').set_index('LOOKUP_NAME')
+    dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='StartLocation')
+    dat.rename(columns=dict(zip(coords_cols_alt, ['Start' + c for c in coords_cols_alt])), inplace=True)
+    dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='EndLocation')
+    dat.rename(columns=dict(zip(coords_cols_alt, ['End' + c for c in coords_cols_alt])), inplace=True)
+
+    # Get location metadata for reference --------------------------------
+    location_metadata = get_location_metadata_plus(update=update_metadata)
+    start_locations = location_metadata[['StartLocation', 'StartLongitude', 'StartLatitude']]
+    start_locations.columns = [c.replace('Start', '') for c in start_locations.columns]
+    end_locations = location_metadata[['EndLocation', 'EndLongitude', 'EndLatitude']]
+    end_locations.columns = [c.replace('End', '') for c in end_locations.columns]
+    loc_metadata = pd.concat([start_locations, end_locations], ignore_index=True)
+    loc_metadata = loc_metadata.drop_duplicates('Location').set_index('Location')
+
+    # Fill in NA coordinates
+    temp = dat[dat.StartEasting.isnull() & dat.StartLongitude.isnull()]
+    temp = temp.join(loc_metadata, on='StartLocation')
+    dat.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['Longitude', 'Latitude']].values
+
+    temp = dat[dat.EndEasting.isnull() & dat.EndLongitude.isnull()]
+    temp = temp.join(loc_metadata, on='EndLocation')
+    dat.loc[temp.index, 'EndLongitude':'EndLatitude'] = temp[['Longitude', 'Latitude']].values
+
+    # ref 2 ----------------------------------------------
+    ref_metadata_2 = rc.get_station_locations()['Station']
+    ref_metadata_2 = ref_metadata_2[['Station', 'Degrees Longitude', 'Degrees Latitude']]
+    ref_metadata_2 = ref_metadata_2.dropna().drop_duplicates('Station')
+    ref_metadata_2.columns = [x.replace('Degrees ', '') for x in ref_metadata_2.columns]
+    ref_metadata_2.set_index('Station', inplace=True)
+
+    temp = dat.join(ref_metadata_2, on='StartLocation')
+    temp = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
+    dat.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['Longitude', 'Latitude']].values
+    temp = dat.join(ref_metadata_2, on='EndLocation')
+    temp = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
+    dat.loc[temp.index, 'EndLongitude':'EndLatitude'] = temp[['Longitude', 'Latitude']].values
+
+    return dat
+
+
 # Schedule 8 weather incidents
-def read_schedule8_weather_incidents(update=False):
+def get_schedule8_weather_incidents(update=False):
 
     pickle_filename = "Schedule8WeatherIncidents.pickle"
     path_to_pickle = cdd_incidents("Spreadsheets", pickle_filename)
@@ -629,65 +722,11 @@ def read_schedule8_weather_incidents(update=False):
             data = data.join(incident_reason_metadata, on='IncidentReason', rsuffix='_meta')
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
-            # Cleanse the location data ------------------------------------------------
-            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ')
+            # Cleanse the location data
+            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=update)
 
-
-
-
-
-            # Get location metadata for reference ---------------------------------
-            location_metadata = get_location_metadata_plus()
-
-            ref_metadata_0 = location_metadata.drop_duplicates('StanoxSection').set_index('StanoxSection')
-            ref_metadata_0 = ref_metadata_0[['StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']]
-            data = data.join(ref_metadata_0, on='StanoxSection')
-
-            # ref 1 ------------------------------------------------------------
-            temp0 = data[data.StartLongitude.isnull()]
-
-            ref_metadata_1 = loc_metadata[['Location', 'Longitude', 'Latitude']]
-            ref_metadata_1 = ref_metadata_1.dropna().drop_duplicates('Location')
-            ref_metadata_1.set_index('Location', inplace=True)
-
-            temp1 = temp0.join(ref_metadata_1, on='StartLocation')
-            data.loc[temp1.index, 'StartLongitude':'StartLatitude'] = temp1[['Longitude', 'Latitude']].values
-
-            temp1 = temp0.join(ref_metadata_1, on='EndLocation')
-            data.loc[temp1.index, 'EndLongitude':'EndLatitude'] = temp1[['Longitude', 'Latitude']].values
-
-            # ref 2 -------------------------------------------
-            ref_metadata_2 = rc.get_station_locations()['Station']
-            ref_metadata_2 = ref_metadata_2[['Station', 'Degrees Longitude', 'Degrees Latitude']]
-            ref_metadata_2 = ref_metadata_2.dropna().drop_duplicates('Station')
-            ref_metadata_2.columns = [x.replace('Degrees ', '') for x in ref_metadata_2.columns]
-            ref_metadata_2.set_index('Station', inplace=True)
-
-            temp0 = data[data.StartLongitude.isnull()]
-            temp1 = temp0.join(ref_metadata_2, on='StartLocation')
-            data.loc[temp1.index, 'StartLongitude':'StartLatitude'] = temp1[['Longitude', 'Latitude']].values
-
-            temp0 = data[data.EndLongitude.isnull()]
-            temp1 = temp0.join(ref_metadata_2, on='EndLocation')
-            data.loc[temp1.index, 'EndLongitude':'EndLatitude'] = temp1[['Longitude', 'Latitude']].values
-
-            # ref 3 -------------------------------------------
-            ref_metadata_3 = get_location_metadata()['STANOX']
-            ref_metadata_3 = ref_metadata_3[['LOOKUP_NAME', 'DEG_LONG', 'DEG_LAT']]
-            ref_metadata_3 = ref_metadata_3.dropna().drop_duplicates('LOOKUP_NAME')
-            ref_metadata_3.set_index('LOOKUP_NAME', inplace=True)
-
-            temp0 = data[data.StartLongitude.isnull()]
-            temp1 = temp0.join(ref_metadata_3, on='StartLocation')
-            data.loc[temp1.index, 'StartLongitude':'StartLatitude'] = temp1[['DEG_LONG', 'DEG_LAT']].values
-
-            temp0 = data[data.EndLongitude.isnull()]
-            temp1 = temp0.join(ref_metadata_3, on='EndLocation')
-            data.loc[temp1.index, 'EndLongitude':'EndLatitude'] = temp1[['DEG_LONG', 'DEG_LAT']].values
-
-
-
-
+            # Look up geographical coordinates for each incident location
+            data = lookup_geographical_coordinates(data)
 
             save_pickle(data, path_to_pickle)
 
@@ -698,7 +737,7 @@ def read_schedule8_weather_incidents(update=False):
     return data
 
 
-# Schedule8WeatherIncidents_02062006_31032014.xlsm
+# Schedule8WeatherIncidents-02062006-31032014.xlsm
 def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, update=False):
     """
     Description:
@@ -717,9 +756,10 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
     else:
         try:
             # Open the original file
-            workbook = pd.ExcelFile(path_to_pickle.replace(".pickle", ".xlsm"))
+            path_to_xlsm = path_to_pickle.replace(".pickle", ".xlsm")
+            workbook = pd.ExcelFile(path_to_xlsm)
 
-            # 'Thresholds' =============================================================
+            # 'Thresholds' -------------------------------------------------------------
             thresholds = workbook.parse(sheet_name='Thresholds', usecols='A:F').dropna()
             thresholds.index = range(len(thresholds))
             thresholds.columns = [col.replace(' ', '_') for col in thresholds.columns]
@@ -736,7 +776,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
                                             condition_type.values.flatten())
             """
 
-            # 'Data' ====================================================================================
+            # 'Data' ------------------------------------------------------------------------------------
             data = workbook.parse(sheet_name='Data', parse_dates=['StartDate', 'EndDate'], dayfirst=True,
                                   converters={'stanoxSection': str})
             data.rename(columns={'Year': 'FinancialYear',
@@ -745,25 +785,29 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
                                  'Reason': 'IncidentReason',
                                  # 'Minutes': 'DelayMinutes',
                                  # 'Cost': 'DelayCost',
-                                 'CategoryDescription': 'IncidentCategoryDescription'},
-                        inplace=True)
+                                 'CategoryDescription': 'IncidentCategoryDescription'}, inplace=True)
             hazard_cols = [x for x in enumerate(data.columns) if 'Weather Hazard' in x[1]]
             obs_cols = [(i - 1, re.search('(?<= \()\w+', x).group().upper()) for i, x in hazard_cols]
             hazard_cols = [(i + 1, x + '_WeatherHazard') for i, x in obs_cols]
             for i, x in obs_cols + hazard_cols:
                 data.rename(columns={data.columns[i]: x}, inplace=True)
-            # data.WeatherCategory = data.WeatherCategory.replace('Heat Speed/Buckle', 'Heat')
-            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ')
 
-            #
+            # data.WeatherCategory = data.WeatherCategory.replace('Heat Speed/Buckle', 'Heat')
+
             incident_reason_metadata = get_incident_reason_metadata()
             data = data.join(incident_reason_metadata, on='IncidentReason', rsuffix='_meta')
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
+            # Cleanse the location data
+            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=update)
+
+            # Look up geographical coordinates for each incident location
+            data = lookup_geographical_coordinates(data)
+
             # Retain data for specific Route and weather category
             data = subset(data, route, weather)
 
-            # Weather'CategoryLookup' ===========================================
+            # Weather'CategoryLookup' -------------------------------------------
             weather_category_lookup = workbook.parse(sheet_name='CategoryLookup')
             weather_category_lookup.columns = ['WeatherCategoryCode', 'WeatherCategory']
 
@@ -776,7 +820,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             save_pickle(workbook_data, path_to_pickle)
 
         except Exception as e:
-            print('Failed to get \"Schedule8WeatherIncidents_02062006_31032014.xlsm\" due to {}.'.format(e))
+            print('Failed to get \"Schedule8WeatherIncidents-02062006-31032014.xlsm\" due to {}.'.format(e))
             workbook_data = None
 
     return workbook_data

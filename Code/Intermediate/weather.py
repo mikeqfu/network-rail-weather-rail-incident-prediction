@@ -103,14 +103,14 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
     :param update:
     :return:
     """
-    filename_suffix = "" if start_date is None else "_{}".format(start_date.replace("-", ""))
+    filename_suffix = "" if start_date is None else "-{}".format(start_date.replace("-", ""))
     pickle_filename = filename + filename_suffix + ".pickle"
     path_to_pickle = cdd_weather("UKCP gridded obs", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         gridded_obs = load_pickle(path_to_pickle)
     else:
-        path_to_zip = cdd_weather("UKCP gridded obs", filename.replace('_', ' ').capitalize() + ".zip")
+        path_to_zip = cdd_weather("UKCP gridded obs", filename + ".zip")
 
         with zipfile.ZipFile(path_to_zip, 'r') as zf:
             filename_list = natsort.natsorted(zf.namelist())
@@ -126,26 +126,26 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
 # Combine weather observations of different variables
 def integrate_daily_gridded_weather_obs(start_date='2006-01-01', update=False):
     assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
-    filename_suffix = "" if start_date is None else "_{}".format(start_date.replace("-", ""))
-    pickle_filename = "daily_gridded_weather_obs{}.pickle".format(filename_suffix)
+    filename_suffix = "" if start_date is None else "-{}".format(start_date.replace("-", ""))
+    pickle_filename = "daily-gridded-weather-obs{}.pickle".format(filename_suffix)
     path_to_file = cdd_weather("UKCP gridded obs", pickle_filename)
     if os.path.isfile(path_to_file) and not update:
         daily_gridded_weather_obs = load_pickle(path_to_file)
     else:
         try:
             daily_max_temp = \
-                get_daily_gridded_weather_obs("daily_maximum_temperature", 'Maximum_Temperature', start_date)
+                get_daily_gridded_weather_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date)
             daily_min_temp = \
-                get_daily_gridded_weather_obs("daily_minimum_temperature", 'Minimum_Temperature', start_date)
+                get_daily_gridded_weather_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date)
             daily_rainfall = \
-                get_daily_gridded_weather_obs("daily_rainfall", 'Rainfall', start_date)
+                get_daily_gridded_weather_obs("daily-rainfall", 'Rainfall', start_date)
 
             daily_gridded_weather_obs = pd.concat([daily_max_temp, daily_min_temp, daily_rainfall], axis=1)
 
             save_pickle(daily_gridded_weather_obs, path_to_file)
 
         except Exception as e:
-            print("Failed to get integrated daily gridded weather observations due to {}.".format(e))
+            print("Failed to get integrated daily gridded weather observations. {}.".format(e))
             daily_gridded_weather_obs = None
 
     return daily_gridded_weather_obs
@@ -157,7 +157,7 @@ def integrate_daily_gridded_weather_obs(start_date='2006-01-01', update=False):
 
 # Met station locations
 def get_meteorological_stations(update=False):
-    pickle_filename = "Meteorological stations.pickle"
+    pickle_filename = "meteorological-stations.pickle"
     path_to_pickle = cdd_weather(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         met_stations = load_pickle(path_to_pickle)
@@ -168,7 +168,7 @@ def get_meteorological_stations(update=False):
             met_stations = met_stations.applymap(lambda x: x.strip() if isinstance(x, str) else x)
             save_pickle(met_stations, path_to_pickle)
         except Exception as e:
-            print("Failed to get {} due to {}".format(pickle_filename, e))
+            print("Failed to get \"Meteorological stations\" data. {}".format(e))
             met_stations = pd.DataFrame()
     return met_stations
 
@@ -209,7 +209,7 @@ def read_radiation_data(filename, headers, full_data=False):
 
 # Headers of the midas_radtob data set
 def get_ro_headers():
-    headers_raw = pd.read_excel(cdd_weather("Radiation obs", "RO_Column_Headers.xlsx"), header=None)
+    headers_raw = pd.read_excel(cdd_weather("Radiation obs", "RO-column-headers.xlsx"), header=None)
     headers = [x.strip() for x in headers_raw.iloc[0, :].values]
     return headers
 
@@ -225,14 +225,15 @@ def get_midas_radtob(full_data=False, update=False):
     RADTOB 	-   RADT-OB table. Radiation values currently being reported
 
     """
-    pickle_filename = "midas_radtob_20060101_20141231{}.pickle".format("_full" if full_data else "")
+    pickle_filename = "midas-radtob-20060101-20141231{}.pickle".format("-full" if full_data else "")
     path_to_pickle = cdd_weather("Radiation obs", pickle_filename)
+
     if os.path.isfile(path_to_pickle) and not update:
         radiation_data = load_pickle(path_to_pickle)
     else:
         headers = get_ro_headers()
         try:
-            path_to_zip = path_to_pickle.replace("_full.pickle" if full_data else ".pickle", ".zip")
+            path_to_zip = path_to_pickle.replace("-full.pickle" if full_data else ".pickle", ".zip")
             with zipfile.ZipFile(path_to_zip, 'r') as zf:
                 filename_list = natsort.natsorted(zf.namelist())
                 temp_dat = [read_radiation_data(zf.open(f), headers, full_data) for f in filename_list]
@@ -240,7 +241,7 @@ def get_midas_radtob(full_data=False, update=False):
             radiation_data = pd.concat(temp_dat, axis=0, sort=False, ignore_index=True)
             save_pickle(radiation_data, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"Radiation obs\".")
-            print(e)
+            print("Failed to get \"Radiation obs\". {}".format(e))
             radiation_data = pd.DataFrame(columns=headers)
+
     return radiation_data
