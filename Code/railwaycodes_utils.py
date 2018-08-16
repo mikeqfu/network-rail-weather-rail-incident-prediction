@@ -140,19 +140,6 @@ def parse_tr(header, trs):
                         y[1] += pd.np.abs(tbl_lst[i].index(y[2]) - y[1])
                     tbl_lst[i + j].insert(y[1], y[2])
 
-    # if row_spanned:
-    #     for x in row_spanned:
-    #         for j in range(1, x[2]):
-    #             # Add value in next tr
-    #             idx = x[0] + j
-    #             # assert isinstance(idx, int)
-    #             if x[1] >= len(tbl_lst[idx]):
-    #                 tbl_lst[idx].insert(x[1], x[3])
-    #             elif x[3] in tbl_lst[x[0]]:
-    #                 tbl_lst[idx].insert(tbl_lst[x[0]].index(x[3]), x[3])
-    #             else:
-    #                 tbl_lst[idx].insert(x[1] + 1, x[3])
-
     for k in range(len(tbl_lst)):
         n = len(header) - len(tbl_lst[k])
         if n > 0:
@@ -206,7 +193,7 @@ def parse_loc_note(x):
     else:
         m_pattern = re.compile(
             '[Oo]riginally |[Ff]ormerly |[Ll]ater |[Pp]resumed | \(was | \(in | \(at | \(also |'
-            ' \(second code |\?|\n| \(\[\'| \(definition unknown\)')
+            ' \(second code |\?|\n| \(\[\'| \(definition unknown\)| \(by 2010 ')
         # dat = re.search('["\w ,]+(?= [[(?\'])|["\w ,]+', x).group(0) if re.search(m_pattern, x) else x
         x_tmp = re.search('(?=[\[(]).*(?<=[\])])|(?=\().*(?<=\) \[)', x)
         x_tmp = x_tmp.group() if x_tmp is not None else x
@@ -218,10 +205,11 @@ def parse_loc_note(x):
         note = ''
     else:
         n = re.search('(?<=[\[(])[\w ,?]+(?=[])])', y)
+        # n = re.search('(?<=[\n ]((\[\'\()|(\(\[\')))[\w ,\'\"/?]+', y)
         if n is None:
             n = re.search('(?<=(\[[\'\"]\()|(\([\'\"]\[)|(\) \[)).*(?=(\)[\'\"]\])|(\][\'\"]\))|\])', y)
-        # elif n.group() == '"' or n.group() == "'":
-        #     n = re.search('(?<=[\n ]((\[\'\()|(\(\[\')))[\w ,\'\"/?]+', y)
+        elif '"now deleted"' in y and y.startswith('(') and y.endswith(')'):
+            n = re.search('(?<=\().*(?=\))', y)
         note = n.group() if n is not None else ''
         if note.endswith('\'') or note.endswith('"'):
             note = note[:-1]
@@ -254,7 +242,8 @@ def scrape_elrs(keyword, update=False):
                                                 including ELR names, line name, mileages, datum and some notes,
                      'Last_updated_date_keyword': [str] date of when the data was last updated}
     """
-    path_to_file = cdd_elr_mileage("A-Z", keyword.title() + ".pickle")
+    pickle_filename = "A-Z", keyword.title() + ".pickle"
+    path_to_file = cdd_elr_mileage(pickle_filename)
     if os.path.isfile(path_to_file) and not update:
         elrs = load_pickle(path_to_file)
     else:
@@ -613,20 +602,19 @@ def cdd_loc_codes(*directories):
 
 # Location name modifications
 def create_location_name_mod_dict():
-    location_name_mod_dict = {
-        'Location': {re.compile(' And | \+ '): ' & ',
-                     re.compile('-By-'): '-by-',
-                     re.compile('-In-'): '-in-',
-                     re.compile('-En-Le-'): '-en-le-',
-                     re.compile('-La-'): '-la-',
-                     re.compile('-Le-'): '-le-',
-                     re.compile('-On-'): '-on-',
-                     re.compile('-The-'): '-the-',
-                     re.compile(' Of '): ' of ',
-                     re.compile('-Super-'): '-super-',
-                     re.compile('-Upon-'): '-upon-',
-                     re.compile('-Under-'): '-under-',
-                     re.compile('-Y-'): '-y-'}}
+    location_name_mod_dict = {'Location': {re.compile(' And | \+ '): ' & ',
+                                           re.compile('-By-'): '-by-',
+                                           re.compile('-In-'): '-in-',
+                                           re.compile('-En-Le-'): '-en-le-',
+                                           re.compile('-La-'): '-la-',
+                                           re.compile('-Le-'): '-le-',
+                                           re.compile('-On-'): '-on-',
+                                           re.compile('-The-'): '-the-',
+                                           re.compile(' Of '): ' of ',
+                                           re.compile('-Super-'): '-super-',
+                                           re.compile('-Upon-'): '-upon-',
+                                           re.compile('-Under-'): '-under-',
+                                           re.compile('-Y-'): '-y-'}}
     return location_name_mod_dict
 
 
@@ -799,10 +787,11 @@ def get_additional_crs_note(update=False):
 
 # All Location, with CRS, NLC, TIPLOC, STANME and STANOX codes
 def get_location_codes(update=False):
-    path_to_file = cdd_loc_codes("CRS-NLC-TIPLOC-STANOX-codes.pickle")
+    pickle_filename = "CRS-NLC-TIPLOC-STANOX-codes.pickle"
+    path_to_pickle = cdd_loc_codes(pickle_filename)
 
-    if os.path.isfile(path_to_file) and not update:
-        location_codes = load_pickle(path_to_file)
+    if os.path.isfile(path_to_pickle) and not update:
+        location_codes = load_pickle(path_to_pickle)
     else:
         # Get every data table
         data = [scrape_location_codes(i, update) for i in string.ascii_lowercase]
@@ -817,6 +806,9 @@ def get_location_codes(update=False):
         location_codes_data_table.loc[idx, 'STANME':'STANOX'] = ['', '']
         idx = location_codes_data_table[location_codes_data_table.Location == 'Selby Potter Group'].index
         location_codes_data_table.loc[idx, 'STANME':'STANOX'] = values
+
+        idx = location_codes_data_table[location_codes_data_table.Location == 'Penrhys'].index
+        location_codes_data_table.loc[idx, 'TIPLOC'] = 'PENRHYS'
 
         # Get the latest updated date
         last_updated_dates = (item['Last_updated_date_{}'.format(x)] for item, x in zip(data, string.ascii_uppercase))
@@ -834,7 +826,7 @@ def get_location_codes(update=False):
                           'Additional_note': additional_note,
                           'Other_systems': other_systems_codes}
 
-        save_pickle(location_codes, path_to_file)
+        save_pickle(location_codes, path_to_pickle)
 
     return location_codes
 

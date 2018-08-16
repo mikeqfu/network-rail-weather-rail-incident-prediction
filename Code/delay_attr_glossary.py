@@ -1,6 +1,10 @@
-""" Historic delay attribution glossary """
-# https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/datasets/
+"""
 
+Historic delay attribution glossary
+
+Source: https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/datasets/
+
+"""
 
 import itertools
 import os
@@ -21,7 +25,8 @@ def cdd_delay_attr(*directories):
 
 
 def path_to_original_file():
-    return cdd_delay_attr("Delay attribution glossary.xlsx")
+    path_to_file = cdd_delay_attr("Delay attribution glossary.xlsx")
+    return path_to_file
 
 
 # ====================================================================================================================
@@ -56,7 +61,7 @@ def download_delay_attribution_glossary():
 
 # Stanox Codes
 def get_stanox_codes(update=False, hard_update=False):
-    pickle_filename = "stanox_codes.pickle"
+    pickle_filename = "stanox-codes.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         stanox_codes = load_pickle(path_to_pickle)
@@ -76,7 +81,7 @@ def get_stanox_codes(update=False, hard_update=False):
 
 # Period Dates
 def get_period_dates(update=False, hard_update=False):
-    pickle_filename = "period_dates.pickle"
+    pickle_filename = "period-dates.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         period_dates = load_pickle(path_to_pickle)
@@ -99,7 +104,7 @@ def get_period_dates(update=False, hard_update=False):
             period_dates_data['Period End Date'] = period_dates_data['Period End Date'].applymap(lambda x: x.date())
             period_dates_data.columns = [x.replace(' ', '_') for x in period_dates_data.columns]
             period_dates_data.index = periods.Period.values
-            period_dates_list = [period_dates_data.iloc[:, i:i+3] for i in range(0, period_dates_data.shape[1], 3)]
+            period_dates_list = [period_dates_data.iloc[:, i:i + 3] for i in range(0, period_dates_data.shape[1], 3)]
             period_dates = dict(zip(financial_years, period_dates_list))
 
             save_pickle(period_dates, path_to_pickle)
@@ -113,7 +118,7 @@ def get_period_dates(update=False, hard_update=False):
 
 # Incident Reason
 def get_incident_reason_metadata(update=False, hard_update=False):
-    pickle_filename = "incident_reason_metadata.pickle"
+    pickle_filename = "incident-reason-metadata.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         incident_reason_metadata = load_pickle(path_to_pickle)
@@ -136,7 +141,7 @@ def get_incident_reason_metadata(update=False, hard_update=False):
 
 # Responsible Manager
 def get_responsible_manager(update=False, hard_update=False):
-    pickle_filename = "responsible_manager.pickle"
+    pickle_filename = "responsible-manager.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         responsible_manager = load_pickle(path_to_pickle)
@@ -156,7 +161,7 @@ def get_responsible_manager(update=False, hard_update=False):
 
 # Reactionary Reason Code
 def get_reactionary_reason_code(update=False, hard_update=False):
-    pickle_filename = "reactionary_reason_code.pickle"
+    pickle_filename = "reactionary-reason-code.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         reactionary_reason_code = load_pickle(path_to_pickle)
@@ -175,7 +180,7 @@ def get_reactionary_reason_code(update=False, hard_update=False):
 
 # Performance Event Code
 def get_performance_event_code(update=False, hard_update=False):
-    pickle_filename = "performance_event_code.pickle"
+    pickle_filename = "performance-event-code.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         performance_event_code = load_pickle(path_to_pickle)
@@ -198,7 +203,7 @@ def get_performance_event_code(update=False, hard_update=False):
 
 # Train Service Code
 def get_train_service_code(update=False, hard_update=False):
-    pickle_filename = "train_service_code.pickle"
+    pickle_filename = "train-service-code.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         train_service_code = load_pickle(path_to_pickle)
@@ -217,7 +222,7 @@ def get_train_service_code(update=False, hard_update=False):
 
 # Operator Name
 def get_operator_name(update=False, hard_update=False):
-    pickle_filename = "operator_name.pickle"
+    pickle_filename = "operator-name.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         operator_name = load_pickle(path_to_pickle)
@@ -236,7 +241,7 @@ def get_operator_name(update=False, hard_update=False):
 
 # Service Group Code
 def get_service_group_code(update=False, hard_update=False):
-    pickle_filename = "service_group_code.pickle"
+    pickle_filename = "service-group-code.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         service_group_code = load_pickle(path_to_pickle)
@@ -255,7 +260,7 @@ def get_service_group_code(update=False, hard_update=False):
 
 # Historic delay attribution glossary
 def get_delay_attr_glossary(update=False, hard_update=False):
-    pickle_filename = "delay_attribution_glossary.pickle"
+    pickle_filename = "delay-attribution-glossary.pickle"
     path_to_pickle = cdd_delay_attr(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         delay_attr_glossary = load_pickle(path_to_pickle)

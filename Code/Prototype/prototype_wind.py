@@ -103,7 +103,7 @@ def calculate_wind_averages(wind_speeds, wind_directions):
 # Compute the statistics for all the weather variables (except wind)
 def calculate_weather_variables_stats(weather_data):
     """
-    Note: to get the n-th percentitle, use percentile(n)
+    Note: to get the n-th percentile, use percentile(n)
 
     This function also returns the weather dataframe indices. The corresponding weather conditions in that weather
     cell might cause wind-related incidents.
@@ -134,7 +134,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
     :param update: [bool]
     :return: [DataFrame]
 
-    When offset the date and time data, an alterntiave function for "pd.DateOffset" is "datetime.timedelta"
+    When offset the date and time data, an alternative function for "pd.DateOffset" is "datetime.timedelta"
     """
 
     filename = dbm.make_filename("incident_location_weather", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs)
