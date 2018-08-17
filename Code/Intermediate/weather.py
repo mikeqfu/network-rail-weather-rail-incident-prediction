@@ -99,7 +99,7 @@ def read_daily_gridded_weather_obs(filename, col_name, start_date):
 
 
 # Get gridded weather observations
-def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
+def get_daily_gridded_weather_obs(filename, col_name, start_date, update=True):
     """
 
     :param filename:
@@ -122,6 +122,7 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
             filename_list = natsort.natsorted(zf.namelist())
             temp_dat = [read_daily_gridded_weather_obs(zf.open(f), col_name, start_date) for f in filename_list]
         zf.close()
+
         gridded_obs = pd.concat(temp_dat, axis=0, sort=False)
 
         save_pickle(gridded_obs, path_to_pickle)
@@ -142,7 +143,6 @@ def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', update=Fal
         daily_gridded_weather_obs = load_pickle(path_to_file)
     else:
         try:
-
             d_max_temp = get_daily_gridded_weather_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date)
             d_min_temp = get_daily_gridded_weather_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date)
             d_rainfall = get_daily_gridded_weather_obs("daily-rainfall", 'Rainfall', start_date)
