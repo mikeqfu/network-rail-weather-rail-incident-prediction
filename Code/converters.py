@@ -5,10 +5,33 @@ import subprocess
 import measurement.measures
 import numpy as np
 import pandas as pd
+import pyproj
+
+
+# Convert british national grid (OSBG36) to latitude and longitude (WGS84)
+def osgb36_to_wgs84(easting, northing):
+
+    osgb36 = pyproj.Proj(init='EPSG:27700')
+    wgs84 = pyproj.Proj(init='EPSG:4326')
+
+    longitude, latitude = pyproj.transform(osgb36, wgs84, easting, northing)
+
+    return longitude, latitude
+
+
+# Convert latitude and longitude (WGS84) to british national grid (OSBG36)
+def wgs84_to_osgb36(longitude, latitude):
+
+    wgs84 = pyproj.Proj(init='EPSG:4326')
+    osgb36 = pyproj.Proj(init='EPSG:27700')
+
+    easting, northing = pyproj.transform(wgs84, osgb36, longitude, latitude)
+
+    return easting, northing
 
 
 # Convert british national grid (OSBG36) to latitude and longitude (WGS84)(Reference: http://www.hannahfry.co.uk)
-def osgb36_to_wgs84(easting, northing):
+def convert_osgb36_to_wgs84(easting, northing):
     """
     :param easting: X
     :param northing: Y
@@ -16,7 +39,9 @@ def osgb36_to_wgs84(easting, northing):
 
     'easting' and 'northing' are the British national grid coordinates
 
-    Reference: http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii
+    Convert British National grid coordinates (OSGB36 Eastings, Northings) to WGS84 latitude and longitude.
+    The code below was copied/adapted from Hannah Fry's blog; the original code and post can be found at:
+    http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii
 
     """
     # The Airy 180 semi-major and semi-minor axes used for OSGB36 (m)
@@ -113,7 +138,7 @@ def osgb36_to_wgs84(easting, northing):
 
 
 # Convert latitude and longitude (WGS84) to british national grid (OSBG36) (Reference: http://www.hannahfry.co.uk)
-def wgs84_to_osgb36(latitude, longitude):
+def convert_wgs84_to_osgb36(latitude, longitude):
     """
     :param latitude:
     :param longitude:
@@ -121,7 +146,9 @@ def wgs84_to_osgb36(latitude, longitude):
 
     This function converts lat lon (WGS84) to british national grid (OSBG36)
 
-    Reference: http://www.hannahfry.co.uk/blog/2012/02/01/converting-latitude-and-longitude-to-british-national-grid
+    Convert WGS84 (latitude and longitude) to British National grid coordinates (OSGB36 Eastings, Northings).
+    The code below was copied/adapted from Hannah Fry's blog; the original code and post can be found at:
+    http://www.hannahfry.co.uk/blog/2012/02/01/converting-latitude-and-longitude-to-british-national-grid
 
     """
     # First convert to radians. These are on the wrong ellipsoid currently: GRS80. (Denoted by _1)
