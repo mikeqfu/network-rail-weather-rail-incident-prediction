@@ -47,6 +47,9 @@ def find_square_corners(centre_point, side_length=5000, rotation=None):
         upper_left = (x - 1/2*side_length, y + 1/2*side_length)
         upper_right = (x + 1/2*side_length, y + 1/2*side_length)
         lower_right = (x + 1/2*side_length, y - 1/2*side_length)
+
+    # corners = shapely.geometry.Polygon([lower_left, upper_left, upper_right, lower_right])
+
     return lower_left, upper_left, upper_right, lower_right
 
 
@@ -75,20 +78,22 @@ def read_daily_gridded_weather_obs(filename, col_name, start_date):
     timeseries_data.set_index(0, inplace=True)
 
     # Reshape the dataframe
-    idx = pd.MultiIndex.from_product([cartesian_centres, timeseries_data.index.tolist()], names=['Centre', 'Date'])
+    idx = pd.MultiIndex.from_product([cartesian_centres, timeseries_data.index.tolist()], names=['Centroid_XY', 'Date'])
     data = pd.DataFrame(timeseries_data.T.values.flatten(), index=idx, columns=[col_name])
     data.reset_index(inplace=True)
 
-    # Add levels of Grid corners (and LongLat centres)
+    # data.Centre = data.Centre.map(shapely.geometry.asPoint)
+
+    # Add levels of Grid corners (and centres' LongLat)
+    num = len(timeseries_data)
+
     grid = [find_square_corners(centre, 5000, rotation=None) for centre in cartesian_centres]
-    data['Grid'] = list(
-        itertools.chain.from_iterable(itertools.repeat(x, len(timeseries_data)) for x in grid))
+    data['Grid_Vertices'] = list(itertools.chain.from_iterable(itertools.repeat(x, num) for x in grid))
 
     long_lat = [osgb36_to_wgs84(x[0], x[1]) for x in cartesian_centres]
-    data['LongLat'] = list(
-        itertools.chain.from_iterable(itertools.repeat(x, len(timeseries_data)) for x in long_lat))
+    data['Centroid_LongLat'] = list(itertools.chain.from_iterable(itertools.repeat(x, num) for x in long_lat))
 
-    data.set_index(['Grid', 'Centre', 'LongLat', 'Date'], inplace=True)
+    data.set_index(['Grid_Vertices', 'Centroid_XY', 'Centroid_LongLat', 'Date'], inplace=True)
 
     return data
 
@@ -110,6 +115,7 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
     if os.path.isfile(path_to_pickle) and not update:
         gridded_obs = load_pickle(path_to_pickle)
     else:
+
         path_to_zip = cdd_weather("UKCP gridded obs", filename + ".zip")
 
         with zipfile.ZipFile(path_to_zip, 'r') as zf:
@@ -125,28 +131,29 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date, update=False):
 
 # Combine weather observations of different variables
 def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', update=False):
+
     assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
+
     filename_suffix = "" if start_date is None else "-{}".format(start_date.replace("-", ""))
     pickle_filename = "daily-gridded-weather-obs{}.pickle".format(filename_suffix)
     path_to_file = cdd_weather("UKCP gridded obs", pickle_filename)
+
     if os.path.isfile(path_to_file) and not update:
         daily_gridded_weather_obs = load_pickle(path_to_file)
     else:
         try:
-            daily_max_temp = \
-                get_daily_gridded_weather_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date)
-            daily_min_temp = \
-                get_daily_gridded_weather_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date)
-            daily_rainfall = \
-                get_daily_gridded_weather_obs("daily-rainfall", 'Rainfall', start_date)
 
-            daily_gridded_weather_obs = pd.concat([daily_max_temp, daily_min_temp, daily_rainfall], axis=1)
+            d_max_temp = get_daily_gridded_weather_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date)
+            d_min_temp = get_daily_gridded_weather_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date)
+            d_rainfall = get_daily_gridded_weather_obs("daily-rainfall", 'Rainfall', start_date)
+
+            daily_gridded_weather_obs = pd.concat([d_max_temp, d_min_temp, d_rainfall], axis=1)
 
             save_pickle(daily_gridded_weather_obs, path_to_file)
 
         except Exception as e:
             print("Failed to get integrated daily gridded weather observations. {}.".format(e))
-            daily_gridded_weather_obs = None
+            daily_gridded_weather_obs = pd.DataFrame()
 
     return daily_gridded_weather_obs
 
@@ -157,19 +164,29 @@ def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', update=Fal
 
 # Met station locations
 def get_meteorological_stations(update=False):
+
     pickle_filename = "meteorological-stations.pickle"
     path_to_pickle = cdd_weather(pickle_filename)
+
     if os.path.isfile(path_to_pickle) and not update:
         met_stations = load_pickle(path_to_pickle)
     else:
         try:
-            met_stations = pd.read_excel(path_to_pickle.replace(".pickle", ".xlsx"), parse_dates=['Station start date'])
+            path_to_spreadsheet = path_to_pickle.replace(".pickle", ".xlsx")
+            met_stations = pd.read_excel(path_to_spreadsheet, parse_dates=['Station start date'])
+
             met_stations.columns = [x.replace(' ', '_').upper() for x in met_stations.columns]
             met_stations = met_stations.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+
+            met_stations.sort_values(['SRC_ID', 'NAME'], inplace=True)
+            met_stations.set_index('SRC_ID', inplace=True)
+
             save_pickle(met_stations, path_to_pickle)
+
         except Exception as e:
             print("Failed to get \"Meteorological stations\" data. {}".format(e))
             met_stations = pd.DataFrame()
+
     return met_stations
 
 
@@ -196,13 +213,24 @@ def read_radiation_data(filename, headers, full_data=False):
         use_dat.index = range(len(use_dat))
         ro_data = use_dat[['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']]
 
-        checked = ro_data.groupby(['SRC_ID', 'OB_END_TIME']).agg('count')
+        # Keep VERSION_NUM == 2 only if available
+        checked = ro_data.groupby(['SRC_ID', 'OB_END_TIME']).agg({'VERSION_NUM': 'count'})
         checked_idx = checked[checked.VERSION_NUM == 2]
-
         idx = [ro_data[(ro_data.SRC_ID == i) & (ro_data.OB_END_TIME == d)].sort_values('VERSION_NUM').index[0]
                for i, d in checked_idx.index]
         ro_data.drop(idx, axis='index', inplace=True)
+
+        ro_data.rename(columns={'OB_END_TIME': 'OB_END_DATE_TIME'}, inplace=True)
+        ob_end_date = ro_data.OB_END_DATE_TIME.map(lambda x: x.date())
+        ro_data.insert(ro_data.columns.get_loc('OB_END_DATE_TIME'), column='OB_END_DATE', value=ob_end_date)
+
+        ro_data.sort_values(['SRC_ID', 'OB_END_DATE_TIME'], inplace=True)
         ro_data.index = range(len(ro_data))
+
+        met_stn = get_meteorological_stations()
+        met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+
+        ro_data = ro_data.join(met_stn, on='SRC_ID')
 
     return ro_data
 
@@ -225,6 +253,7 @@ def get_midas_radtob(full_data=False, update=False):
     RADTOB 	-   RADT-OB table. Radiation values currently being reported
 
     """
+
     pickle_filename = "midas-radtob-20060101-20141231{}.pickle".format("-full" if full_data else "")
     path_to_pickle = cdd_weather("Radiation obs", pickle_filename)
 
