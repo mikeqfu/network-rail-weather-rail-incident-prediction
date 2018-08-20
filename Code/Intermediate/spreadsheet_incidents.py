@@ -9,6 +9,7 @@ from fuzzywuzzy.process import extractOne
 from shapely.geometry import Point
 
 import railwaycodes_utils as rc
+from converters import osgb36_to_wgs84, wgs84_to_osgb36
 from delay_attr_glossary import get_incident_reason_metadata
 from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
 from utils import cdd, cdd_rc, load_json, load_pickle, make_filename, save_pickle, subset
@@ -125,7 +126,7 @@ def cleanse_location_metadata_tiploc_sheet(metadata, update_dict=False):
     meta_dat.update(dat)
     meta_dat.dropna(subset=['LOOKUP_NAME'] + ref_cols, inplace=True)
     meta_dat.fillna('', inplace=True)
-    meta_dat.sort_values(ref_cols + ['SHAPE_LENG'], ascending=[True] * len(ref_cols) + [False], inplace=True)
+    meta_dat.sort_values(['LOOKUP_NAME', 'SHAPE_LENG'], ascending=[True, False], inplace=True)
     meta_dat.index = range(len(meta_dat))
 
     return meta_dat
@@ -535,7 +536,7 @@ def get_location_metadata_plus(update=False):
 
 
 # Cleanse location data
-def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=False):
+def cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', update_dict=False):
     """
     :param data:
     :param sep:
@@ -615,7 +616,7 @@ def cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update
 
 
 # Look up geographical coordinates for each incident location
-def lookup_geographical_coordinates(data, update_metadata=False):
+def cleanse_geographical_coordinates(data, update_metadata=False):
 
     dat = data.copy(deep=True)
 
@@ -641,13 +642,31 @@ def lookup_geographical_coordinates(data, update_metadata=False):
     loc_metadata = loc_metadata.drop_duplicates('Location').set_index('Location')
 
     # Fill in NA coordinates
-    temp = dat[dat.StartEasting.isnull() & dat.StartLongitude.isnull()]
+    temp = dat[dat.StartEasting.isnull() | dat.StartLongitude.isnull()]
     temp = temp.join(loc_metadata, on='StartLocation')
     dat.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['Longitude', 'Latitude']].values
+    dat.loc[temp.index, 'StartEasting':'StartNorthing'] = [
+        list(wgs84_to_osgb36(x[0], x[1])) for x in temp[['Longitude', 'Latitude']].values]
 
-    temp = dat[dat.EndEasting.isnull() & dat.EndLongitude.isnull()]
+    temp = dat[dat.EndEasting.isnull() | dat.EndLongitude.isnull()]
     temp = temp.join(loc_metadata, on='EndLocation')
     dat.loc[temp.index, 'EndLongitude':'EndLatitude'] = temp[['Longitude', 'Latitude']].values
+
+    # Dalston Junction (East London Line)     --> Dalston Junction [-0.0751, 51.5461]
+    # Ashford West Junction (CTRL)            --> Ashford West Junction [0.86601557, 51.146927]
+    # Southfleet Junction                     --> ? [0.34262910, 51.419354]
+    # Channel Tunnel Eurotunnel Boundary CTRL --> ? [1.1310482, 51.094808]
+    na_loc = ['Dalston Junction (East London Line)', 'Ashford West Junction (CTRL)',
+              'Southfleet Junction', 'Channel Tunnel Eurotunnel Boundary CTRL']
+    na_loc_longlat = [[-0.0751, 51.5461], [0.86601557, 51.146927], [0.34262910, 51.419354], [1.1310482, 51.094808]]
+    for x, longlat in zip(na_loc, na_loc_longlat):
+        if x in list(temp.EndLocation):
+            idx = temp[temp.EndLocation == x].index
+            temp.loc[idx, 'EndLongitude':'Latitude'] = longlat * 2
+            dat.loc[idx, 'EndLongitude':'EndLatitude'] = longlat
+
+    dat.loc[temp.index, 'EndEasting':'EndNorthing'] = [
+        list(wgs84_to_osgb36(x[0], x[1])) for x in temp[['Longitude', 'Latitude']].values]
 
     # ref 2 ----------------------------------------------
     ref_metadata_2 = rc.get_station_locations()['Station']
@@ -657,11 +676,52 @@ def lookup_geographical_coordinates(data, update_metadata=False):
     ref_metadata_2.set_index('Station', inplace=True)
 
     temp = dat.join(ref_metadata_2, on='StartLocation')
-    temp = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
-    dat.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['Longitude', 'Latitude']].values
+    temp_start = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
+    dat.loc[temp_start.index, 'StartLongitude':'StartLatitude'] = temp_start[['Longitude', 'Latitude']].values
+
     temp = dat.join(ref_metadata_2, on='EndLocation')
-    temp = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
-    dat.loc[temp.index, 'EndLongitude':'EndLatitude'] = temp[['Longitude', 'Latitude']].values
+    temp_end = temp[temp.Longitude.notnull() & temp.Latitude.notnull()]
+    dat.loc[temp_end.index, 'EndLongitude':'EndLatitude'] = temp_end[['Longitude', 'Latitude']].values
+
+    # Let (Longitude, Latitude) be almost equivalent to (Easting, Northing)
+    dat.loc[:, 'StartLongitude':'StartLatitude'] = dat.loc[:, 'StartEasting':'StartNorthing'].apply(
+        lambda x: osgb36_to_wgs84(x['StartEasting'], x['StartNorthing']), axis=1).values.tolist()
+    dat.loc[:, 'EndLongitude':'EndLatitude'] = dat.loc[:, 'EndEasting':'EndNorthing'].apply(
+        lambda x: osgb36_to_wgs84(x['EndEasting'], x['EndNorthing']), axis=1).values.tolist()
+
+    #
+    def convert_to_point(x, h_col, v_col):
+        if pd.np.isnan(x[h_col]) or pd.np.isnan(x[v_col]):
+            p = Point()
+        else:
+            p = Point((x[h_col], x[v_col]))
+        return p
+
+    # Convert coordinates to shapely.geometry.Point
+    dat['StartLongLat'] = dat.apply(lambda x: convert_to_point(x, 'StartLongitude', 'StartLatitude'), axis=1)
+    dat['StartNE'] = dat.apply(lambda x: convert_to_point(x, 'StartEasting', 'StartNorthing'), axis=1)
+    dat['EndLongLat'] = dat.apply(lambda x: convert_to_point(x, 'EndLongitude', 'EndLatitude'), axis=1)
+    dat['EndNE'] = dat.apply(lambda x: convert_to_point(x, 'EndEasting', 'EndNorthing'), axis=1)
+
+    # temp = dat[[x for x in dat.columns if x.startswith('Start')]]  # For the start locations
+    # temp['StartLongLat_temp'] = temp.apply(
+    #     lambda x: Point(osgb36_to_wgs84(x['StartEasting'], x['StartNorthing']))
+    #     if not x['StartNE'].is_empty else x['StartNE'], axis=1)
+    # temp['distance'] = temp.apply(lambda x: x['StartLongLat'].distance(x['StartLongLat_temp']), axis=1)
+    # idx = temp[temp.distance.map(lambda x: True if x > 0.00005 else False)].index
+    # dat.loc[idx, 'StartLongLat'] = temp.loc[idx, 'StartLongLat_temp']
+    # dat.loc[idx, 'StartLongitude':'StartLatitude'] = temp.loc[idx, 'StartLongLat_temp'].apply(
+    #     lambda x: [x.x, x.y]).values.tolist()
+    #
+    # temp = dat[[x for x in dat.columns if x.startswith('End')]]  # For the end locations
+    # temp['EndLongLat_temp'] = temp.apply(
+    #     lambda x: Point(osgb36_to_wgs84(x['EndEasting'], x['EndNorthing']))
+    #     if not x['EndNE'].is_empty else x['EndNE'], axis=1)
+    # temp['distance'] = temp.apply(lambda x: x['EndLongLat'].distance(x['EndLongLat_temp']), axis=1)
+    # idx = temp[temp.distance.map(lambda x: True if x > 0.00005 else False)].index
+    # dat.loc[idx, 'EndLongLat'] = temp.loc[idx, 'EndLongLat_temp']
+    # dat.loc[idx, 'EndLongitude':'EndLatitude'] = temp.loc[idx, 'EndLongLat_temp'].apply(
+    #     lambda x: [x.x, x.y]).values.tolist()
 
     return dat
 
@@ -696,16 +756,10 @@ def get_schedule8_weather_incidents(route=None, weather=None, update=False):
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
             # Cleanse the location data
-            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=update)
+            data = cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', update_dict=update)
 
             # Look up geographical coordinates for each incident location
-            data = lookup_geographical_coordinates(data)
-
-            # Convert coordinates to shapely.geometry.Point
-            data['StartLongLat'] = data.apply(lambda x: Point((x['StartLongitude'], x['StartLatitude'])), axis=1)
-            data['StartNE'] = data.apply(lambda x: Point((x['StartEasting'], x['StartNorthing'])), axis=1)
-            data['EndLongLat'] = data.apply(lambda x: Point((x['EndLongitude'], x['EndLatitude'])), axis=1)
-            data['EndNE'] = data.apply(lambda x: Point((x['EndEasting'], x['EndNorthing'])), axis=1)
+            data = cleanse_geographical_coordinates(data)
 
             # Retain data for specific Route and weather category
             data = subset(data, route, weather)
@@ -781,16 +835,10 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
             # Cleanse the location data
-            data = cleanse_stanox_section_col(data, col_name='StanoxSection', sep=' : ', update_dict=update)
+            data = cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', update_dict=update)
 
             # Look up geographical coordinates for each incident location
-            data = lookup_geographical_coordinates(data)
-
-            # Convert coordinates to shapely.geometry.Point
-            data['StartLongLat'] = data.apply(lambda x: Point((x['StartLongitude'], x['StartLatitude'])), axis=1)
-            data['StartNE'] = data.apply(lambda x: Point((x['StartEasting'], x['StartNorthing'])), axis=1)
-            data['EndLongLat'] = data.apply(lambda x: Point((x['EndLongitude'], x['EndLatitude'])), axis=1)
-            data['EndNE'] = data.apply(lambda x: Point((x['EndEasting'], x['EndNorthing'])), axis=1)
+            data = cleanse_geographical_coordinates(data)
 
             # Retain data for specific Route and weather category
             data = subset(data, route, weather)
