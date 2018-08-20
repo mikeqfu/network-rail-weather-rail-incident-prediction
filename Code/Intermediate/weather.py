@@ -6,6 +6,7 @@ import zipfile
 
 import natsort
 import pandas as pd
+import shapely.geometry
 
 from converters import osgb36_to_wgs84
 from utils import cdd, load_pickle, save_pickle
@@ -178,6 +179,12 @@ def get_meteorological_stations(update=False):
             met_stations.columns = [x.replace(' ', '_').upper() for x in met_stations.columns]
             met_stations = met_stations.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
+            # Convert coordinates to shapely.geometry.Point
+            met_stations['LONG_LAT'] = met_stations.apply(
+                lambda x: shapely.geometry.Point((x['LONGITUDE'], x['LATITUDE'])), axis=1)
+            met_stations['E_N'] = met_stations.apply(
+                lambda x: shapely.geometry.Point((x['EASTING'], x['NORTHING'])), axis=1)
+
             met_stations.sort_values(['SRC_ID', 'NAME'], inplace=True)
             met_stations.set_index('SRC_ID', inplace=True)
 
@@ -191,11 +198,12 @@ def get_meteorological_stations(update=False):
 
 
 # Read each txt file of MIDAS RADTOB
-def read_radiation_data(filename, headers, full_data=False):
+def read_radiation_data(filename, headers, full_data=False, met_stn=True):
     """
     :param filename:
     :param headers:
     :param full_data:
+    :param met_stn:
     :return:
 
     SRC_ID:         Unique source identifier or station site number
@@ -227,10 +235,10 @@ def read_radiation_data(filename, headers, full_data=False):
         ro_data.sort_values(['SRC_ID', 'OB_END_DATE_TIME'], inplace=True)
         ro_data.index = range(len(ro_data))
 
-        met_stn = get_meteorological_stations()
-        met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
-
-        ro_data = ro_data.join(met_stn, on='SRC_ID')
+        if met_stn:
+            met_stn = get_meteorological_stations()
+            met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+            ro_data = ro_data.join(met_stn, on='SRC_ID')
 
     return ro_data
 
@@ -263,12 +271,20 @@ def get_midas_radtob(full_data=False, update=False):
         headers = get_ro_headers()
         try:
             path_to_zip = path_to_pickle.replace("-full.pickle" if full_data else ".pickle", ".zip")
+
             with zipfile.ZipFile(path_to_zip, 'r') as zf:
                 filename_list = natsort.natsorted(zf.namelist())
-                temp_dat = [read_radiation_data(zf.open(f), headers, full_data) for f in filename_list]
+                temp_dat = [read_radiation_data(zf.open(f), headers, full_data, met_stn=False) for f in filename_list]
             zf.close()
+
             radiation_data = pd.concat(temp_dat, axis=0, sort=False, ignore_index=True)
+
+            met_stn = get_meteorological_stations()
+            met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+            radiation_data = radiation_data.join(met_stn, on='SRC_ID')
+
             save_pickle(radiation_data, path_to_pickle)
+
         except Exception as e:
             print("Failed to get \"Radiation obs\". {}".format(e))
             radiation_data = pd.DataFrame(columns=headers)

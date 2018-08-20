@@ -10,6 +10,7 @@ import string
 import subprocess
 
 import Levenshtein
+import fuzzywuzzy.process
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot
@@ -324,7 +325,7 @@ def get_variable_names(*var):
 
 
 # A function for working with colour ramps
-def cmap_discretize(cmap_param, no_of_colours):
+def cmap_discretisation(cmap_param, no_of_colours):
     """
     :param cmap_param: colormap instance, e.g. cm.jet
     :param no_of_colours: number of colours
@@ -350,7 +351,7 @@ def cmap_discretize(cmap_param, no_of_colours):
 
 
 # A function for working with colour color bars
-def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
+def colour_bar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     """
     :param no_of_colours: number of colors
     :param cmap_param: colormap instance, eg. cm.jet
@@ -364,7 +365,7 @@ def colorbar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     Takes a standard colour ramp, and discretizes it, then draws a colour bar with correctly aligned labels
 
     """
-    cmap_param = cmap_discretize(cmap_param, no_of_colours)
+    cmap_param = cmap_discretisation(cmap_param, no_of_colours)
     mappable = matplotlib.cm.ScalarMappable(cmap=cmap_param)
     mappable.set_array(np.array([]))
     mappable.set_clim(-0.5, no_of_colours + 0.5)
@@ -413,3 +414,42 @@ def split_dataframe_by_initials(dataframe, by_column_name):
     keys = ['_'.join([by_column_name, initial]) for initial in list(string.ascii_uppercase)]
 
     return dict(zip(keys, data_slices))
+
+
+# Form a file name in terms of specific 'Route' and 'weather' category
+def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
+    if route is not None:
+        route_lookup = load_json(cdd("Network\\Routes", "route-names.json"))
+        route = find_match(route, route_lookup['Route'])
+    if weather is not None:
+        weather_category_lookup = load_json(cdd("Weather", "weather-categories.json"))
+        weather = find_match(weather, weather_category_lookup['WeatherCategory'])
+    filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
+    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+    return filename
+
+
+# Subset the required data given 'route' and 'weather'
+def subset(data, route=None, weather=None, reset_index=False):
+    if data is None:
+        data_subset = None
+    else:
+        route_lookup = list(set(data.Route))
+        weather_category_lookup = list(set(data.WeatherCategory))
+        # Select data for a specific route and weather category
+        if not route and not weather:
+            data_subset = data.copy()
+        elif route and not weather:
+            data_subset = data[data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]]
+        elif not route and weather:
+            data_subset = data[data.WeatherCategory ==
+                               fuzzywuzzy.process.extractOne(weather, weather_category_lookup, score_cutoff=10)[0]]
+        else:
+            data_subset = data[
+                (data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]) &
+                (data.WeatherCategory ==
+                 fuzzywuzzy.process.extractOne(weather, weather_category_lookup, score_cutoff=10)[0])]
+        # Reset index
+        if reset_index:
+            data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
+    return data_subset

@@ -6,11 +6,12 @@ import re
 
 import pandas as pd
 from fuzzywuzzy.process import extractOne
+from shapely.geometry import Point
 
 import railwaycodes_utils as rc
 from delay_attr_glossary import get_incident_reason_metadata
 from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
-from utils import cdd, cdd_rc, load_json, load_pickle, save_pickle
+from utils import cdd, cdd_rc, load_json, load_pickle, make_filename, save_pickle, subset
 
 
 # Change directory to "Incidents"
@@ -27,34 +28,6 @@ def cdd_metex_db_tables_original(*directories):
     for directory in directories:
         path = os.path.join(path, directory)
     return path
-
-
-# ====================================================================================================================
-""" Utilities """
-
-
-# Subset the required data given 'route' and 'weather'
-def subset(data, route=None, weather=None, reset_index=False):
-    if data is None:
-        data_subset = None
-    else:
-        route_lookup = list(set(data.Route))
-        weather_category_lookup = list(set(data.WeatherCategory))
-        # Select data for a specific route and weather category
-        if not route and not weather:
-            data_subset = data.copy()
-        elif route and not weather:
-            data_subset = data[data.Route == extractOne(route, route_lookup, score_cutoff=10)[0]]
-        elif not route and weather:
-            data_subset = data[data.WeatherCategory == extractOne(weather, weather_category_lookup, score_cutoff=10)[0]]
-        else:
-            data_subset = data[
-                (data.Route == extractOne(route, route_lookup, score_cutoff=10)[0]) &
-                (data.WeatherCategory == extractOne(weather, weather_category_lookup, score_cutoff=10)[0])]
-        # Reset index
-        if reset_index:
-            data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
-    return data_subset
 
 
 # ====================================================================================================================
@@ -694,9 +667,9 @@ def lookup_geographical_coordinates(data, update_metadata=False):
 
 
 # Schedule 8 weather incidents
-def get_schedule8_weather_incidents(update=False):
+def get_schedule8_weather_incidents(route=None, weather=None, update=False):
 
-    pickle_filename = "Schedule8WeatherIncidents.pickle"
+    pickle_filename = make_filename("Schedule8WeatherIncidents", route, weather)
     path_to_pickle = cdd_incidents("Spreadsheets", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -728,6 +701,15 @@ def get_schedule8_weather_incidents(update=False):
             # Look up geographical coordinates for each incident location
             data = lookup_geographical_coordinates(data)
 
+            # Convert coordinates to shapely.geometry.Point
+            data['StartLongLat'] = data.apply(lambda x: Point((x['StartLongitude'], x['StartLatitude'])), axis=1)
+            data['StartNE'] = data.apply(lambda x: Point((x['StartEasting'], x['StartNorthing'])), axis=1)
+            data['EndLongLat'] = data.apply(lambda x: Point((x['EndLongitude'], x['EndLatitude'])), axis=1)
+            data['EndNE'] = data.apply(lambda x: Point((x['EndEasting'], x['EndNorthing'])), axis=1)
+
+            # Retain data for specific Route and weather category
+            data = subset(data, route, weather)
+
             save_pickle(data, path_to_pickle)
 
         except Exception as e:
@@ -748,7 +730,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
     """
     # Path to the file
-    pickle_filename = "Schedule8WeatherIncidents-02062006-31032014.pickle"
+    pickle_filename = make_filename("Schedule8WeatherIncidents-02062006-31032014", route, weather)
     path_to_pickle = cdd_incidents("Spreadsheets", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -803,6 +785,12 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
             # Look up geographical coordinates for each incident location
             data = lookup_geographical_coordinates(data)
+
+            # Convert coordinates to shapely.geometry.Point
+            data['StartLongLat'] = data.apply(lambda x: Point((x['StartLongitude'], x['StartLatitude'])), axis=1)
+            data['StartNE'] = data.apply(lambda x: Point((x['StartEasting'], x['StartNorthing'])), axis=1)
+            data['EndLongLat'] = data.apply(lambda x: Point((x['EndLongitude'], x['EndLatitude'])), axis=1)
+            data['EndNE'] = data.apply(lambda x: Point((x['EndEasting'], x['EndNorthing'])), axis=1)
 
             # Retain data for specific Route and weather category
             data = subset(data, route, weather)
