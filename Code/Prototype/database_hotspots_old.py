@@ -23,7 +23,7 @@ import database_met as dbm
 import database_veg as dbv
 import osm_utils
 from converters import svg_to_emf
-from utils import cdd, colorbar_index, confirmed, load_pickle, save, save_pickle
+from utils import cdd, colour_bar_index, confirmed, load_pickle, save, save_pickle
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
@@ -548,7 +548,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
                           markersize=26, markeredgecolor='w')
 
     # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(label), cmap_param=cmap, shrink=0.4, labels=label, pad=0.068)
+    cb = colour_bar_index(no_of_colours=len(label), cmap_param=cmap, shrink=0.4, labels=label, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -633,7 +633,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -716,7 +716,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -800,7 +800,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
                           markersize=marker_size[b], markeredgecolor='w', markeredgewidth=1)
 
     # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -878,7 +878,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
-    cb = colorbar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)

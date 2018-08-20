@@ -15,8 +15,8 @@ import database_veg as dbv
 import railwaycodes_utils as rc
 from converters import yards_to_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
-from loc_code_dict import create_location_names_replacement_dict, create_location_names_regexp_replacement_dict
-from utils import cd, cdd_rc, find_match, load_pickle, load_json, save, save_pickle
+from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
+from utils import cd, cdd, cdd_rc, find_match, load_json, load_pickle, save, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
@@ -771,23 +771,36 @@ get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as="
 """ Utils for creating views """
 
 
+# Form a file name in terms of specific 'Route' and 'weather' category
+def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
+    if route is not None:
+        route_lookup = load_json(cdd("Network\\Routes", "route-names.json"))
+        route = find_match(route, route_lookup['Route'])
+    if weather is not None:
+        weather_category_lookup = load_json(cdd("Weather", "weather-categories.json"))
+        weather = find_match(weather, weather_category_lookup['WeatherCategory'])
+    filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
+    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+    return filename
+
+
 # Subset the required data given 'route' and 'weather'
 def subset(data, route=None, weather=None, reset_index=False):
     if data is None:
         data_subset = None
     else:
-        route_lookup = get_route()
-        weather_category_lookup = get_weather_category_lookup()
+        route_lookup = list(set(data.Route))
+        weather_category_lookup = list(set(data.WeatherCategory))
         # Select data for a specific route and weather category
         if not route and not weather:
             data_subset = data.copy()
         elif route and not weather:
-            data_subset = data[data.Route == find_match(route, route_lookup.Route)]
+            data_subset = data[data.Route == find_match(route, route_lookup)]
         elif not route and weather:
-            data_subset = data[data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory)]
+            data_subset = data[data.WeatherCategory == find_match(weather, weather_category_lookup)]
         else:
-            data_subset = data[(data.Route == find_match(route, route_lookup.Route)) &
-                               (data.WeatherCategory == find_match(weather, weather_category_lookup.WeatherCategory))]
+            data_subset = data[(data.Route == find_match(route, route_lookup)) &
+                               (data.WeatherCategory == find_match(weather, weather_category_lookup))]
         # Reset index
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
@@ -815,19 +828,6 @@ def agg_pfpi_stats(dat, selected_features, sort_by=None):
         data.sort_values(sort_by, inplace=True)
 
     return data
-
-
-# Form a file name in terms of specific 'Route' and 'weather' category
-def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
-    if route is not None:
-        route_lookup = get_route()
-        route = find_match(route, route_lookup.Route)
-    if weather is not None:
-        weather_category_lookup = get_weather_category_lookup()
-        weather = find_match(weather, weather_category_lookup.WeatherCategory)
-    filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
-    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
-    return filename
 
 
 # ====================================================================================================================

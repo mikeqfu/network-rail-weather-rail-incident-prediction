@@ -31,9 +31,9 @@ plt.rc('font', family='Times New Roman')
 """ Change directory """
 
 
-# Change directory to "Model\\Prototype_Heat\\Trial_" and sub-directories
-def cdd_mod_heat(trial_id=0, *directories):
-    path = cdd("Model", "Prototype_Heat", "Trial_{}".format(trial_id))
+# Change directory to "Model\\Heat-Prototype\\Trial_" and sub-directories
+def cdd_mod_heat_proto(trial_id=0, *directories):
+    path = cdd("Model", "Heat-Prototype", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -348,7 +348,7 @@ def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=6
     plt.ylabel('Temperature deviation (°C)', fontsize=14)
     plt.tight_layout()
 
-    plt.savefig(cdd_mod_heat(0, "Temp deviation" + save_as), dpi=dpi)
+    plt.savefig(cdd_mod_heat_proto(0, "Temp deviation" + save_as), dpi=dpi)
 
 
 # ====================================================================================================================
@@ -598,7 +598,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
 
     plt.tight_layout()
 
-    path_to_file_weather = cdd_mod_heat(0, "Variables" + save_as)
+    path_to_file_weather = cdd_mod_heat_proto(0, "Variables" + save_as)
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -735,7 +735,7 @@ def logistic_regression_model(trial_id=0,
             plt.legend(loc='lower right', fontsize=14)
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
-            save_fig(cdd_mod_heat(trial_id, "ROC" + save_as), dpi=dpi)
+            save_fig(cdd_mod_heat_proto(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -756,7 +756,7 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            save_fig(cdd_mod_heat(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            save_fig(cdd_mod_heat_proto(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)

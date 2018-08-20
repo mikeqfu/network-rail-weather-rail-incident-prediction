@@ -41,9 +41,9 @@ def cdd_mod_dat(*directories):
     return path
 
 
-# Change directory to "Model\\Prototype_Wind\\Trial_" and sub-directories
+# Change directory to "Model\\Wind-Prototype\\Trial_" and sub-directories
 def cdd_mod_wind(trial_id=0, *directories):
-    path = cdd("Model", "Prototype_Wind", "Trial_{}".format(trial_id))
+    path = cdd("Model", "Wind-Prototype", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
