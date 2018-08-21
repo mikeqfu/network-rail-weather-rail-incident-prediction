@@ -93,8 +93,8 @@ def get_observation_grids(obs_zip_filename="daily-rainfall.zip", update=False):
             observation_grids = pd.concat(obs_grids, ignore_index=True)
 
             # Add a pseudo id for each observation grid
-            observation_grids = observation_grids.sort_values('Centroid').set_index('Centroid')
-            observation_grids['Pseudo_Grid_ID'] = range(len(observation_grids))
+            observation_grids.sort_values('Centroid', inplace=True)
+            observation_grids.index = pd.Index(range(len(observation_grids)), name='Pseudo_Grid_ID')
 
             save_pickle(observation_grids, path_to_pickle)
 
