@@ -364,7 +364,7 @@ def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
     return midpoint
 
 
-# Get midpoint between two points (given longitude and latitude)
+# Get midpoint between two points
 def get_midpoint(start_point, end_point, as_geom=True):
     """
     :param start_point: [shapely.geometry.point.Point]

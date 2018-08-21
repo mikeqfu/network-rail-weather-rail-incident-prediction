@@ -176,8 +176,9 @@ def get_daily_gridded_weather_obs(filename, col_name, start_date='2006-01-01', p
             # Add a pseudo id for each observation grid
             if pseudo_grid_id:
                 observation_grids = get_observation_grids(update=update)
+                observation_grids = observation_grids.reset_index().set_index('Centroid')
                 gridded_obs = gridded_obs.reset_index(level='Date').join(observation_grids[['Pseudo_Grid_ID']])
-                gridded_obs.set_index(['Pseudo_Grid_ID', 'Date'], inplace=True)
+                gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
             save_pickle(gridded_obs, path_to_pickle)
 
@@ -198,7 +199,7 @@ def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', pseudo_gri
     path_to_file = cdd_weather("UKCP gridded obs", pickle_filename)
 
     if os.path.isfile(path_to_file) and not update:
-        daily_gridded_obs = load_pickle(path_to_file)
+        gridded_obs = load_pickle(path_to_file)
     else:
         try:
             d_max_temp = get_daily_gridded_weather_obs(
@@ -208,20 +209,22 @@ def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', pseudo_gri
             d_rainfall = get_daily_gridded_weather_obs(
                 "daily-rainfall", 'Rainfall', start_date, pseudo_grid_id=False, update=update)
 
-            daily_gridded_obs = pd.concat([d_max_temp, d_min_temp, d_rainfall], axis=1)
+            gridded_obs = pd.concat([d_max_temp, d_min_temp, d_rainfall], axis=1)
+            gridded_obs['Temperature_Difference'] = gridded_obs.Maximum_Temperature - gridded_obs.Minimum_Temperature
 
             if pseudo_grid_id:
-                obs_grids = get_observation_grids(update=update)
-                daily_gridded_obs = daily_gridded_obs.reset_index(level='Date').join(obs_grids[['Pseudo_Grid_ID']])
-                daily_gridded_obs.set_index(['Pseudo_Grid_ID', 'Date'], inplace=True)
+                observation_grids = get_observation_grids(update=update)
+                observation_grids = observation_grids.reset_index().set_index('Centroid')
+                gridded_obs = gridded_obs.reset_index('Date').join(observation_grids[['Pseudo_Grid_ID']])
+                gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
-            save_pickle(daily_gridded_obs, path_to_file)
+            save_pickle(gridded_obs, path_to_file)
 
         except Exception as e:
             print("Failed to get integrated daily gridded weather observations. {}.".format(e))
-            daily_gridded_obs = pd.DataFrame()
+            gridded_obs = pd.DataFrame()
 
-    return daily_gridded_obs
+    return gridded_obs
 
 
 # ====================================================================================================================
