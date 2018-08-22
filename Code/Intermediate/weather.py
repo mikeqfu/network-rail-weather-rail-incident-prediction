@@ -248,9 +248,11 @@ def get_meteorological_stations(update=False):
             met_stations = met_stations.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
             # Convert coordinates to shapely.geometry.Point
-            met_stations['LONG_LAT'] = met_stations.apply(
+            met_stations['LONG_LAT'] = met_stations.apply(lambda x: (x['LONGITUDE'], x['LATITUDE']), axis=1)
+            met_stations['LONG_LAT_GEOM'] = met_stations.apply(
                 lambda x: shapely.geometry.Point((x['LONGITUDE'], x['LATITUDE'])), axis=1)
-            met_stations['E_N'] = met_stations.apply(
+            met_stations['E_N'] = met_stations.apply(lambda x: (x['EASTING'], x['NORTHING']), axis=1)
+            met_stations['E_N_GEOM'] = met_stations.apply(
                 lambda x: shapely.geometry.Point((x['EASTING'], x['NORTHING'])), axis=1)
 
             met_stations.sort_values(['SRC_ID', 'NAME'], inplace=True)
