@@ -255,7 +255,9 @@ def get_meteorological_stations(update=False):
             met_stations['E_N_GEOM'] = met_stations.apply(
                 lambda x: shapely.geometry.Point((x['EASTING'], x['NORTHING'])), axis=1)
 
-            met_stations.sort_values(['SRC_ID', 'NAME'], inplace=True)
+            met_stations.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+
+            met_stations.sort_values(['SRC_ID', 'MET_STATION'], inplace=True)
             met_stations.set_index('SRC_ID', inplace=True)
 
             save_pickle(met_stations, path_to_pickle)
@@ -268,7 +270,7 @@ def get_meteorological_stations(update=False):
 
 
 # Read each txt file of MIDAS RADTOB
-def read_radiation_data(filename, headers, full_data=False, met_stn=True):
+def read_radiation_data(filename, headers, full_data=False, met_stn=False):
     """
     :param filename:
     :param headers:
@@ -321,9 +323,10 @@ def get_ro_headers():
 
 
 # MIDAS RADTOB
-def get_midas_radtob(full_data=False, update=False):
+def get_midas_radtob(full_data=False, met_stn=False, update=False):
     """
     :param full_data:
+    :param met_stn:
     :param update:
     :return:
 
@@ -331,8 +334,8 @@ def get_midas_radtob(full_data=False, update=False):
     RADTOB 	-   RADT-OB table. Radiation values currently being reported
 
     """
-
-    pickle_filename = "midas-radtob-20060101-20141231{}.pickle".format("-full" if full_data else "")
+    filename = "midas-radtob-20060101-20141231"
+    pickle_filename = filename + "{}{}.pickle".format("-full" if full_data else "", "-met_stn" if met_stn else "")
     path_to_pickle = cdd_weather("Radiation obs", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -340,18 +343,19 @@ def get_midas_radtob(full_data=False, update=False):
     else:
         headers = get_ro_headers()
         try:
-            path_to_zip = path_to_pickle.replace("-full.pickle" if full_data else ".pickle", ".zip")
-
+            path_to_zip = cdd_weather("Radiation obs", "midas-radtob-20060101-20141231.zip")
             with zipfile.ZipFile(path_to_zip, 'r') as zf:
                 filename_list = natsort.natsorted(zf.namelist())
                 temp_dat = [read_radiation_data(zf.open(f), headers, full_data, met_stn=False) for f in filename_list]
             zf.close()
 
-            radiation_data = pd.concat(temp_dat, axis=0, sort=False, ignore_index=True)
+            radiation_data = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
 
-            met_stn = get_meteorological_stations()
-            met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
-            radiation_data = radiation_data.join(met_stn, on='SRC_ID')
+            if met_stn:
+                met_stn = get_meteorological_stations()
+                radiation_data = radiation_data.join(met_stn, on='SRC_ID')
+
+            radiation_data.set_index(['SRC_ID', 'OB_END_DATE'], inplace=True)
 
             save_pickle(radiation_data, path_to_pickle)
 
