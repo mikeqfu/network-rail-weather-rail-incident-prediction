@@ -430,25 +430,25 @@ def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle")
 
 
 # Subset the required data given 'route' and 'weather'
-def subset(data, route=None, weather=None, reset_index=False):
+def subset(data, route=None, weather_category=None, reset_index=False):
     if data is None:
         data_subset = None
     else:
         route_lookup = list(set(data.Route))
         weather_category_lookup = list(set(data.WeatherCategory))
         # Select data for a specific route and weather category
-        if not route and not weather:
+        if not route and not weather_category:
             data_subset = data.copy()
-        elif route and not weather:
+        elif route and not weather_category:
             data_subset = data[data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]]
-        elif not route and weather:
+        elif not route and weather_category:
             data_subset = data[data.WeatherCategory ==
-                               fuzzywuzzy.process.extractOne(weather, weather_category_lookup, score_cutoff=10)[0]]
+                               fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0]]
         else:
             data_subset = data[
                 (data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]) &
                 (data.WeatherCategory ==
-                 fuzzywuzzy.process.extractOne(weather, weather_category_lookup, score_cutoff=10)[0])]
+                 fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0])]
         # Reset index
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
