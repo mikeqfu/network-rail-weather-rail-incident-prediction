@@ -294,20 +294,20 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
             #     iwdata[col] = dat
 
             def categorise_temperatures(data):
-                data['temperatue_category'] = None
-                data.temperatue_category[data.Temperature_max < 24] = 'Temperature_max < 24°C'
-                data.temperatue_category[data.Temperature_max == 24] = 'Temperature_max = 24°C'
-                data.temperatue_category[data.Temperature_max == 25] = 'Temperature_max = 25°C'
-                data.temperatue_category[data.Temperature_max == 26] = 'Temperature_max = 26°C'
-                data.temperatue_category[data.Temperature_max == 27] = 'Temperature_max = 27°C'
-                data.temperatue_category[data.Temperature_max == 28] = 'Temperature_max = 28°C'
-                data.temperatue_category[data.Temperature_max == 29] = 'Temperature_max = 29°C'
-                data.temperatue_category[data.Temperature_max >= 30] = 'Temperature_max ≥ 30°C'
-                # data.temperatue_category[data.Temperature_max > 30] = 'Temperature_max > 30°C'
+                data['temperature_category'] = None
+                data.temperature_category[data.Temperature_max < 24] = 'Temperature_max < 24°C'
+                data.temperature_category[data.Temperature_max == 24] = 'Temperature_max = 24°C'
+                data.temperature_category[data.Temperature_max == 25] = 'Temperature_max = 25°C'
+                data.temperature_category[data.Temperature_max == 26] = 'Temperature_max = 26°C'
+                data.temperature_category[data.Temperature_max == 27] = 'Temperature_max = 27°C'
+                data.temperature_category[data.Temperature_max == 28] = 'Temperature_max = 28°C'
+                data.temperature_category[data.Temperature_max == 29] = 'Temperature_max = 29°C'
+                data.temperature_category[data.Temperature_max >= 30] = 'Temperature_max ≥ 30°C'
+                # data.temperature_category[data.Temperature_max > 30] = 'Temperature_max > 30°C'
                 return data
 
             iwdata = categorise_temperatures(iwdata)
-            iwdata = iwdata.join(pd.get_dummies(iwdata.temperatue_category, prefix=''))
+            iwdata = iwdata.join(pd.get_dummies(iwdata.temperature_category, prefix=''))
 
             save_pickle(iwdata, path_to_file)
 
@@ -336,9 +336,9 @@ def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=6
     if add_errbar:
         container = plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std, capsize=4,
                             width=0.7, color='#9FAFBE')
-        connector, caplines, (vertical_lines,) = container.errorbar.lines
+        connector, cap_lines, (vertical_lines,) = container.errorbar.lines
         vertical_lines.set_color('#666666')
-        for cap in caplines:
+        for cap in cap_lines:
             cap.set_color('#da8067')
     else:
         plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7, color='#9FAFBE')
@@ -365,28 +365,28 @@ def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat'
     path_to_file = cdd_mod_dat(filename)
 
     if os.path.isfile(path_to_file) and not update:
-        mdata = load_pickle(path_to_file)
+        m_data = load_pickle(path_to_file)
     else:
         try:
             # Get Schedule 8 incident and weather data for locations
-            iwdata = get_incident_location_weather(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
-                                                   subset_weather_for_nip=False, update=update)
+            iw_data = get_incident_location_weather(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
+                                                    subset_weather_for_nip=False, update=update)
             # Get vegetation conditions for the locations
-            ivdata = get_incident_location_vegetation(route, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+            iv_data = get_incident_location_vegetation(route, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
-            iv_features = [f for f in ivdata.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
-            ivdata = ivdata[iv_features]
+            iv_features = [f for f in iv_data.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
+            iv_data = iv_data[iv_features]
 
             # Merge the above two data sets
-            mdata = pd.merge(iwdata, ivdata, how='inner', on=list(set(iwdata.columns) & set(iv_features)))
+            m_data = pd.merge(iw_data, iv_data, how='inner', on=list(set(iw_data.columns) & set(iv_features)))
 
-            save_pickle(mdata, path_to_file)
+            save_pickle(m_data, path_to_file)
 
         except Exception as e:
             print("Getting '{}' ... failed due to {}.".format(filename, e))
-            mdata = None
+            m_data = None
 
-    return mdata
+    return m_data
 
 
 # ====================================================================================================================
@@ -553,7 +553,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
     ax1.yaxis.set_label_coords(0.05, 1.01)
 
     ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
-    train_set.temperatue_category.value_counts().plot.bar(color='#537979', rot=-45, fontsize=12)
+    train_set.temperature_category.value_counts().plot.bar(color='#537979', rot=-45, fontsize=12)
     plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'], fontsize=12)
     plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
     plt.ylabel('No.', fontsize=12, rotation=0)
@@ -613,7 +613,7 @@ def logistic_regression_model(trial_id=0,
                               describe_var=False,
                               outlier_pctl=100,
                               add_const=True, seed=0, model='logit',
-                              plot_roc=False, plot_pred_likelihood=False,
+                              plot_roc=False, plot_predicted_likelihood=False,
                               save_as=".svg", dpi=None,
                               verbose=True):
     """
@@ -633,7 +633,7 @@ def logistic_regression_model(trial_id=0,
     :param seed:
     :param model:
     :param plot_roc:
-    :param plot_pred_likelihood:
+    :param plot_predicted_likelihood:
     :param save_as:
     :param dpi:
     # :param dig_deeper:
@@ -654,33 +654,33 @@ def logistic_regression_model(trial_id=0,
     XX              MISC OBS              Msc items on line (incl trees) due to effects of weather responsibility of RT
 
     """
-    # Get the mdata for modelling
-    mdata = get_incident_data_with_weather_and_vegetation(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
-                                                          shift_yards_same_elr, shift_yards_diff_elr,
-                                                          hazard_pctl)
+    # Get the m_data for modelling
+    m_data = get_incident_data_with_weather_and_vegetation(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
+                                                           shift_yards_same_elr, shift_yards_diff_elr,
+                                                           hazard_pctl)
 
     # Select season data: 'spring', 'summer', 'autumn', 'winter'
-    mdata = get_data_by_season(mdata, season)
+    m_data = get_data_by_season(m_data, season)
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
-        mdata = mdata[mdata.DelayMinutes <= np.percentile(mdata.DelayMinutes, outlier_pctl)]
+        m_data = m_data[m_data.DelayMinutes <= np.percentile(m_data.DelayMinutes, outlier_pctl)]
 
     # Select features
     explanatory_variables = specify_explanatory_variables_model_2()
 
     # Add the intercept
     if add_const:
-        mdata = sm_tools.add_constant(mdata)  # data['const'] = 1.0
+        m_data = sm_tools.add_constant(m_data)  # data['const'] = 1.0
         explanatory_variables = ['const'] + explanatory_variables
 
     #
-    nip_idx = mdata.IncidentReported == 0
-    mdata.loc[nip_idx, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
+    nip_idx = m_data.IncidentReported == 0
+    m_data.loc[nip_idx, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
 
     # Select data before 2014 as training data set, with the rest being test set
-    train_set = mdata[mdata.FinancialYear != 2014]
-    test_set = mdata[mdata.FinancialYear == 2014]
+    train_set = m_data[m_data.FinancialYear != 2014]
+    test_set = m_data[m_data.FinancialYear == 2014]
 
     if describe_var:
         describe_explanatory_variables(train_set, save_as=save_as, dpi=dpi)
@@ -716,10 +716,10 @@ def logistic_regression_model(trial_id=0,
         print("\nAccuracy: %f" % mod_acc) if verbose else print("")
 
         # incident prediction accuracy
-        incid_only = test_set[test_set.IncidentReported == 1]
-        test_acc = pd.Series(incid_only.IncidentReported == incid_only.incident_prediction)
-        incid_acc = np.divide(test_acc.sum(), len(test_acc))
-        print("Incident accuracy: %f" % incid_acc) if verbose else print("")
+        incident_only = test_set[test_set.IncidentReported == 1]
+        test_acc = pd.Series(incident_only.IncidentReported == incident_only.incident_prediction)
+        incident_acc = np.divide(test_acc.sum(), len(test_acc))
+        print("Incident accuracy: %f" % incident_acc) if verbose else print("")
 
         if plot_roc:
             plt.figure()
@@ -738,11 +738,11 @@ def logistic_regression_model(trial_id=0,
             save_fig(cdd_mod_heat_proto(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
-        if plot_pred_likelihood:
-            incid_ind = test_set.IncidentReported == 1
+        if plot_predicted_likelihood:
+            incident_ind = test_set.IncidentReported == 1
             plt.figure()
             ax = plt.subplot2grid((1, 1), (0, 0))
-            ax.scatter(test_set[incid_ind].incident_prob, test_set[incid_ind].DelayMinutes,
+            ax.scatter(test_set[incident_ind].incident_prob, test_set[incident_ind].DelayMinutes,
                        c='#D87272', edgecolors='k', marker='o', linewidths=1.5, s=80,  # alpha=.5,
                        label="Heat-related incident (2014/15)")
             plt.axvline(x=threshold, label="Threshold: %.2f" % threshold, color='#e5c100', linewidth=2)
@@ -761,6 +761,6 @@ def logistic_regression_model(trial_id=0,
     except Exception as e:
         print(e)
         result = e
-        mod_acc, incid_acc, threshold = np.nan, np.nan, np.nan
+        mod_acc, incident_acc, threshold = np.nan, np.nan, np.nan
 
-    return mdata, train_set, test_set, result, mod_acc, incid_acc, threshold
+    return m_data, train_set, test_set, result, mod_acc, incident_acc, threshold
