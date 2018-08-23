@@ -453,3 +453,13 @@ def subset(data, route=None, weather_category=None, reset_index=False):
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
     return data_subset
+
+
+# Get Angle of Line between Two Points
+def get_angle_of_line_between(p1, p2, in_degrees=False):
+    x_diff = p2.x - p1.x
+    y_diff = p2.y - p1.y
+    angle = np.arctan2(y_diff, x_diff)  # in radians
+    if in_degrees:
+        angle = np.degrees(angle)
+    return angle
