@@ -752,6 +752,7 @@ def get_schedule8_weather_incidents(route=None, weather=None, update=False):
 
             # Add information about incident reason
             incident_reason_metadata = get_incident_reason_metadata()
+            incident_reason_metadata.columns = [c.replace('_', '') for c in incident_reason_metadata.columns]
             data = data.join(incident_reason_metadata, on='IncidentReason', rsuffix='_meta')
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
@@ -831,6 +832,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             # data.WeatherCategory = data.WeatherCategory.replace('Heat Speed/Buckle', 'Heat')
 
             incident_reason_metadata = get_incident_reason_metadata()
+            incident_reason_metadata.columns = [c.replace('_', '') for c in incident_reason_metadata.columns]
             data = data.join(incident_reason_metadata, on='IncidentReason', rsuffix='_meta')
             data.drop([x for x in data.columns if '_meta' in x], axis=1, inplace=True)
 
