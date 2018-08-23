@@ -108,7 +108,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
     path_to_file = cdd_mod_dat(filename)
 
     if os.path.isfile(path_to_file) and not update:
-        iwdata = load_pickle(path_to_file)
+        iw_data = load_pickle(path_to_file)
     else:
         try:
             # ----------------------------------------------------------------------------------------------------
@@ -224,7 +224,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
             nip_data['IncidentReported'] = 0
 
             # Merge "ip_data" and "nip_data" into one DataFrame
-            iwdata = pd.concat([nip_data, ip_data], axis=0, ignore_index=True)
+            iw_data = pd.concat([nip_data, ip_data], axis=0, ignore_index=True)
 
             # --------------------------------
             """ Categorise wind directions """
@@ -240,9 +240,9 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
                     return 4
 
             # Categorise average wind directions into 4 quadrants
-            iwdata['wind_direction'] = iwdata.WindDirection_avg.apply(categorise_wind_directions)
-            wind_direction = pd.get_dummies(iwdata.wind_direction, prefix='wind_direction')
-            iwdata = iwdata.join(wind_direction)
+            iw_data['wind_direction'] = iw_data.WindDirection_avg.apply(categorise_wind_directions)
+            wind_direction = pd.get_dummies(iw_data.wind_direction, prefix='wind_direction')
+            iw_data = iw_data.join(wind_direction)
 
             # ---------------------------------------------------------------------------------
             """ Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE) """
@@ -282,7 +282,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
 
                 return pd.get_dummies(data.track_orient, prefix='track_orientation')
 
-            iwdata = iwdata.join(categorise_track_orientations(iwdata))
+            iw_data = iw_data.join(categorise_track_orientations(iw_data))
 
             # ----------------------------------------------------
             """ Categorise temperature: 25, 26, 27, 28, 29, 30 """
@@ -306,16 +306,16 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
                 # data.temperature_category[data.Temperature_max > 30] = 'Temperature_max > 30°C'
                 return data
 
-            iwdata = categorise_temperatures(iwdata)
-            iwdata = iwdata.join(pd.get_dummies(iwdata.temperature_category, prefix=''))
+            iw_data = categorise_temperatures(iw_data)
+            iw_data = iw_data.join(pd.get_dummies(iw_data.temperature_category, prefix=''))
 
-            save_pickle(iwdata, path_to_file)
+            save_pickle(iw_data, path_to_file)
 
         except Exception as e:
             print("Getting '{}' ... failed due to {}.".format(filename, e))
-            iwdata = None
+            iw_data = None
 
-    return iwdata
+    return iw_data
 
 
 def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=600):
