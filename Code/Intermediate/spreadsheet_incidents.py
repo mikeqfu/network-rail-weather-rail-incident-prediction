@@ -740,7 +740,9 @@ def get_schedule8_weather_incidents(route=None, weather=None, update=False):
             data = pd.read_excel(path_to_pickle.replace(".pickle", ".xlsx"),
                                  parse_dates=['StartDate', 'EndDate'], day_first=True,
                                  converters={'stanoxSection': str})
-            data.rename(columns={'stanoxSection': 'StanoxSection',
+            data.rename(columns={'StartDate': 'StartDateTime',
+                                 'EndDate': 'EndDateTime',
+                                 'stanoxSection': 'StanoxSection',
                                  'imdm': 'IMDM',
                                  'WeatherCategory': 'WeatherCategoryCode',
                                  'WeatherCategory.1': 'WeatherCategory',
@@ -816,7 +818,9 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             # 'Data' ------------------------------------------------------------------------------------
             data = workbook.parse(sheet_name='Data', parse_dates=['StartDate', 'EndDate'], dayfirst=True,
                                   converters={'stanoxSection': str})
-            data.rename(columns={'Year': 'FinancialYear',
+            data.rename(columns={'StartDate': 'StartDateTime',
+                                 'EndDate': 'EndDateTime',
+                                 'Year': 'FinancialYear',
                                  'stanoxSection': 'StanoxSection',
                                  'imdm': 'IMDM',
                                  'Reason': 'IncidentReason',
