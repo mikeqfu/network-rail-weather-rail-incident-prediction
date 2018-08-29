@@ -270,11 +270,11 @@ def get_meteorological_stations(update=False):
 
 
 # Read each txt file of MIDAS RADTOB
-def read_radiation_data(filename, headers, full_data=False, met_stn=False):
+def read_radiation_data(filename, headers, agg_only=False, met_stn=False):
     """
     :param filename:
     :param headers:
-    :param full_data:
+    :param agg_only:
     :param met_stn:
     :return:
 
@@ -286,31 +286,32 @@ def read_radiation_data(filename, headers, full_data=False, met_stn=False):
 
     """
     raw_txt = pd.read_csv(filename, header=None, names=headers, parse_dates=[2, 12], dtype={8: str, 10: str, 13: str})
-    if full_data:
-        ro_data = raw_txt
-    else:
-        use_dat = raw_txt[raw_txt.OB_HOUR_COUNT == 24]
-        use_dat.index = range(len(use_dat))
-        ro_data = use_dat[['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']]
-
-        # Keep VERSION_NUM == 2 only if available
-        checked = ro_data.groupby(['SRC_ID', 'OB_END_TIME']).agg({'VERSION_NUM': 'count'})
-        checked_idx = checked[checked.VERSION_NUM == 2]
-        idx = [ro_data[(ro_data.SRC_ID == i) & (ro_data.OB_END_TIME == d)].sort_values('VERSION_NUM').index[0]
-               for i, d in checked_idx.index]
-        ro_data.drop(idx, axis='index', inplace=True)
-
-        ro_data.rename(columns={'OB_END_TIME': 'OB_END_DATE_TIME'}, inplace=True)
-        ob_end_date = ro_data.OB_END_DATE_TIME.map(lambda x: x.date())
-        ro_data.insert(ro_data.columns.get_loc('OB_END_DATE_TIME'), column='OB_END_DATE', value=ob_end_date)
-
-        ro_data.sort_values(['SRC_ID', 'OB_END_DATE_TIME'], inplace=True)
+    use_cols = ['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']
+    ro_data = raw_txt[use_cols]
+    if agg_only:
+        ro_data = ro_data[ro_data.OB_HOUR_COUNT == 24]
         ro_data.index = range(len(ro_data))
 
-        if met_stn:
-            met_stn = get_meteorological_stations()
-            met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
-            ro_data = ro_data.join(met_stn, on='SRC_ID')
+    # Keep VERSION_NUM == 2 only if available
+    checked_tmp = ro_data.groupby(['SRC_ID', 'OB_END_TIME']).agg({'VERSION_NUM': 'count'})
+    checked_dat = checked_tmp[checked_tmp.VERSION_NUM == 2].reset_index()
+    checked_idx = ro_data.SRC_ID.isin(checked_dat.SRC_ID) & ro_data.OB_END_TIME.isin(checked_dat.OB_END_TIME)
+    to_drop_tmp = ro_data[checked_idx]
+    to_drop_idx = to_drop_tmp[to_drop_tmp.VERSION_NUM == 0].index
+    ro_data.drop(to_drop_idx, axis='index', inplace=True)
+
+    # Rename and update 'OB_END_TIME'
+    ro_data.rename(columns={'OB_END_TIME': 'OB_END_DATE_TIME'}, inplace=True)
+    ob_end_date = ro_data.OB_END_DATE_TIME.map(lambda x: x.date())
+    ro_data.insert(ro_data.columns.get_loc('OB_END_DATE_TIME'), column='OB_END_DATE', value=ob_end_date)
+
+    ro_data.sort_values(['SRC_ID', 'OB_END_DATE_TIME', 'OB_HOUR_COUNT'], inplace=True)
+    ro_data.index = range(len(ro_data))
+
+    if met_stn:
+        met_stn = get_meteorological_stations()
+        met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+        ro_data = ro_data.join(met_stn, on='SRC_ID')
 
     return ro_data
 
@@ -323,9 +324,9 @@ def get_ro_headers():
 
 
 # MIDAS RADTOB
-def get_midas_radtob(full_data=False, met_stn=False, update=False):
+def get_midas_radtob(agg_only=False, met_stn=False, update=False):
     """
-    :param full_data:
+    :param agg_only:
     :param met_stn:
     :param update:
     :return:
@@ -335,7 +336,7 @@ def get_midas_radtob(full_data=False, met_stn=False, update=False):
 
     """
     filename = "midas-radtob-20060101-20141231"
-    pickle_filename = filename + "{}{}.pickle".format("-full" if full_data else "", "-met_stn" if met_stn else "")
+    pickle_filename = filename + "{}{}.pickle".format("-agg" if agg_only else "", "-met_stn" if met_stn else "")
     path_to_pickle = cdd_weather("Radiation obs", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -346,7 +347,7 @@ def get_midas_radtob(full_data=False, met_stn=False, update=False):
             path_to_zip = cdd_weather("Radiation obs", "midas-radtob-20060101-20141231.zip")
             with zipfile.ZipFile(path_to_zip, 'r') as zf:
                 filename_list = natsort.natsorted(zf.namelist())
-                temp_dat = [read_radiation_data(zf.open(f), headers, full_data, met_stn=False) for f in filename_list]
+                temp_dat = [read_radiation_data(zf.open(f), headers, agg_only, met_stn=False) for f in filename_list]
             zf.close()
 
             radiation_data = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
