@@ -210,7 +210,7 @@ def get_integrated_daily_gridded_weather_obs(start_date='2006-01-01', pseudo_gri
                 "daily-rainfall", 'Rainfall', start_date, pseudo_grid_id=False, update=update)
 
             gridded_obs = pd.concat([d_max_temp, d_min_temp, d_rainfall], axis=1)
-            gridded_obs['Temperature_Difference'] = gridded_obs.Maximum_Temperature - gridded_obs.Minimum_Temperature
+            gridded_obs['Temperature_Change'] = abs(gridded_obs.Maximum_Temperature - gridded_obs.Minimum_Temperature)
 
             if pseudo_grid_id:
                 observation_grids = get_observation_grids(update=update)
