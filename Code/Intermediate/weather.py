@@ -285,9 +285,11 @@ def read_radiation_data(filename, headers, agg_only=False, met_stn=False):
     GLBL_IRAD_AMT:  Global solar irradiation amount Kjoules/sq metre over the observation period
 
     """
-    raw_txt = pd.read_csv(filename, header=None, names=headers, parse_dates=[2, 12], dtype={8: str, 10: str, 13: str})
-    use_cols = ['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']
-    ro_data = raw_txt[use_cols]
+    raw_txt = pd.read_csv(filename, header=None, names=headers, parse_dates=[2, 12], infer_datetime_format=True,
+                          skipinitialspace=True)
+
+    ro_data = raw_txt[['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']]
+
     if agg_only:
         ro_data = ro_data[ro_data.OB_HOUR_COUNT == 24]
         ro_data.index = range(len(ro_data))
