@@ -15,6 +15,7 @@ import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot
 import numpy as np
+import scipy.stats
 import pandas as pd
 
 
@@ -308,6 +309,14 @@ def percentile(n):
 
     np_percentile.__name__ = 'percentile_%s' % n
     return np_percentile
+
+
+# Calculate interquartile range
+def interquartile_range(x):
+    """
+    Alternative way: using scipy.stats.iqr(x)
+    """
+    return np.subtract(*np.percentile(x, [75, 25]))
 
 
 # Get the given variable's name
