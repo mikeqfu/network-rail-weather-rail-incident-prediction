@@ -371,8 +371,8 @@ def get_midas_radtob(agg_only=False, met_stn=False, update=False):
 
             radtob = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
 
-            # Note: The line below might be problematic
-            radtob.loc[radtob.GLBL_IRAD_AMT < 0, 'GLBL_IRAD_AMT'] = 0  # or "= pd.np.nan"
+            # Note: The following line is questionable
+            radtob.loc[(radtob.GLBL_IRAD_AMT < 0) | radtob.GLBL_IRAD_AMT.isna(), 'GLBL_IRAD_AMT'] = 0  # or pd.np.nan
 
             if met_stn:
                 met_stn = get_meteorological_stations()
