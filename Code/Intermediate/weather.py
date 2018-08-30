@@ -269,6 +269,13 @@ def get_meteorological_stations(update=False):
     return met_stations
 
 
+# Headers of the midas_radtob data set
+def get_ro_headers():
+    headers_raw = pd.read_excel(cdd_weather("Radiation obs", "RO-column-headers.xlsx"), header=None)
+    headers = [x.strip() for x in headers_raw.iloc[0, :].values]
+    return headers
+
+
 # Read each txt file of MIDAS RADTOB
 def read_radiation_data(filename, headers, agg_only=False, met_stn=False):
     """
@@ -289,26 +296,43 @@ def read_radiation_data(filename, headers, agg_only=False, met_stn=False):
                           skipinitialspace=True)
 
     ro_data = raw_txt[['SRC_ID', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM', 'GLBL_IRAD_AMT']]
+    ro_data.drop_duplicates(inplace=True)
 
     if agg_only:
         ro_data = ro_data[ro_data.OB_HOUR_COUNT == 24]
         ro_data.index = range(len(ro_data))
 
-    # Keep VERSION_NUM == 2 only if available
-    checked_tmp = ro_data.groupby(['SRC_ID', 'OB_END_TIME']).agg({'VERSION_NUM': 'count'})
-    checked_dat = checked_tmp[checked_tmp.VERSION_NUM == 2].reset_index()
-    checked_idx = ro_data.SRC_ID.isin(checked_dat.SRC_ID) & ro_data.OB_END_TIME.isin(checked_dat.OB_END_TIME)
-    to_drop_tmp = ro_data[checked_idx]
+    # Rename 'OB_END_TIME'
+    ro_data.rename(columns={'OB_END_TIME': 'OB_END_DATE_TIME'}, inplace=True)
+
+    # Cleanse the data
+    key_cols = ['SRC_ID', 'OB_END_DATE_TIME', 'OB_HOUR_COUNT']
+
+    # Remove records where VERSION_NUM == 0 if higher versions (i.e. VERSION_NUM == 1) are available
+    checked_tmp = ro_data.groupby(key_cols).agg({'VERSION_NUM': 'count'})
+    checked_dat = checked_tmp[checked_tmp.VERSION_NUM >= 2]
+    temp = ro_data.join(checked_dat, on=key_cols, rsuffix='_checked')
+    to_drop_tmp = temp[temp.VERSION_NUM_checked.notnull()]
+
     to_drop_idx = to_drop_tmp[to_drop_tmp.VERSION_NUM == 0].index
     ro_data.drop(to_drop_idx, axis='index', inplace=True)
 
-    # Rename and update 'OB_END_TIME'
-    ro_data.rename(columns={'OB_END_TIME': 'OB_END_DATE_TIME'}, inplace=True)
+    # Remove records with duplicated "VERSION_NUM == 1"
+    checked_tmp = ro_data.groupby(key_cols).agg({'VERSION_NUM': 'count'})
+    checked_dat = checked_tmp[checked_tmp.VERSION_NUM >= 2]
+    temp = ro_data.join(checked_dat, on=key_cols, rsuffix='_checked')
+    to_drop_tmp = temp[temp.VERSION_NUM_checked.notnull()]
+
+    to_drop_idx = to_drop_tmp.drop_duplicates(key_cols, keep='first').index
+    ro_data.drop(to_drop_idx, axis='index', inplace=True)
+
+    # Sort rows
+    ro_data.sort_values(key_cols, inplace=True)
+    ro_data.index = range(len(ro_data))
+
+    # Insert dates of 'OB_END_DATE_TIME'
     ob_end_date = ro_data.OB_END_DATE_TIME.map(lambda x: x.date())
     ro_data.insert(ro_data.columns.get_loc('OB_END_DATE_TIME'), column='OB_END_DATE', value=ob_end_date)
-
-    ro_data.sort_values(['SRC_ID', 'OB_END_DATE_TIME', 'OB_HOUR_COUNT'], inplace=True)
-    ro_data.index = range(len(ro_data))
 
     if met_stn:
         met_stn = get_meteorological_stations()
@@ -316,13 +340,6 @@ def read_radiation_data(filename, headers, agg_only=False, met_stn=False):
         ro_data = ro_data.join(met_stn, on='SRC_ID')
 
     return ro_data
-
-
-# Headers of the midas_radtob data set
-def get_ro_headers():
-    headers_raw = pd.read_excel(cdd_weather("Radiation obs", "RO-column-headers.xlsx"), header=None)
-    headers = [x.strip() for x in headers_raw.iloc[0, :].values]
-    return headers
 
 
 # MIDAS RADTOB
@@ -342,7 +359,7 @@ def get_midas_radtob(agg_only=False, met_stn=False, update=False):
     path_to_pickle = cdd_weather("Radiation obs", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        radiation_data = load_pickle(path_to_pickle)
+        radtob = load_pickle(path_to_pickle)
     else:
         headers = get_ro_headers()
         try:
@@ -352,18 +369,18 @@ def get_midas_radtob(agg_only=False, met_stn=False, update=False):
                 temp_dat = [read_radiation_data(zf.open(f), headers, agg_only, met_stn=False) for f in filename_list]
             zf.close()
 
-            radiation_data = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
+            radtob = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
 
             if met_stn:
                 met_stn = get_meteorological_stations()
-                radiation_data = radiation_data.join(met_stn, on='SRC_ID')
+                radtob = radtob.join(met_stn, on='SRC_ID')
 
-            radiation_data.set_index(['SRC_ID', 'OB_END_DATE'], inplace=True)
+            radtob.set_index(['SRC_ID', 'OB_END_DATE'], inplace=True)
 
-            save_pickle(radiation_data, path_to_pickle)
+            save_pickle(radtob, path_to_pickle)
 
         except Exception as e:
             print("Failed to get \"Radiation obs\". {}".format(e))
-            radiation_data = pd.DataFrame(columns=headers)
+            radtob = pd.DataFrame(columns=headers)
 
-    return radiation_data
+    return radtob
