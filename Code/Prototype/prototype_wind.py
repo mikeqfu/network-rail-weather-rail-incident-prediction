@@ -916,7 +916,7 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
     path_to_file = cdd_mod_dat(filename)
 
     if os.path.isfile(path_to_file) and not update:
-        mdata = load_pickle(path_to_file)
+        m_data = load_pickle(path_to_file)
     else:
         try:
             # Get Schedule 8 incident and weather data for locations
@@ -927,10 +927,10 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
 
             iv_features = [f for f in ivdata.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
             ivdata = ivdata[iv_features]
-            mdata = pd.merge(iwdata, ivdata, how='inner', on=list(set(iwdata.columns) & set(iv_features)))
+            m_data = pd.merge(iwdata, ivdata, how='inner', on=list(set(iwdata.columns) & set(iv_features)))
 
             # Electrified
-            mdata.Electrified = mdata.Electrified.apply(int)
+            m_data.Electrified = m_data.Electrified.apply(int)
 
             # Define a function the categorises wind directions into four quadrants
             def categorise_wind_directions(direction_degree):
@@ -944,17 +944,17 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
                     return 4
 
             # Categorise average wind directions into 4 quadrants
-            mdata['wind_direction'] = mdata.WindDirection_avg.apply(categorise_wind_directions)
-            wind_direction = pd.get_dummies(mdata.wind_direction, prefix='wind_direction')
+            m_data['wind_direction'] = m_data.WindDirection_avg.apply(categorise_wind_directions)
+            wind_direction = pd.get_dummies(m_data.wind_direction, prefix='wind_direction')
 
-            mdata = mdata.join(wind_direction)
-            save_pickle(mdata, path_to_file)
+            m_data = m_data.join(wind_direction)
+            save_pickle(m_data, path_to_file)
 
         except Exception as e:
             print("Getting '{}' ... failed due to {}.".format(filename, e))
-            mdata = None
+            m_data = None
 
-    return mdata
+    return m_data
 
 
 # ====================================================================================================================
@@ -962,18 +962,18 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
 
 
 # Get data for specified season(s)
-def get_data_by_season(mdata, season):
+def get_data_by_season(m_data, season):
     """
-    :param mdata:
+    :param m_data:
     :param season: [str] 'spring', 'summer', 'autumn', 'winter'; if None, returns data of all seasons
     :return:
     """
     if season is None:
-        return mdata
+        return m_data
     else:
         spring_data, summer_data, autumn_data, winter_data = [pd.DataFrame()] * 4
-        for y in pd.unique(mdata.FinancialYear):
-            data = mdata[mdata.FinancialYear == y]
+        for y in pd.unique(m_data.FinancialYear):
+            data = m_data[m_data.FinancialYear == y]
             # Get data for spring -----------------------------------
             spring_start1 = datetime.datetime(year=y, month=4, day=1)
             spring_end1 = spring_start1 + pd.DateOffset(months=2)
