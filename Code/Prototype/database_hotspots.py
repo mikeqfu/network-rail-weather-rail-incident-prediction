@@ -251,7 +251,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     #                  color=osm_landuse_forest_colour)
 
     # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=16)
     plt.legend(scatterpoints=10, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
 
     print("Done.")
