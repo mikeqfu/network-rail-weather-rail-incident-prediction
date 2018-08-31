@@ -12,7 +12,6 @@ def mpl_preferences(use_cambria=False, reset=False):
       plt.gcf().canvas.get_supported_filetypes()  # Aside: "gcf" is short for "get current fig" manager
       plt.gcf().canvas.get_supported_filetypes_grouped()
     """
-    default_settings = matplotlib.rcParamsDefault.copy()
     if not reset:
         if use_cambria:  # Use the font, 'Cambria'
             # Add 'Cambria' and 'Cambria Math' to the front of the 'font.serif' list
@@ -25,7 +24,7 @@ def mpl_preferences(use_cambria=False, reset=False):
         matplotlib.pyplot.rcParams['legend.labelspacing'] = 0.7
         matplotlib.pyplot.style.use('ggplot')
     else:
-        matplotlib.pyplot.rcParams = default_settings
+        matplotlib.pyplot.rcParams = matplotlib.rcParamsDefault
         matplotlib.pyplot.style.use('classic')
 
 
