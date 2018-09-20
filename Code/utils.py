@@ -15,7 +15,6 @@ import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot
 import numpy as np
-import scipy.stats
 import pandas as pd
 
 
@@ -451,8 +450,9 @@ def subset(data, route=None, weather_category=None, reset_index=False):
         elif route and not weather_category:
             data_subset = data[data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]]
         elif not route and weather_category:
-            data_subset = data[data.WeatherCategory ==
-                               fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0]]
+            data_subset = data[
+                data.WeatherCategory ==
+                fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0]]
         else:
             data_subset = data[
                 (data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]) &
