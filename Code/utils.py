@@ -102,19 +102,20 @@ def save_pickle(pickle_data, path_to_pickle):
 
 
 # Load pickles
-def load_pickle(path_to_pickle):
+def load_pickle(path_to_pickle, verbose=False):
     """
     :param path_to_pickle: [str] local file path
+    :param verbose: [bool] Whether to print note
     :return: the object retrieved from the pickle
     """
-    print("Loading \"{}\" ... ".format(os.path.basename(path_to_pickle)), end="")
+    print("Loading \"{}\" ... ".format(os.path.basename(path_to_pickle)), end="") if verbose else None
     try:
         pickle_in = open(path_to_pickle, 'rb')
         pickle_data = pickle.load(pickle_in)
         pickle_in.close()
-        print("Successfully.")
+        print("Successfully.") if verbose else None
     except Exception as e:
-        print("Failed. {}.".format(e))
+        print("Failed. {}.".format(e)) if verbose else None
         pickle_data = None
     return pickle_data
 
@@ -139,19 +140,20 @@ def save_json(json_data, path_to_json):
 
 
 # Load json file
-def load_json(path_to_json):
+def load_json(path_to_json, verbose=False):
     """
     :param path_to_json: [str] local file path
+    :param verbose: [bool] Whether to print note
     :return: the json data retrieved
     """
-    print("Loading \"{}\" ... ".format(os.path.basename(path_to_json)), end="")
+    print("Loading \"{}\" ... ".format(os.path.basename(path_to_json)), end="") if verbose else None
     try:
         json_in = open(path_to_json, 'r')
         json_data = json.load(json_in)
         json_in.close()
-        print("Successfully.")
+        print("Successfully.") if verbose else None
     except Exception as e:
-        print("Failed. {}.".format(e))
+        print("Failed. {}.".format(e)) if verbose else None
         json_data = None
     return json_data
 
@@ -251,14 +253,15 @@ def is_float(text):
 
 
 # Reset double indexes
-def reset_double_indexes(data_frame):
-    levels = list(data_frame.columns)
+def reset_double_indexes(data):
+    levels = list(data.columns)
     column_names = []
     for i in range(len(levels)):
         col_name = levels[i][0] + '_' + levels[i][1]
         column_names += [col_name]
-    data_frame.columns = column_names
-    return data_frame.reset_index()
+    data.columns = column_names
+    data.reset_index(inplace=True)
+    return data
 
 
 # Find from a list the closest, case-insensitive, string to the given one

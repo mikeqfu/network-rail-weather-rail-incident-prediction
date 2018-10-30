@@ -785,22 +785,22 @@ def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle")
 
 
 # Subset the required data given 'route' and 'weather'
-def subset(data, route=None, weather=None, reset_index=False):
+def subset(data, route_name=None, weather_category=None, reset_index=False):
     if data is None:
         data_subset = None
     else:
         route_lookup = list(set(data.Route))
-        weather_category_lookup = list(set(data.WeatherCategory))
+        weather_category_lookup = list(set(data.WeatherCategory)) if weather_category else None
         # Select data for a specific route and weather category
-        if not route and not weather:
+        if not route_name and not weather_category:
             data_subset = data.copy()
-        elif route and not weather:
-            data_subset = data[data.Route == find_match(route, route_lookup)]
-        elif not route and weather:
-            data_subset = data[data.WeatherCategory == find_match(weather, weather_category_lookup)]
+        elif route_name and not weather_category:
+            data_subset = data[data.Route == find_match(route_name, route_lookup)]
+        elif not route_name and weather_category:
+            data_subset = data[data.WeatherCategory == find_match(weather_category, weather_category_lookup)]
         else:
-            data_subset = data[(data.Route == find_match(route, route_lookup)) &
-                               (data.WeatherCategory == find_match(weather, weather_category_lookup))]
+            data_subset = data[(data.Route == find_match(route_name, route_lookup)) &
+                               (data.WeatherCategory == find_match(weather_category, weather_category_lookup))]
         # Reset index
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))

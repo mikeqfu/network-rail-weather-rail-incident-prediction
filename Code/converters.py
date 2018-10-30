@@ -31,7 +31,7 @@ def wgs84_to_osgb36(longitude, latitude):
 
 
 # Convert british national grid (OSBG36) to latitude and longitude (WGS84)(Reference: http://www.hannahfry.co.uk)
-def convert_osgb36_to_wgs84(easting, northing):
+def osgb36_to_wgs84_raw(easting, northing):
     """
     :param easting: X
     :param northing: Y
@@ -138,7 +138,7 @@ def convert_osgb36_to_wgs84(easting, northing):
 
 
 # Convert latitude and longitude (WGS84) to british national grid (OSBG36) (Reference: http://www.hannahfry.co.uk)
-def convert_wgs84_to_osgb36(latitude, longitude):
+def wgs84_to_osgb36_raw(latitude, longitude):
     """
     :param latitude:
     :param longitude:
@@ -248,10 +248,10 @@ def miles_chains_to_mileage(miles_chains):
     if not pd.isnull(miles_chains):
         miles, chains = str(miles_chains).split('.')
         yards = measurement.measures.Distance(chain=chains).yd
-        networkrail_mileage = '%.4f' % (int(miles) + round(yards / (10 ** 4), 4))
+        network_rail_mileage = '%.4f'.format(int(miles) + round(yards / (10 ** 4), 4))
     else:
-        networkrail_mileage = miles_chains
-    return networkrail_mileage
+        network_rail_mileage = miles_chains
+    return network_rail_mileage
 
 
 # Convert str type mileage to numerical type
