@@ -66,11 +66,11 @@ def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None,
         os.makedirs(new_shp_dir)
 
     for orig_file in glob.glob1(shape_file_dir, "{}.*".format(shape_filename.rstrip(".shp"))):
-        dest_file = orig_file.replace("gis.osm", subregion)
-        dest = os.path.join(new_shp_dir, dest_file)
-        if not os.path.isfile(dest) or update:
-            shutil.copyfile(os.path.join(shape_file_dir, orig_file), dest)
-            print("'{}' copied, pasted as '{}'.".format(orig_file, dest_file))
+        destination_file = orig_file.replace("gis.osm", subregion)
+        destination = os.path.join(new_shp_dir, destination_file)
+        if not os.path.isfile(destination) or update:
+            shutil.copyfile(os.path.join(shape_file_dir, orig_file), destination)
+            print("'{}' copied, pasted as '{}'.".format(orig_file, destination_file))
 
     new_filename = shape_filename.replace("gis.osm", subregion).rstrip(".shp")
     new_path_to_shp = os.path.join(new_shp_dir, new_filename)
@@ -138,7 +138,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     # Show legend
     plt.plot([], '-', label="Railway track", linewidth=2.2, color=railway_line_color)
     # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=22)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=18)
     legend = plt.legend(numpoints=1, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
     frame = legend.get_frame()
     frame.set_edgecolor('none')
@@ -155,7 +155,7 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
     :param base_map: [mpl_toolkits.basemap.Basemap] basemap object
     :param update: [bool]
     :param route: [str] Route
-    :param weather_cell_colour: [str] default '#add6ff'; alternative '#99ccff', '#fff68f
+    :param weather_cell_colour: [str] default '#ADD6FF'; alternative '#99CCFF', '#FFF68F
     :param legend_loc [tuple]
     :return:
     """
@@ -182,10 +182,10 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
 
     # Add labels
     # plt.plot([], 's', label="Weather cell", ms=30, color=weather_cell_colour, markeredgecolor='#433f3f', alpha=.5)
-    plt.plot([], 's', label="Weather cell", ms=30, color='#D5EAFF', markeredgecolor='#433f3f')
+    plt.plot([], 's', label="Weather cell", ms=27, color='#D5EAFF', markeredgecolor='#433f3f')
 
     # Show legend  # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=22)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=18)
     plt.legend(numpoints=1, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
 
     print("Done.")
@@ -251,7 +251,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     #                  color=osm_landuse_forest_colour)
 
     # font = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=16)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=18)
     plt.legend(scatterpoints=10, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
 
     print("Done.")
@@ -262,7 +262,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
     """
     :param base_map: 
     :param route: 
-    :param hazardous_tree_colour: alternative '#886008', '#6e376e', '#5a7b6c'
+    :param hazardous_tree_colour: alternative '#886008', '#6E376E', '#5A7B6C'
     :param legend_loc:
     :return: 
     """
@@ -284,7 +284,7 @@ def plot_hazardous_trees(base_map=None, route=None, hazardous_tree_colour='#ab79
                      label="Hazardous trees", alpha=0.6, antialiased=True, zorder=3)
 
     # Show legend  # setfont = {'family': 'Georgia', 'size': 16, 'weight': 'bold'}
-    font = matplotlib.font_manager.FontProperties(family='Cambria', weight='normal', size=16)
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=18)
     plt.legend(scatterpoints=10, loc='best', prop=font, frameon=False, fancybox=True, bbox_to_anchor=legend_loc)
 
     print("Done.")
@@ -335,7 +335,7 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
 """ Get 'hotspot' data """
 
 
-# Midpoint of two GPS points
+# Gwt midpoint between two GPS points
 def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
     """
     :param x_long:
@@ -364,15 +364,15 @@ def get_gps_midpoint(x_long, x_lat, y_long, y_lat):
     return midpoint
 
 
-# Get midpoint between two points
-def get_midpoint(start_point, end_point, as_geom=True):
+# Get midpoint between two shapely.geometry points
+def get_midpoint(x_point, y_point, as_geom=True):
     """
-    :param start_point: [shapely.geometry.point.Point]
-    :param end_point: [shapely.geometry.point.Point]
+    :param x_point: [shapely.geometry.point.Point]
+    :param y_point: [shapely.geometry.point.Point]
     :param as_geom: [bool]
     :return: 
     """
-    midpoint = (start_point.x + end_point.x) / 2, (start_point.y + end_point.y) / 2
+    midpoint = (x_point.x + y_point.x) / 2, (x_point.y + y_point.y) / 2
     return shapely.geometry.Point(midpoint) if as_geom else midpoint
 
 
@@ -395,8 +395,8 @@ def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
     else:
         try:
             railways_shp_data = osm_utils.read_shp_zip(subregion, layer, feature)
-            point_coords = \
-                shapely.geometry.MultiPoint(list(itertools.chain(*(l.coords for l in railways_shp_data.geometry))))
+            list_of_points = list(itertools.chain(*(l.coords for l in railways_shp_data.geometry)))
+            point_coords = shapely.geometry.MultiPoint(list_of_points)
         except Exception as e:
             print(e)
             point_coords = None
@@ -406,10 +406,10 @@ def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
 
 
 # Get the data for plotting
-def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, update=False):
+def get_schedule8_incident_hotspots(route_name=None, weather_category=None, sort_by=None, update=False):
     """
-    :param route: [NoneType] or [str]
-    :param weather: [NoneType] or [str]
+    :param route_name: [NoneType] or [str]
+    :param weather_category: [NoneType] or [str]
     :param sort_by: [NoneType] or [list]
     :param update: [bool]
     :return:
@@ -457,7 +457,7 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
     if sort_by:
         hotspots_data.sort_values(sort_by, ascending=False, inplace=True)
 
-    hotspots_data = dbm.subset(hotspots_data, route, weather)
+    hotspots_data = dbm.subset(hotspots_data, route_name, weather_category)
     hotspots_data.index = range(len(hotspots_data))
 
     return hotspots_data
@@ -482,9 +482,9 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
     if save_as is not None:
         if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
             print("Saving the figure ... ", end="")
-            fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
-                          ['cell', 'veg', 'haz'])
-            filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
+            f_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
+                           ['cell', 'veg', 'haz'])
+            filename = '_'.join([keyword] + [v for s, v in f_suffix if s is True])
             path_to_file = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Hotspots", filename + save_as)
             plt.savefig(path_to_file, dpi=dpi)
             print("Done.")
@@ -493,7 +493,7 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
 
 
 # Plot hotspots of delays for every financial year (2006/07-2014/15) =================================================
-def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
+def hotspots_delays_yearly(route_name='ANGLIA', weather_category='Wind', update=False,
                            cmap_name='Set1',
                            show_metex_weather_cells=False,
                            show_osm_landuse_forest=False,
@@ -502,14 +502,14 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     # Get data
     data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
     try:
-        hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
+        hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route_name, weather_category)
     except FileNotFoundError:
-        schedule8_data = dbm.get_schedule8_cost_by_datetime_location(route, weather, update)
+        schedule8_data = dbm.get_schedule8_cost_by_datetime_location(route_name, weather_category, update)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                           'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data = schedule8_data.groupby(group_features).aggregate(
             {'DelayMinutes': pd.np.sum, 'DelayCost': pd.np.sum, 'IncidentCount': pd.np.sum}).reset_index()
-        hotspots = get_schedule8_incident_hotspots(route, weather)
+        hotspots = get_schedule8_incident_hotspots(route_name, weather_category)
         hotspots_data = schedule8_data.merge(
             hotspots[group_features[1:] + ['MidLatitude', 'MidLongitude']], how='left', on=group_features[1:])
         hotspots_data.sort_values(by=['DelayMinutes', 'DelayCost', 'IncidentCount'], ascending=False, inplace=True)
@@ -520,11 +520,11 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
 
     # Labels
     years = [str(y) for y in yearly_cost.index]
-    fyears = ['/'.join([y0, str(y1)[-2:]]) for y0, y1 in zip(years, pd.np.array(yearly_cost.index) + pd.np.array([1]))]
+    f_years = ['/'.join([y0, str(y1)[-2:]]) for y0, y1 in zip(years, pd.np.array(yearly_cost.index) + pd.np.array([1]))]
 
-    dlabel = ["%s  (%s min." % (fy, format(int(d), ",")) for fy, d in zip(fyears, yearly_cost.DelayMinutes)]
-    clabel = ["  / £%.2f" % round(c * 1e-6, 2) + "M)" for c in yearly_cost.DelayCost]
-    label = [l for l in reversed([d + c for d, c in zip(dlabel, clabel)])]
+    d_label = ["%s  (%s min." % (fy, format(int(d), ",")) for fy, d in zip(f_years, yearly_cost.DelayMinutes)]
+    c_label = ["  / £%.2f" % round(c * 1e-6, 2) + "M)" for c in yearly_cost.DelayCost]
+    label = [l for l in reversed([d + c for d, c in zip(d_label, c_label)])]
 
     cmap = plt.get_cmap(cmap_name)
     colours = cmap(pd.np.linspace(start=0, stop=1, num=9))
@@ -535,7 +535,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
 
     top_hotspots = []
-    for y, fy in zip(years, fyears):
+    for y, fy in zip(years, f_years):
         plot_data = hotspots_data[hotspots_data.FinancialYear == int(y)][0:20]
         top_hotspots.append(fy + ':  ' + plot_data.StanoxSection.iloc[0])
         for i in plot_data.index:
@@ -553,23 +553,22 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0 + 1.5, 1.02, "Annual total delays and cost",
+    cb.ax.text(0.0, 10.00, "Annual total delays and cost",  # 0, 1.0
                ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
 
-    #
-    cb.ax.text(0, 0 - 0.18, "Locations with longest delays:",
-               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
-    cb.ax.text(0, 0 - 0.75, "\n".join(top_hotspots),
+    cb.ax.text(0.0, -2.35, "Locations with longest delays:",  # 0, -0.18
+               ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
+    cb.ax.text(0.0, -7.75, "\n".join(top_hotspots),  # 0, -0.75
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
     if show_metex_weather_cells:
-        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
+        plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
 
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
     if show_nr_hazardous_trees:
-        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
+        plot_hazardous_trees(base_map, route=route_name, legend_loc=(1.05, 0.99))
 
     # Save figure
     save_fig(fig, "annual_delays_cost",
@@ -577,7 +576,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
 
 
 # Plot hotspots of delay minutes =====================================================================================
-def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
+def hotspots_delays(route_name='ANGLIA', weather_category='Wind', update=False,
                     seed=123,
                     cmap_name='Reds',
                     show_metex_weather_cells=False,
@@ -586,7 +585,7 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
                     save_as=".pdf", dpi=None):
     # Get hotspots data
     sort_by = ['DelayMinutes', 'IncidentCount', 'DelayCost']
-    hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
+    hotspots_data = get_schedule8_incident_hotspots(route_name, weather_category, sort_by, update)
     notnull_data = hotspots_data[hotspots_data.DelayMinutes.notnull()]
 
     # Set a seed number
@@ -624,6 +623,87 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
             plotting_data = hotspots_data[idx_1]
         else:
             plotting_data = hotspots_data[idx_0 & idx_1]
+        for i in plotting_data.index:
+            mid_x, mid_y = base_map(plotting_data.MidLongitude[i], plotting_data.MidLatitude[i])
+            base_map.plot(mid_x, mid_y, zorder=2,
+                          marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
+
+    # Add a colour bar
+    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    for t in cb.ax.yaxis.get_ticklabels():
+        t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
+    cb.ax.tick_params(labelsize=14)
+    cb.set_alpha(1.0)
+    cb.draw_all()
+
+    cb.ax.text(0.0, 6.75, "Total delay minutes (2006/07-2014/15)",  # 0.0, 1.025
+               ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
+
+    # Show highest delays, in descending order
+    cb.ax.text(0.0, -1.45, "Locations accounted for most delays:",  # 0.0, -0.16
+               ha='left', va='bottom', size=15, weight='bold', color='#555555', fontname='Cambria')
+    cb.ax.text(0.0, -5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # 0.0, -0.75; highest
+               ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
+
+    # Show weather cells
+    if show_metex_weather_cells:
+        plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
+
+    # Show vegetation
+    if show_osm_landuse_forest:
+        plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
+
+    # Show hazardous trees
+    if show_nr_hazardous_trees:
+        plot_hazardous_trees(base_map, route=route_name, legend_loc=(1.05, 0.99))
+
+    # Save figure
+    save_fig(fig, "delays", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
+
+
+# Plot hotspots of delay minutes (Extra for Train aerodynamics book) =================================================
+def hotspots_delays_extra(route='ANGLIA', weather='Wind', update=False,
+                          seed=123,
+                          cmap_name='Reds',
+                          show_metex_weather_cells=True,
+                          show_osm_landuse_forest=True,
+                          show_nr_hazardous_trees=True,
+                          save_as=".pdf", dpi=None):
+    # Get hotspots data
+    sort_by = ['DelayMinutes', 'IncidentCount', 'DelayCost']
+    hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
+    notnull_data = hotspots_data[hotspots_data.DelayMinutes.notnull()]
+
+    # Set a seed number
+    pd.np.random.seed(seed)
+
+    # Calculate Jenks natural breaks for delay minutes
+    breaks = NBs(y=notnull_data.DelayMinutes.values, k=6, initial=100)
+    hotspots_data = hotspots_data.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
+    # hotspots_data['jenks_bins'].fillna(-1, inplace=True)
+    label = "<= %s min.  / %s locations"
+    bins_counts = zip(breaks.bins, breaks.counts)
+    jenks_labels = [label % (format(int(b), ','), c) for b, c in bins_counts]
+
+    cmap = plt.get_cmap(cmap_name)  # 'OrRd', 'RdPu', 'Oranges', 'YlOrBr'
+    colour_array = pd.np.linspace(0, 1., len(jenks_labels))
+    colours = cmap(colour_array)
+    marker_size = pd.np.linspace(1, 2.2, len(jenks_labels)) * 12
+
+    # Plot basemap (with railway tracks)
+    fig, base_map = plot_base_map(legend_loc=(1.05, 0.9))
+    fig.subplots_adjust(left=0.001, bottom=0.000, right=0.7715, top=1.000)
+
+    bins = list(breaks.bins)
+    for b in range(len(bins)):
+        idx_0 = hotspots_data.DelayMinutes <= bins[b]
+        idx_1 = hotspots_data.DelayMinutes > bins[b - 1]
+        if bins[b] == min(bins):
+            plotting_data = hotspots_data[idx_0]
+        elif bins[b] == max(bins):
+            plotting_data = hotspots_data[idx_1]
+        else:
+            plotting_data = hotspots_data[idx_0 & idx_1]
 
         for i in plotting_data.index:
             mid_x, mid_y = base_map(plotting_data.MidLongitude[i], plotting_data.MidLatitude[i])
@@ -638,14 +718,8 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0., 1.025, "Total delay minutes (2006/07-2014/15)",
+    cb.ax.text(0.0, 6.6, "Total delay minutes (2006/07-2014/15)",
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
-
-    # Show highest delays, in descending order
-    cb.ax.text(0., 0 - 0.16, "Locations accounted for most delays:",
-               ha='left', va='bottom', size=15, weight='bold', color='#555555', fontname='Cambria')
-    cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),  # highest
-               ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
     # Show weather cells
     if show_metex_weather_cells:
@@ -659,12 +733,19 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
 
+    # Add a subplot of mini map of GB, e.g. ax = plt.subplot(); ax.plot(range(10))
+    fig.add_subplot()
+    # Add an axes at position [left, bottom, width, height]
+    sr = fig.add_axes([0.64, 0.00, 0.28, 0.28], frameon=True)  # quantities are in fractions of fig width & height
+    sr.imshow(PIL.Image.open(cdd("Network\\Routes\\Map", "NR-Routes-edited-1.tif")))
+    sr.axis('off')
+
     # Save figure
-    save_fig(fig, "delays", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
+    save_fig(fig, "delays_2", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots in terms of incident frequency =======================================================================
-def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
+def hotspots_frequency(route_name='ANGLIA', weather_category='Wind', update=False,
                        seed=123,
                        cmap_name='PuRd',
                        show_metex_weather_cells=False,
@@ -673,7 +754,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
                        save_as=".pdf", dpi=None):
     # Get data
     sort_by = ['IncidentCount', 'DelayCost', 'DelayMinutes']
-    hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
+    hotspots_data = get_schedule8_incident_hotspots(route_name, weather_category, sort_by, update)
     notnull_data = hotspots_data[hotspots_data.IncidentCount.notnull()]
 
     # Set a seed number
@@ -721,29 +802,29 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0., 1.025, "Count of incidents (2006/07-2014/15)",
+    cb.ax.text(0.0, 6.75, "Count of incidents (2006/07-2014/15)",
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest frequency, in descending order
-    cb.ax.text(0., 0 - 0.16, "Most incident-prone locations: ",
-               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
-    cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),
+    cb.ax.text(0.0, -1.45, "Most incident-prone locations: ",  # 0.0, -0.16
+               ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
+    cb.ax.text(0.0, -5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # 0.0, -0.75
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
     if show_metex_weather_cells:
-        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
+        plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
 
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
     if show_nr_hazardous_trees:
-        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
+        plot_hazardous_trees(base_map, route=route_name, legend_loc=(1.05, 0.99))
 
     save_fig(fig, "frequency", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots of delay cost ========================================================================================
-def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
+def hotspots_cost(route_name='ANGLIA', weather_category='Wind', update=False,
                   seed=123,
                   cmap_name='YlGnBu',
                   show_metex_weather_cells=False,
@@ -752,7 +833,7 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
                   save_as=".pdf", dpi=None):
     # Get data
     sort_by = ['DelayCost', 'IncidentCount', 'DelayMinutes']
-    hotspots_data = get_schedule8_incident_hotspots(route, weather, sort_by, update)
+    hotspots_data = get_schedule8_incident_hotspots(route_name, weather_category, sort_by, update)
     hotspots_data.replace(to_replace={'DelayCost': {0: pd.np.nan}}, inplace=True)
     notnull_data = hotspots_data[hotspots_data.DelayCost.notnull()]
 
@@ -805,29 +886,29 @@ def hotspots_cost(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0., 1.028, "Compensation payments (2006/07-2014/15)",
+    cb.ax.text(0.0, 6.75, "Compensation payments (2006/07-2014/15)",  # 0.0, 1.028
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest cost, in descending order
-    cb.ax.text(0., 0 - 0.16, "Locations accounted for most cost: ",
-               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
-    cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),
+    cb.ax.text(0.0, -1.45, "Locations accounted for most cost: ",  # 0.0, -0.16
+               ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
+    cb.ax.text(0.0, -5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # 0.0, -0.75
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
     if show_metex_weather_cells:
-        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
+        plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
 
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
     if show_nr_hazardous_trees:
-        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
+        plot_hazardous_trees(base_map, route=route_name, legend_loc=(1.05, 0.99))
 
     save_fig(fig, "cost", show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots in terms of delay minutes per incident ===============================================================
-def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
+def hotspots_delays_per_incident(route_name='ANGLIA', weather_category='Wind', update=False,
                                  seed=123,
                                  cmap_name='BrBG',
                                  show_metex_weather_cells=False,
@@ -835,7 +916,7 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
                                  show_nr_hazardous_trees=False,
                                  save_as=".pdf", dpi=None):
     # Get data
-    hotspots_data = get_schedule8_incident_hotspots(route, weather, None, update)
+    hotspots_data = get_schedule8_incident_hotspots(route_name, weather_category, None, update)
     hotspots_data['DelayMinutesPerIncident'] = hotspots_data.DelayMinutes.div(hotspots_data.IncidentCount)
     hotspots_data.sort_values(by='DelayMinutesPerIncident', ascending=False, inplace=True)
 
@@ -883,24 +964,24 @@ def hotspots_delays_per_incident(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0., 1.025, "Delay per incident (2006/07 to 2014/15)",
+    cb.ax.text(0.0, 6.75, "Delay per incident (2006/07 to 2014/15)",  # 0.0, 1.025
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest delay min. per incident, in descending order
-    cb.ax.text(0., 0 - 0.16, "Longest delays per incident:",
-               ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
-    cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),
+    cb.ax.text(0.0, -1.45, "Longest delays per incident:",  # 0.0, -0.16
+               ha='left', va='bottom', size=15, color='#555555', fontname='Cambria')
+    cb.ax.text(0.0, -5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # 0.0, -0.75
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
     if show_metex_weather_cells:
-        plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
+        plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
 
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
     # Show hazardous trees?
     if show_nr_hazardous_trees:
-        plot_hazardous_trees(base_map, route=route, legend_loc=(1.05, 0.975))
+        plot_hazardous_trees(base_map, route=route_name, legend_loc=(1.05, 0.99))
 
     save_fig(fig, "delay_per_incident",
              show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
@@ -933,6 +1014,8 @@ def plotting_hotspots(update=False):
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".pdf")
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg")
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tiff", dpi=600)  # Fig. 3.
+
+        hotspots_delays_extra('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tiff", dpi=600)
 
         # Cost
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".pdf")
