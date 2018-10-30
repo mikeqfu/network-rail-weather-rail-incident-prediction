@@ -727,9 +727,9 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
 
 
 # Schedule 8 weather incidents
-def get_schedule8_weather_incidents(route=None, weather=None, update=False):
+def get_schedule8_weather_incidents(route_name=None, weather_category=None, update=False):
 
-    pickle_filename = make_filename("Schedule8WeatherIncidents", route, weather)
+    pickle_filename = make_filename("Schedule8WeatherIncidents", route_name, weather_category)
     path_to_pickle = cdd_incidents("Spreadsheets", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -765,7 +765,7 @@ def get_schedule8_weather_incidents(route=None, weather=None, update=False):
             data = cleanse_geographical_coordinates(data)
 
             # Retain data for specific Route and weather category
-            data = subset(data, route, weather)
+            data = subset(data, route_name, weather_category)
 
             save_pickle(data, path_to_pickle)
 
@@ -777,7 +777,7 @@ def get_schedule8_weather_incidents(route=None, weather=None, update=False):
 
 
 # Schedule8WeatherIncidents-02062006-31032014.xlsm
-def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, update=False):
+def get_schedule8_weather_incidents_02062006_31032014(route_name=None, weather_category=None, update=False):
     """
     Description:
     "Details of schedule 8 incidents together with weather leading up to the incident. Although this file contains
@@ -787,7 +787,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
 
     """
     # Path to the file
-    pickle_filename = make_filename("Schedule8WeatherIncidents-02062006-31032014", route, weather)
+    pickle_filename = make_filename("Schedule8WeatherIncidents-02062006-31032014", route_name, weather_category)
     path_to_pickle = cdd_incidents("Spreadsheets", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -847,7 +847,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             data = cleanse_geographical_coordinates(data)
 
             # Retain data for specific Route and weather category
-            data = subset(data, route, weather)
+            data = subset(data, route_name, weather_category)
 
             # Weather'CategoryLookup' -------------------------------------------
             weather_category_lookup = workbook.parse(sheet_name='CategoryLookup')

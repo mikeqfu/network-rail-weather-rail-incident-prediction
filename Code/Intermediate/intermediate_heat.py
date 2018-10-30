@@ -91,7 +91,7 @@ def categorise_temperatures(attr_dat):
 
 
 # Get data for specified season(s)
-def get_data_by_season(m_data, season):
+def get_data_by_season(m_data, season='summer'):
     """
     :param m_data:
     :param season: [str] 'spring', 'summer', 'autumn', 'winter'; if None, returns data of all seasons
@@ -136,13 +136,13 @@ def get_data_by_season(m_data, season):
 
 
 # Attach weather conditions for each incident location
-def get_incidents_with_weather(route=None, weather_category='Heat', season='summer',
+def get_incidents_with_weather(route_name=None, weather_category='Heat', season='summer',
                                prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
                                trial=True, update=False):
 
     filename = "incidents-with-weather-conditions"
     pickle_filename = inter_incidents.make_filename(
-        filename, route, weather_category, "-".join([season] if isinstance(season, str) else season),
+        filename, route_name, weather_category, "-".join([season] if isinstance(season, str) else season),
         "trial" if trial else "full")
     path_to_pickle = cdd_mod_heat_inter(pickle_filename)
 
@@ -153,7 +153,7 @@ def get_incidents_with_weather(route=None, weather_category='Heat', season='summ
             # Incidents data
             incidents_all = inter_incidents.get_schedule8_weather_incidents()
             incidents_all = get_data_by_season(incidents_all, season)
-            incidents = inter_incidents.subset(incidents_all, route=route, weather_category=weather_category)
+            incidents = inter_incidents.subset(incidents_all, route=route_name, weather_category=weather_category)
             # For testing purpose ...
             if trial:
                 # import random
