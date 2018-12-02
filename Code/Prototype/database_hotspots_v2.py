@@ -213,8 +213,8 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
 
     base_map.readshapefile(bounded_landuse_forest_shp,
                            name='osm_landuse_forest',
-                           color=osm_landuse_forest_colour,
-                           zorder=3)
+                           zorder=3,
+                           color=osm_landuse_forest_colour)
 
     # Fill the patches? Note this may take a long time and dramatically increase the file of the map
     if fill_forest_patches:
@@ -323,7 +323,7 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
         filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                               ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        fig.savefig(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Basemap", fig_filename + save_as), dpi=dpi)
+        fig.savefig(dbm.cdd_metex_db_fig_pub("1 - Prototype", "Basemap", fig_filename + save_as), dpi=dpi)
         print("Done.")
         if save_as == ".svg":
             svg_to_emf(
@@ -485,7 +485,7 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
             f_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                            ['cell', 'veg', 'haz'])
             filename = '_'.join([keyword] + [v for s, v in f_suffix if s is True])
-            path_to_file = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Hotspots", filename + save_as)
+            path_to_file = dbm.cdd_metex_db_fig_pub("1 - Prototype", "Hotspots", filename + save_as)
             plt.savefig(path_to_file, dpi=dpi)
             print("Done.")
             if save_as == ".svg":
@@ -886,7 +886,7 @@ def hotspots_cost(route_name='ANGLIA', weather_category='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0.0, 6.75, "Compensation payments (2006/07-2014/15)",  # 0.0, 1.028
+    cb.ax.text(0.0, 6.75, "Compensation (2006/07-2014/15)",  # 0.0, 1.028
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest cost, in descending order
@@ -1015,15 +1015,18 @@ def plotting_hotspots(update=False):
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".svg")
         hotspots_delays('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tiff", dpi=600)  # Fig. 3.
 
+        # For Prof Chris Baker's book
         hotspots_delays_extra('ANGLIA', 'Wind', update, 123, 'Reds', True, True, True, ".tiff", dpi=600)
 
         # Cost
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', False, False, False, ".pdf")
         hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".pdf")
+        hotspots_cost('ANGLIA', 'Wind', update, 123, 'YlGnBu', True, True, True, ".tiff", dpi=600)
 
         # Frequency
         hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', False, False, False, ".pdf")
         hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".pdf")
+        hotspots_frequency('ANGLIA', 'Wind', update, 123, 'PuRd', True, True, True, ".tiff", dpi=600)
 
         # Delay minutes per incident
         hotspots_delays_per_incident('ANGLIA', 'Wind', update, 123, 'BrBG', False, False, False, ".pdf")

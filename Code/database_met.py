@@ -51,7 +51,7 @@ def cdd_metex_db_fig(*directories):
 
 # Change directory to "Publications\\Journals\\Figures" and sub-directories
 def cdd_metex_db_fig_pub(pid, *directories):
-    path = cd("Publications", "Journals", "{}".format(pid), "Figures")
+    path = cd("Publications", "{}".format(pid), "Figures")
     for directory in directories:
         path = os.path.join(path, directory)
     return path

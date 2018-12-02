@@ -243,16 +243,16 @@ def fetch_osm_file(subregion, layer, feature=None, file_format=".shp", update=Fa
     subregion = subregion_name.lower().replace(" ", "-")
     osm_file_path = []
 
-    for dirpath, dirnames, filenames in os.walk(cdd_osm_dat_geofabrik()):
+    for dir_path, dir_names, filenames in os.walk(cdd_osm_dat_geofabrik()):
         if feature is None:
-            for fname in [f for f in filenames
-                          if (layer + "_a" in f or layer + "_free" in f) and f.endswith(file_format)]:
-                if subregion in os.path.basename(dirpath) and dirnames == []:
-                    osm_file_path.append(os.path.join(dirpath, fname))
+            for f_name in [f for f in filenames
+                           if (layer + "_a" in f or layer + "_free" in f) and f.endswith(file_format)]:
+                if subregion in os.path.basename(dir_path) and dir_names == []:
+                    osm_file_path.append(os.path.join(dir_path, f_name))
         else:
-            for fname in [f for f in filenames if layer + "_" + feature in f and f.endswith(file_format)]:
-                if subregion not in os.path.dirname(dirpath) and dirnames == []:
-                    osm_file_path.append(os.path.join(dirpath, fname))
+            for f_name in [f for f in filenames if layer + "_" + feature in f and f.endswith(file_format)]:
+                if subregion not in os.path.dirname(dir_path) and dir_names == []:
+                    osm_file_path.append(os.path.join(dir_path, f_name))
     # if len(osm_file_path) > 1:
     #     osm_file_path = [p for p in osm_file_path if "_a_" not in p]
     return osm_file_path
@@ -391,7 +391,7 @@ def merge_shp_files(subregions, layer, update=False):
     :param update: 
     :return:
     """
-    # Make sure all the required shapefiles are ready
+    # Make sure all the required shape files are ready
     subregion_name_and_download_url = [get_download_url(subregion, '.shp.zip') for subregion in subregions]
     # Download the requested OSM file
     filename_and_path = [make_file_path(download_url) for k, download_url in subregion_name_and_download_url]
@@ -412,16 +412,16 @@ def merge_shp_files(subregions, layer, update=False):
                 progress_bar = progressbar.ProgressBar(widgets=widgets)
                 return progress_bar
 
-            pbar = make_custom_progressbar()
+            p_bar = make_custom_progressbar()
 
             def show_progress(block_count, block_size, total_size):
-                if pbar.max_value is None:
-                    pbar.max_value = total_size
-                    pbar.start()
-                pbar.update(block_count * block_size)
+                if p_bar.max_value is None:
+                    p_bar.max_value = total_size
+                    p_bar.start()
+                p_bar.update(block_count * block_size)
 
             urllib.request.urlretrieve(download_url, file_path, reporthook=show_progress)
-            pbar.finish()
+            p_bar.finish()
             time.sleep(0.01)
             print("\n'{}' is downloaded for {}.".format(filename, subregion_name))
 
@@ -446,10 +446,10 @@ def merge_shp_files(subregions, layer, update=False):
     shp_file_paths = glob.glob(os.path.join(layer_path, '*.shp'))
     w = shapefile.Writer()
     for f in shp_file_paths:
-        readf = shapefile.Reader(f)
-        w.shapes().extend(readf.shapes())
-        w.records.extend(readf.records())
-        w.fields = list(readf.fields)
+        read_f = shapefile.Reader(f)
+        w.shapes().extend(read_f.shapes())
+        w.records.extend(read_f.records())
+        w.fields = list(read_f.fields)
     w.save(os.path.join(layer_path, layer))
 
 
@@ -530,7 +530,7 @@ def read_shp_zip(subregion, layer, feature=None, update=False, keep_extracts=Tru
                     shp_data = shp_data[shp_data.fclass == feature]
                     shp_data.crs = {'no_defs': True, 'ellps': 'WGS84', 'datum': 'WGS84', 'proj': 'longlat'}
                     shp_data.to_file(path_to_shp_feature.replace(layer, layer + "_" + feature), driver='ESRI Shapefile')
-                else:   # An old .shp for feature is available, but an "a_" file also exists
+                else:  # An old .shp for feature is available, but an "a_" file also exists
                     shp_data = [gpd.read_file(p) for p in path_to_shp_feature]
                     shp_data = [dat[dat.fclass == feature] for dat in shp_data]
             else:  # feature is None
