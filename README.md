@@ -39,7 +39,7 @@ Part A: Civil Engineering 4(3): 04018027.
 incidents: a case study on the Anglia area in Great Britain, paper presented at the 
 [8th International Conference on Railway Engineering, IET London: Savoy Place, 16-17 May 2018](
 https://events.theiet.org/railway-engineering/index.cfm) 
-\[[Presentation](https://tv.theiet.org/?videoid=12228)\]. 
+\[[Presentation](https://tv.theiet.org/?videoid=12228)\] **(Speaker's Access Code may be provided upon request)**. 
 Published in the Proceedings of the 8th International Conference on Railway Engineering, 
 Institution of Engineering and Technology. 
 [doi:10.1049/cp.2018.0071](http://digital-library.theiet.org/content/conferences/10.1049/cp.2018.0071).

@@ -69,7 +69,7 @@ def database_name(db_name):
 # Create a SQLAlchemy Connectable to MSSQL Server ====================================================================
 def sqlalchemy_connectable(db_name):
     """
-    Connect string format: 'mssql+pyodbc://<username>:<password>@<dsnname>'
+    Connect string format: 'mssql+pyodbc://<username>:<password>@<dsn_name>'
     """
     p_str = windows_authentication() + database_driver() + database_server() + database_name(db_name)
     engine = sqlalchemy.create_engine('mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(p_str))

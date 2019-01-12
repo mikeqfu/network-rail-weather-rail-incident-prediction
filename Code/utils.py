@@ -229,7 +229,7 @@ def save_fig(path_to_fig_file, dpi):
         _, save_as = os.path.splitext(path_to_fig_file)
         if save_as == ".svg":
             path_to_emf = path_to_fig_file.replace(save_as, ".emf")
-            subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
+            subprocess.call(["C:\\Program Files\\Inkscape\\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
         print("Successfully.")
     except Exception as e:
         print("Failed. {}.".format(e))
@@ -296,7 +296,8 @@ def find_nearest(vector, target):
 
 # Check whether a string contains digits
 def contains_digits(text):
-    return bool(re.compile('\d').search(text))
+    x = re.compile('\\d').search(text)
+    return bool(x)
 
 
 # Find the closest date of the given 'data' from a list of dates
@@ -346,8 +347,8 @@ def cmap_discretisation(cmap_param, no_of_colours):
 
     Example:
         x = np.resize(np.arange(100), (5, 100))
-        djet = cmap_discretize(cm.jet, 5)
-        plt.imshow(x, cmap=djet)
+        d_jet = cmap_discretize(cm.jet, 5)
+        plt.imshow(x, cmap=d_jet)
 
     """
     if isinstance(cmap_param, str):
@@ -355,10 +356,10 @@ def cmap_discretisation(cmap_param, no_of_colours):
     colors_i = np.concatenate((np.linspace(0, 1., no_of_colours), (0., 0., 0., 0.)))
     colors_rgba = cmap_param(colors_i)
     indices = np.linspace(0, 1., no_of_colours + 1)
-    cdict = {}
+    c_dict = {}
     for ki, key in enumerate(('red', 'green', 'blue')):
-        cdict[key] = [(indices[x], colors_rgba[x - 1, ki], colors_rgba[x, ki]) for x in range(no_of_colours + 1)]
-    return matplotlib.colors.LinearSegmentedColormap(cmap_param.name + '_%d' % no_of_colours, cdict, 1024)
+        c_dict[key] = [(indices[x], colors_rgba[x - 1, ki], colors_rgba[x, ki]) for x in range(no_of_colours + 1)]
+    return matplotlib.colors.LinearSegmentedColormap(cmap_param.name + '_%d' % no_of_colours, c_dict, 1024)
 
 
 # A function for working with colour color bars
@@ -380,12 +381,12 @@ def colour_bar_index(no_of_colours, cmap_param, labels=None, **kwargs):
     mappable = matplotlib.cm.ScalarMappable(cmap=cmap_param)
     mappable.set_array(np.array([]))
     mappable.set_clim(-0.5, no_of_colours + 0.5)
-    colorbar = matplotlib.pyplot.colorbar(mappable, **kwargs)
-    colorbar.set_ticks(np.linspace(0, no_of_colours, no_of_colours))
-    colorbar.set_ticklabels(range(no_of_colours))
+    color_bar = matplotlib.pyplot.colorbar(mappable, **kwargs)
+    color_bar.set_ticks(np.linspace(0, no_of_colours, no_of_colours))
+    color_bar.set_ticklabels(range(no_of_colours))
     if labels:
-        colorbar.set_ticklabels(labels)
-    return colorbar
+        color_bar.set_ticklabels(labels)
+    return color_bar
 
 
 # Get upper and lower bounds for removing extreme outliers
