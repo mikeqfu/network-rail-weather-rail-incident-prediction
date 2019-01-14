@@ -56,13 +56,14 @@ def migrate_mssql_db_to_postgresql(source_db_name, destination_db_name):
     mssql_str = 'mssql+pyodbc:///?odbc_connect=%s' % urllib.quote_plus(mssql_str)
     mssql_db = etlalchemy.ETLAlchemySource(mssql_str)
 
-    pgsql_pwd = int(raw_input('Password: '))
+    pgsql_pwd = int(raw_input('Password to connect PostgreSQL: '))
     pgsql_str = 'postgresql+psycopg2://postgres:{}@localhost/{}'.format(pgsql_pwd, destination_db_name)
     pgsql_db = etlalchemy.ETLAlchemyTarget(pgsql_str, drop_database=True)
 
     pgsql_db.addSource(mssql_db)
     pgsql_db.migrate()
 
-# source_db_name=raw_input('Source database name: ')
-# destination_db_name=raw_input('Destination database name: ')
-# migrate_mssql_db_to_postgresql(source_db_name, destination_db_name)
+
+source_db_name = raw_input('Source database name: ')
+destination_db_name = raw_input('Destination database name: ')
+migrate_mssql_db_to_postgresql(source_db_name, destination_db_name)
