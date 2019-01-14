@@ -94,12 +94,3 @@ def copy_mssql_to_postgresql(source_db_name, source_table_type, destination_db_n
 # copy_mssql_to_postgresql(source_db_name='NR_VEG', source_table_type='TABLE', destination_db_name='NR_VEG')
 # copy_mssql_to_postgresql(source_db_name='NR_METEX', source_table_type='TABLE', destination_db_name='NR_METEX')
 # copy_mssql_to_postgresql(source_db_name='NR_METEX', source_table_type='VIEW', destination_db_name='NR_METEX')
-
-
-# from etlalchemy import ETLAlchemySource, ETLAlchemyTarget
-#
-# # Migrate from SQL Server onto PostgreSQL
-# src = ETLAlchemySource("mssql+pyodbc://Q-THINK/NR_VEG")
-# tgt = ETLAlchemyTarget("postgresql://postgres:123@localhost/NR_VEG_1", drop_database=True)
-# tgt.addSource(src)
-# tgt.migrate()
