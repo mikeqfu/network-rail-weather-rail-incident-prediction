@@ -60,3 +60,9 @@ Institution of Engineering and Technology, p.1-7.
 
 - **Fu, Q**. and Easton, J. M. (2018), Establishing the value of existing data sources as supporting datasets for 
 improved decision-making. Approved by Network Rail. (*Unpublished*.)
+
+
+##### *Python packages (in progress)*
+
+- [pydriosm](https://github.com/mikeqfu/pydriosm) - Download, read/parse and store OSM data extracts
+- [pyrcscraper](https://github.com/mikeqfu/pyrcscraper) - Scrape and store railway codes used in the UK
