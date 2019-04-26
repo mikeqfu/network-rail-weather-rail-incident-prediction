@@ -6,26 +6,34 @@ import re
 
 import pandas as pd
 
-import converters
-import database_utils as db
-from utils import find_match, load_pickle, reset_double_indexes, save, save_pickle
+from converters import osgb36_to_wgs84
+from mssql_utils import establish_mssql_connection, get_table_primary_keys
+from utils import cdd, find_match, load_pickle, reset_double_indexes, save, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
 
 
-# Change directory to "Data\\Vegetation\\Database\\Tables"
+# Change directory to "Data\\vegetation\\Database"
+def cdd_veg_db(*directories):
+    path = cdd("vegetation", "Database")
+    for directory in directories:
+        path = os.path.join(path, directory)
+    return path
+
+
+# Change directory to "Data\\vegetation\\Database\\Tables"
 def cdd_veg_db_tables(*directories):
-    path = db.cdd_veg_db("Tables")
+    path = cdd_veg_db("Tables")
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Data\\Vegetation\\Database\\Views"
+# Change directory to "Data\\vegetation\\Database\\Views"
 def cdd_veg_db_views(*directories):
-    path = db.cdd_veg_db("Views")
+    path = cdd_veg_db("Views")
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -71,9 +79,40 @@ def get_route_names_dict(reverse=False):
 """ Get table data from the NR_VEG database """
 
 
+# Read tables available in NR_VEG database ===========================================================================
+def read_veg_table(table_name, schema='dbo', index_col=None, route=None, save_as=None, update=False):
+    """
+    :param table_name: [str]
+    :param schema: [str]
+    :param index_col: [str] or None
+    :param route: [str] or None
+    :param save_as: [str] or None
+    :param update: [bool]
+    :return: [pandas.DataFrame]
+    """
+    table = schema + '.' + table_name
+    # Make a direct connection to the queried database
+    conn_veg = establish_mssql_connection(database_name='NR_VEG')
+    if route is None:
+        sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
+    else:
+        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route)  # given a specific Route
+    # Create a pandas.DataFrame of the queried table
+    data = pd.read_sql(sql=sql_query, con=conn_veg, index_col=index_col)
+    # Disconnect the database
+    conn_veg.close()
+    # Save the DataFrame as a worksheet locally?
+    if save_as:
+        path_to_file = cdd_veg_db("Tables_original", table_name + save_as)
+        if not os.path.isfile(path_to_file) or update:
+            save(data, path_to_file, index=False if index_col is None else True)
+    # Return the data frame of the queried table
+    return data
+
+
 # Get primary keys of a table in database 'NR_VEG'
-def veg_pk(table_name):
-    pri_key = db.get_pri_keys(db_name='NR_VEG', table_name=table_name)
+def get_veg_pk(table_name):
+    pri_key = get_table_primary_keys(database_name='NR_VEG', table_name=table_name)
     return pri_key
 
 
@@ -86,7 +125,7 @@ def get_adverse_wind(update=False):
         adverse_wind = load_pickle(path_to_pickle)
     else:
         try:
-            adverse_wind = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            adverse_wind = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             adverse_wind = None
@@ -103,7 +142,7 @@ def get_cutting_angle_class(update=False):
         cutting_angle = load_pickle(path_to_pickle)
     else:
         try:
-            cutting_angle = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            cutting_angle = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(cutting_angle, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -121,7 +160,7 @@ def get_cutting_depth_class(update=False):
         cutting_depth = load_pickle(path_to_pickle)
     else:
         try:
-            cutting_depth = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            cutting_depth = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(cutting_depth, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -139,7 +178,7 @@ def get_du_list(index=True, update=False):
         du_list = load_pickle(path_to_pickle)
     else:
         try:
-            du_list = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            du_list = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(du_list, path_to_pickle)
             if not index:
                 du_list = du_list.reset_index()
@@ -159,7 +198,7 @@ def get_path_route(update=False):
         path_route = load_pickle(path_to_pickle)
     else:
         try:
-            path_route = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            path_route = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(path_route, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -178,7 +217,7 @@ def get_du_route(update=False):
     else:
         try:
             # (Note that 'Routes' table contains information about Delivery Units)
-            routes = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            routes = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             # Replace values in (index) column 'DUName'
             routes.index = routes.index.to_series().replace(
                 {'Lanc&Cumbria MDU - HR1': 'Lancashire & Cumbria MDU - HR1',
@@ -202,7 +241,7 @@ def get_s8data_from_db_veg(update=False):
         s8data = load_pickle(path_to_pickle)
     else:
         try:
-            s8data = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            s8data = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(s8data, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -220,7 +259,7 @@ def get_tree_age_class(update=False):
         tree_age_class = load_pickle(path_to_pickle)
     else:
         try:
-            tree_age_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            tree_age_class = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(tree_age_class, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -238,7 +277,7 @@ def get_tree_size_class(update=False):
         tree_size_class = load_pickle(path_to_pickle)
     else:
         try:
-            tree_size_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            tree_size_class = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(tree_size_class, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -256,7 +295,7 @@ def get_tree_type(update=False):
         tree_type = load_pickle(path_to_pickle)
     else:
         try:
-            tree_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            tree_type = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(tree_type, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -274,7 +313,7 @@ def get_felling_type(update=False):
         felling_type = load_pickle(path_to_pickle)
     else:
         try:
-            felling_type = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            felling_type = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(felling_type, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -292,7 +331,7 @@ def get_area_work_type(update=False):
         area_work_type = load_pickle(path_to_pickle)
     else:
         try:
-            area_work_type = db.read_veg_table(table_name, index_col=veg_pk('AreaWorkType'), save_as=".csv")
+            area_work_type = read_veg_table(table_name, index_col=get_veg_pk('AreaWorkType'), save_as=".csv")
             save_pickle(area_work_type, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -310,7 +349,7 @@ def get_service_detail(update=False):
         service_detail = load_pickle(path_to_pickle)
     else:
         try:
-            service_detail = db.read_veg_table(table_name, index_col=veg_pk('ServiceDetail'), save_as=".csv")
+            service_detail = read_veg_table(table_name, index_col=get_veg_pk('ServiceDetail'), save_as=".csv")
             save_pickle(service_detail, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -328,7 +367,7 @@ def get_service_path(update=False):
         service_path = load_pickle(path_to_pickle)
     else:
         try:
-            service_path = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            service_path = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(service_path, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -346,7 +385,7 @@ def get_supplier(update=False):
         supplier = load_pickle(path_to_pickle)
     else:
         try:
-            supplier = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            supplier = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(supplier, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -364,7 +403,7 @@ def get_supplier_costs(update=False):
         supplier_costs = load_pickle(path_to_pickle)
     else:
         try:
-            supplier_costs = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            supplier_costs = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(supplier_costs, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -382,7 +421,7 @@ def get_supplier_costs_area(update=False):
         costs_area = load_pickle(path_to_pickle)
     else:
         try:
-            costs_area = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            costs_area = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(costs_area, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -400,7 +439,7 @@ def get_supplier_cost_simple(update=False):
         costs_simple = load_pickle(path_to_pickle)
     else:
         try:
-            costs_simple = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            costs_simple = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(costs_simple, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -418,7 +457,7 @@ def get_tree_action_fractions(update=False):
         tree_action_fractions = load_pickle(path_to_pickle)
     else:
         try:
-            tree_action_fractions = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            tree_action_fractions = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(tree_action_fractions, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -436,7 +475,7 @@ def get_veg_surv_type_class(update=False):
         veg_surv_type_class = load_pickle(path_to_pickle)
     else:
         try:
-            veg_surv_type_class = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            veg_surv_type_class = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(veg_surv_type_class, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -454,7 +493,7 @@ def get_wb_factors(update=False):
         wb_factors = load_pickle(path_to_pickle)
     else:
         try:
-            wb_factors = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            wb_factors = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(wb_factors, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -472,7 +511,7 @@ def get_weed_spray(update=False):
         weed_spray = load_pickle(path_to_pickle)
     else:
         try:
-            weed_spray = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            weed_spray = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(weed_spray, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -490,7 +529,7 @@ def get_work_hours(update=False):
         work_hours = load_pickle(path_to_pickle)
     else:
         try:
-            work_hours = db.read_veg_table(table_name, index_col=veg_pk(table_name), save_as=".csv")
+            work_hours = read_veg_table(table_name, index_col=get_veg_pk(table_name), save_as=".csv")
             save_pickle(work_hours, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -513,12 +552,12 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
         furlong_data = load_pickle(path_to_pickle)
     else:
         try:
-            furlong_data = db.read_veg_table(table_name)
+            furlong_data = read_veg_table(table_name)
 
             mileage_columns = ['StartMileage', 'EndMileage']  # Re-format mileage data
             furlong_data[mileage_columns] = furlong_data[mileage_columns].applymap(lambda x: str('%.4f' % x))
-            furlong_data.set_index(veg_pk(table_name), inplace=True)
-            save(furlong_data, db.cdd_veg_db("Tables_original", table_name + ".csv"))
+            furlong_data.set_index(get_veg_pk(table_name), inplace=True)
+            save(furlong_data, cdd_veg_db("Tables_original", table_name + ".csv"))
 
             furlong_data.reset_index(inplace=True)
             # Rename columns
@@ -544,7 +583,7 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False):
             furlong_data['Route'] = furlong_data['Route'].replace(get_route_names_dict())
 
             if set_index:
-                furlong_data.set_index(veg_pk(table_name), inplace=True)
+                furlong_data.set_index(get_veg_pk(table_name), inplace=True)
 
             # Make amendment to "CoverPercent" data for which the total is not 0 or 100?
             if pseudo_amendment:
@@ -622,12 +661,12 @@ def get_furlong_location(useful_columns_only=True, update=False):
     else:
         try:
             # Read data from database
-            furlong_location = db.read_veg_table(table_name, index_col=veg_pk(table_name))
+            furlong_location = read_veg_table(table_name, index_col=get_veg_pk(table_name))
             # Re-format mileage data
             mileage_columns = ['StartMileage', 'EndMileage']
             furlong_location[mileage_columns] = furlong_location[mileage_columns].applymap(lambda x: str('%.4f' % x))
             # Save data read from the database
-            save(furlong_location, db.cdd_veg_db("Tables_original", table_name + ".csv"))
+            save(furlong_location, cdd_veg_db("Tables_original", table_name + ".csv"))
 
             # Replace boolean values with binary values
             furlong_location[['Electrified', 'HazardOnly']] = \
@@ -665,11 +704,11 @@ def get_hazard_tree(set_index=False, update=False):
         hazard_tree = load_pickle(path_to_pickle)
     else:
         try:
-            hazard_tree = db.read_veg_table(table_name)
+            hazard_tree = read_veg_table(table_name)
             # Re-format mileage data
             hazard_tree.Mileage = hazard_tree.Mileage.apply(lambda x: str('%.4f' % x))
 
-            save(hazard_tree, db.cdd_veg_db("Tables_original", table_name + ".csv"))
+            save(hazard_tree, cdd_veg_db("Tables_original", table_name + ".csv"))
 
             # Edit the original data
             hazard_tree.drop(['Treesurvey', 'Treetunnel'], axis=1, inplace=True)
@@ -729,12 +768,12 @@ def get_hazard_tree(set_index=False, update=False):
             # Add two columns of Latitudes and Longitudes corresponding to the
             # Easting and Northing coordinates
             hazard_tree[['Longitude', 'Latitude']] = hazard_tree[['Easting', 'Northing']].apply(
-                lambda x: converters.osgb36_to_wgs84(x.Easting, x.Northing), axis=1)
+                lambda x: osgb36_to_wgs84(x.Easting, x.Northing), axis=1)
 
             save_pickle(hazard_tree, path_to_pickle)
 
             if set_index:
-                hazard_tree.set_index(veg_pk(table_name), inplace=True)
+                hazard_tree.set_index(get_veg_pk(table_name), inplace=True)
 
             hazard_tree.dropna(inplace=True)
 
