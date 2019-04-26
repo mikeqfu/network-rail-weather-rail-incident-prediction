@@ -24,7 +24,7 @@ import pyodbc
 import shapely.wkt
 import sqlalchemy
 
-from utils import cdd, save
+from utils import save
 
 
 # ====================================================================================================================
@@ -312,9 +312,7 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
 
 # Read a table chunk-wise from a database ============================================================================
 def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=None, parse_dates=None,
-                        chunk_size=1000000,
-                        index_col=None, coerce_float=None, save_as=".pickle", data_dir=None,
-                        save_by_chunk=False, save_by_value=False):
+                        chunk_size=1000000, index_col=None, coerce_float=None, save_as=".pickle", data_dir=None):
     """
     :param database_name: [str] name of a database to query
     :param table_name: [str] name of a queried table from the given database
@@ -326,14 +324,10 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     :param coerce_float:
     :param save_as: [str]
     :param data_dir: [NoneType] or [str]
-    :param save_by_chunk: [str]
-    :param save_by_value: [str] ext of file which the queried df is saved as
-    :return:[pandas.DataFrame] the queried data as a DataFrame
     """
+    assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
     if col_names:
         assert isinstance(col_names, collections.abc.Iterable) and all(isinstance(x, str) for x in col_names)
-    if save_as:
-        assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
     if data_dir:
         assert isinstance(save_as, str)
 
@@ -356,62 +350,34 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
 
     sql_query = 'SELECT {} FROM {}."{}"'.format(
         ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names), schema_name, table_name)
-    # Read the queried table_name into a pandas.DataFrame
-    table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
-                             chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
 
     dat_dir = os.path.realpath(data_dir if data_dir else 'temp_dat')
     if not geom_col_names:
+        # Read the queried table_name into a pandas.DataFrame
+        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
+                                 chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
         for tbl_id, tbl_dat in enumerate(table_data):
-            path_to_file = os.path.join(dat_dir, table_name + "_{}".format(tbl_id) + save_as)
-            save(pd.DataFrame(tbl_dat), path_to_file, sheet_name="Sheet_{}".format(tbl_id))
+            path_to_file = os.path.join(dat_dir, table_name + "_{}".format(tbl_id + 1) + save_as)
+            save(tbl_dat, path_to_file, sheet_name="Sheet_{}".format(tbl_id + 1))
     else:
+        # Read the queried table_name into a pandas.DataFrame
+        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
+                                 chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
+        tbl_chunks = [tbl_dat for tbl_dat in table_data]
+
         if len(geom_col_names) == 1:
             geom_sql_query = 'SELECT "{}".STAsText() FROM {}."{}"'.format(geom_col_names[0], schema_name, table_name)
         else:
             geom_sql_query = 'SELECT {} FROM {}."{}"'.format(
                 ', '.join('"' + x + '".STAsText()' for x in geom_col_names), schema_name, table_name)
         geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size)
+        geom_chunks = [geom_dat.applymap(shapely.wkt.loads) for geom_dat in geom_data]
 
-        table_data = pd.concat([pd.DataFrame(tbl_dat) for tbl_dat in table_data], ignore_index=True)
-        geom_data = pd.concat([pd.DataFrame(geom_dat).applymap(shapely.wkt.loads) for geom_dat in geom_data],
-                              ignore_index=True)
-        for idx in range(len(table_data)):
-            geom_data[idx].columns = geom_col_names
-            chunk_data = table_data[idx].join(geom_data[idx])
-            path_to_file = os.path.join(dat_dir, table_name + "_{}".format(idx) + save_as)
-            save(chunk_data, path_to_file, sheet_name="Sheet_{}".format(idx))
+        counter = 0
+        for tbl_dat, geom_dat in zip(tbl_chunks, geom_chunks):
+            path_to_file = os.path.join(dat_dir, table_name + "_{}".format(counter + 1) + save_as)
+            save(tbl_dat.join(geom_dat), path_to_file, sheet_name="Sheet_{}".format(counter + 1))
+            counter += 1
 
     # Disconnect the database
     db_conn.close()
-
-    if save_by_chunk:
-
-        chunk_path = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + "_by_chunk")
-        os.mkdir(chunk_path)
-
-        if save_as in (".xlsx", ".xls"):
-            # The DataFrame will be saved as .xlsx file, with each worksheet taking in one "chunk" of the data
-            excel_writer = pd.ExcelWriter(os.path.join(chunk_path, table_name + '_by_chunk.xlsx'), engine='xlsxwriter')
-            for chunk_id, chunk_data in enumerate(chunks):
-                if index_col is not None:
-                    chunk_data.reset_index(inplace=True)
-                chunk_data.to_excel(excel_writer, sheet_name='chunk{}'.format(chunk_id), index=False)
-            excel_writer.save()
-        else:
-            for chunk_id, chunk_data in enumerate(chunks):
-                save(chunk_data, os.path.join(chunk_path, 'chunk{}'.format(chunk_id) + '.pickle'))
-
-    if save_by_value:  # This requires that the corresponding column is set to be the index
-        value_path = cdd("Tables_original", table_name + '_by_value')
-        os.mkdir(value_path)
-        if isinstance(save_by_value, list) or isinstance(save_by_value, tuple):  # e.g. save_by_value = (13844, 13852)
-            for v in save_by_value:
-                save(table_data.ix[v], os.path.join(value_path, '{}'.format(v) + '.pickle'))
-        elif save_as in (".xlsx", ".xls"):
-            excel_writer = pd.ExcelWriter(cdd(table_name + '_by_value.xlsx'), engine='xlsxwriter')
-            for v in set(table_data.index):
-                table_data.ix[v].to_excel(excel_writer, sheet_name=str(v), index=False)
-            excel_writer.save()
-
-    return table_data
