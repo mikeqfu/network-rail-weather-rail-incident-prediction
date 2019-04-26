@@ -159,27 +159,34 @@ def load_json(path_to_json, verbose=False):
 
 
 # Save Excel workbook
-def save_spreadsheet(excel_data, path_to_sheet, sep, index, sheet_name, engine='xlsxwriter'):
+def save_excel(excel_data, path_to_excel, sep, index, sheet_name, engine='xlsxwriter'):
     """
     :param excel_data: any [DataFrame] that could be dumped saved as a Excel workbook, e.g. '.csv', '.xlsx'
-    :param path_to_sheet: [str] local file path
+    :param path_to_excel: [str] local file path
     :param sep: [str] separator for saving excel_data to a '.csv' file
-    :param index:
+    :param index: [bool]
     :param sheet_name: [str] name of worksheet for saving the excel_data to a e.g. '.xlsx' file
     :param engine: [str] ExcelWriter engine; pandas writes Excel files using the 'xlwt' module for '.xls' files and the
                         'openpyxl' or 'xlsxWriter' modules for '.xlsx' files.
     :return: whether the data has been successfully saved or updated
     """
-    excel_filename = os.path.basename(path_to_sheet)
+    excel_filename = os.path.basename(path_to_excel)
     _, save_as = os.path.splitext(excel_filename)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_sheet) else "Saving", excel_filename), end="")
+    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_excel) else "Saving", excel_filename), end="")
     try:
-        os.makedirs(os.path.dirname(os.path.abspath(path_to_sheet)), exist_ok=True)
-        if save_as == ".csv":  # Save the data to a .csv file
-            excel_data.to_csv(path_to_sheet, index=index, sep=sep)
-        else:  # Save the data to a .xlsx or .xls file
-            xlsx_writer = pd.ExcelWriter(path_to_sheet, engine)
-            excel_data.to_excel(xlsx_writer, sheet_name, index=index)
+        os.makedirs(os.path.dirname(os.path.abspath(path_to_excel)), exist_ok=True)
+        if excel_filename.endswith(".csv"):  # Save the data to a .csv file
+            excel_data.to_csv(path_to_excel, index=index, sep=sep, na_rep='', float_format=None, columns=None,
+                              header=True, index_label=None, mode='w', encoding=None, compression='infer',
+                              quoting=None, quotechar='"', line_terminator=None, chunksize=None,
+                              tupleize_cols=None, date_format=None, doublequote=True, escapechar=None,
+                              decimal='.')
+        else:  # Save the data to a .xlsx or .xls file, e.g. excel_filename.endswith(".xlsx")
+            xlsx_writer = pd.ExcelWriter(path_to_excel, engine)
+            excel_data.to_excel(xlsx_writer, sheet_name, index=index, na_rep='', float_format=None,
+                                columns=None, header=True, index_label=None, startrow=0, startcol=0,
+                                engine=None, merge_cells=True, encoding=None, inf_rep='inf', verbose=True,
+                                freeze_panes=None)
             xlsx_writer.save()
             xlsx_writer.close()
         print("Successfully.")
@@ -188,7 +195,7 @@ def save_spreadsheet(excel_data, path_to_sheet, sep, index, sheet_name, engine='
 
 
 # Save data locally (.pickle, .csv or .xlsx)
-def save(data, path_to_file, sep=',', index=True, sheet_name='Details', engine='xlsxwriter', deep_copy=True):
+def save(data, path_to_file, sep=',', index=False, sheet_name='Sheet1', engine='xlsxwriter', deep_copy=True):
     """
     :param data: any object that could be dumped
     :param path_to_file: [str] local file path
@@ -199,25 +206,24 @@ def save(data, path_to_file, sep=',', index=True, sheet_name='Details', engine='
     :param deep_copy: [bool] whether make a deep copy of the data before saving it
     :return: whether the data has been successfully saved or updated
     """
-
+    # Make a copy the original data
     dat = copy.deepcopy(data) if deep_copy else copy.copy(data)
 
     # The specified path exists?
     os.makedirs(os.path.dirname(os.path.abspath(path_to_file)), exist_ok=True)
 
-    # Get the file extension
-    _, save_as = os.path.splitext(path_to_file)
-
     if isinstance(dat, pd.DataFrame) and dat.index.nlevels > 1:
         dat.reset_index(inplace=True)
 
     # Save the data according to the file extension
-    if save_as == ".csv" or save_as == ".xlsx" or save_as == ".xls":
-        save_spreadsheet(dat, path_to_file, sep, index, sheet_name, engine)
-    elif save_as == ".json":
+    if path_to_file.endswith((".csv", ".xlsx", ".xls")):
+        save_excel(dat, path_to_file, sep, index, sheet_name, engine)
+    elif path_to_file.endswith(".json"):
         save_json(dat, path_to_file)
     else:
         save_pickle(dat, path_to_file)
+        if not path_to_file.endswith(".pickle"):
+            print("Note that the file extension is not among the recognisable formats of this 'save()' function.")
 
 
 # Save a figure using plt.savefig()
