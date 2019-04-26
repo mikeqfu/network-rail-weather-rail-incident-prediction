@@ -3,28 +3,36 @@
 import os
 
 import datetime_truncate
+import fuzzywuzzy.process
 import matplotlib.patches
 import matplotlib.pyplot as plt
 import mpl_toolkits.basemap
 import pandas as pd
 import shapely.geometry
-from fuzzywuzzy.process import extractOne
 
-import database_utils as db
-import database_veg as dbv
-import railwaycodes_utils as rc
 from converters import yards_to_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
+from mssql_utils import establish_mssql_connection, get_table_primary_keys
+from mssql_vegetation import get_furlong_location
+from railwaycodes_utils import get_location_codes, get_location_codes_dictionary, get_location_codes_dictionary_v2
 from utils import cd, cdd, cdd_rc, find_match, load_json, load_pickle, save, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
 
 
+# Change directory to "Data\\METEX\\Database"
+def cdd_metex_db(*directories):
+    path = cdd("METEX", "Database")
+    for directory in directories:
+        path = os.path.join(path, directory)
+    return path
+
+
 # Change directory to "Data\\METEX\\Database\\Tables" and sub-directories
 def cdd_metex_db_tables(*directories):
-    path = db.cdd_metex_db("Tables")
+    path = cdd_metex_db("Tables")
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -33,7 +41,7 @@ def cdd_metex_db_tables(*directories):
 
 # Change directory to "Data\\METEX\\Database\\Views" and sub-directories
 def cdd_metex_db_views(*directories):
-    path = db.cdd_metex_db("Views")
+    path = cdd_metex_db("Views")
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -42,7 +50,7 @@ def cdd_metex_db_views(*directories):
 
 # Change directory to "METEX\\Database\\Figures" and sub-directories
 def cdd_metex_db_fig(*directories):
-    path = db.cdd_metex_db("Figures")
+    path = cdd_metex_db("Figures")
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -61,9 +69,47 @@ def cdd_metex_db_fig_pub(pid, *directories):
 """ Get table data from the NR_METEX database """
 
 
+# Read tables available in Database
+def read_metex_table(table_name, schema_name='dbo', index_col=None, route=None, weather_category=None,
+                     save_as=None, update=False):
+    """
+    :param table_name: [str] name of a queried table from the Database
+    :param schema_name: [str] 'dbo', as default
+    :param index_col: [str] name of a column that is set to be the index
+    :param route: [str] name of the specific Route
+    :param weather_category: [str] name of the specific weather category
+    :param save_as: [str]
+    :param update:
+    :return: [pandas.DataFrame] the queried data as a DataFrame
+    """
+    table = '{}."{}"'.format(schema_name, table_name)
+    # Connect to the queried database
+    conn_metex = establish_mssql_connection(database_name='NR_METEX')
+    # Specify possible scenarios:
+    if not route and not weather_category:
+        sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
+    elif route and not weather_category:
+        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route)  # given Route
+    elif route is None and weather_category is not None:
+        sql_query = "SELECT * FROM {} WHERE WeatherCategory = '{}'".format(table, weather_category)  # given weather
+    else:
+        # Get all data of a table, given Route and weather category e.g. data about wind-related events on Anglia Route
+        sql_query = "SELECT * FROM {} WHERE Route = '{}' AND WeatherCategory = '{}'".format(
+            table, route, weather_category)
+    # Create a pandas.DataFrame of the queried table
+    table_data = pd.read_sql_query(sql=sql_query, con=conn_metex, index_col=index_col)
+    # Disconnect the database
+    conn_metex.close()
+    if save_as:
+        path_to_file = cdd_metex_db("Tables_original", table_name + save_as)
+        if not os.path.isfile(path_to_file) or update:
+            save(table_data, path_to_file, index=False if index_col is None else True)
+    return table_data
+
+
 # Get primary keys of a table in database NR_METEX
-def metex_pk(table_name):
-    pri_key = db.get_pri_keys(db_name="NR_METEX", table_name=table_name)
+def get_metex_pk(table_name):
+    pri_key = get_table_primary_keys(database_name="NR_METEX", table_name=table_name)
     return pri_key
 
 
@@ -96,7 +142,7 @@ def get_imdm(as_dict=False, update=False):
         imdm = load_pickle(path_to_pickle)
     else:
         try:
-            imdm = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+            imdm = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             imdm.index.rename(name='IMDM', inplace=True)  # Rename a column and index
             imdm.rename(columns={'Name': 'IMDM'}, inplace=True)
             if as_dict:
@@ -123,7 +169,7 @@ def get_imdm_alias(as_dict=False, update=False):
         imdm_alias = load_pickle(path_to_pickle)
     else:
         try:
-            imdm_alias = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+            imdm_alias = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             imdm_alias.rename(columns={'Imdm': 'IMDM'}, inplace=True)  # Rename a column
             imdm_alias.index.rename(name='ImdmAlias', inplace=True)  # Rename index
             if as_dict:
@@ -151,7 +197,7 @@ def get_imdm_weather_cell_map(grouped=False, update=False):
         try:
             # Read IMDMWeatherCellMap table
             weather_cell_map = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
 
             weather_cell_map.rename(columns={'WeatherCell': 'WeatherCellId'}, inplace=True)  # Rename a column
             weather_cell_map.index.rename('IMDMWeatherCellMapId', inplace=True)  # Rename index
@@ -181,7 +227,7 @@ def get_incident_reason_info(database_plus=True, update=False):
         try:
             # Get data from the database
             incident_reason_info = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename columns
             incident_reason_info.rename(columns={'Description': 'IncidentReasonDescription',
                                                  'Category': 'IncidentCategory',
@@ -218,7 +264,7 @@ def get_weather_category_lookup(as_dict=False, update=False):
     else:
         try:
             weather_category_lookup = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column and index label
             weather_category_lookup.rename(columns={'Name': 'WeatherCategory'}, inplace=True)
             weather_category_lookup.index.rename(name='WeatherCategoryCode', inplace=True)
@@ -244,7 +290,7 @@ def get_incident_record(update=False):
         try:
             # Read the 'IncidentRecord' table
             incident_record = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename column names
             incident_record.rename(columns={'CreateDate': 'IncidentRecordCreateDate',
                                             'Reason': 'IncidentReason'}, inplace=True)
@@ -274,7 +320,7 @@ def get_location(update=False):
     else:
         try:
             # Read 'Location' table
-            location = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+            location = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column and index label
             location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
             location.index.rename('LocationId', inplace=True)
@@ -300,7 +346,7 @@ def get_pfpi(update=False):
     else:
         try:
             # Read the 'PfPI' table
-            pfpi = db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+            pfpi = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename a column name
             pfpi.index.rename('PfPIId', inplace=True)
             # To replace Performance Event Code
@@ -330,7 +376,7 @@ def get_route(update=False):
         route = load_pickle(path_to_pickle)
     else:
         try:
-            route = db.read_metex_table(table_name, save_as=".csv", update=update)
+            route = read_metex_table(table_name, save_as=".csv", update=update)
             # Rename a column
             route.rename(columns={'Name': 'Route'}, inplace=True)
             # Save the processed data
@@ -356,11 +402,11 @@ def get_stanox_location(nr_mileage_format=True, update=False):
         try:
             # Read StanoxLocation table from the database
             stanox_location = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
 
             # Cleanse stanox_location ---------------------------
             stanox_location.reset_index(inplace=True)
-            location_codes = rc.get_location_codes()['Locations']
+            location_codes = get_location_codes()['Locations']
 
             errata = load_json(cdd_rc("errata.json"))  # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
             errata_stanox, errata_tiploc, errata_stanme = errata.values()
@@ -411,12 +457,13 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
 
             # STANOX dictionary
-            stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
+            stanox_dict = get_location_codes_dictionary_v2(['STANOX'], update=update)
             temp = stanox_location.join(stanox_dict, on='Stanox')[['Description', 'Location']]
             na_loc = temp.Location.isnull()
             temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
             stanox_location.Description = temp.apply(
-                lambda x: extractOne(x[0], x[1], score_cutoff=10)[0] if isinstance(x[1], list) else x[1], axis=1)
+                lambda x: fuzzywuzzy.process.extractOne(x[0], x[1], score_cutoff=10)[0]
+                if isinstance(x[1], list) else x[1], axis=1)
 
             stanox_location.Name = stanox_location.Name.str.upper()
 
@@ -439,7 +486,7 @@ def get_stanox_location(nr_mileage_format=True, update=False):
             # For 'Mileages'
             if nr_mileage_format:
                 yards = stanox_location.Yards.map(lambda x: yards_to_mileage(x) if not pd.isnull(x) else '')
-            else:  # to convert yards to miles (Note: Not the 'mileage' used by Network Rail)
+            else:  # to convert yards to miles (Note: Not the 'mileage' used by network Rail)
                 yards = stanox_location.Yards.map(lambda x: x / 1760 if not pd.isnull(x) else '')
             stanox_location.Yards = yards
             stanox_location.rename(columns={'Yards': 'Mileage'}, inplace=True)
@@ -469,21 +516,21 @@ def get_stanox_section(update=False):
         try:
             # Read StanoxSection table from the database
             stanox_section = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Pre-cleaning the original data
             stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: int(x) if not pd.np.isnan(x) else '')
             stanox_section.index.name = 'StanoxSectionId'
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             stanox_loc = get_stanox_location(nr_mileage_format=True)
             stanox_dict_1 = stanox_loc.Location.to_dict()
-            stanox_dict_2 = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
+            stanox_dict_2 = get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
             # Processing 'StartStanox'
             stanox_section['StartStanox_loc'] = stanox_section.StartStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Processing 'EndStanox'
             stanox_section['EndStanox_loc'] = stanox_section.EndStanox.replace(stanox_dict_1).replace(stanox_dict_2)
             # Secondly, process 'STANME' and 'TIPLOC'
-            stanme_dict = rc.get_location_codes_dictionary(keyword='STANME')
-            tiploc_dict = rc.get_location_codes_dictionary(keyword='TIPLOC')
+            stanme_dict = get_location_codes_dictionary(keyword='STANME')
+            tiploc_dict = get_location_codes_dictionary(keyword='TIPLOC')
             loc_name_replacement_dict = create_location_names_replacement_dict()
             loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict()
             # Processing 'StartStanox_loc'
@@ -531,7 +578,7 @@ def get_trust_incident(financial_years_06_14=True, update=False):
         try:
             # Read 'TrustIncident' table
             trust_incident = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             # Rename column names
             trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
             # Rename index label
@@ -552,21 +599,21 @@ def get_trust_incident(financial_years_06_14=True, update=False):
     return trust_incident
 
 
-# Get Weather
+# Get weather
 def get_weather(update=False):
-    table_name = 'Weather'
+    table_name = 'weather'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         weather_data = load_pickle(path_to_pickle)
     else:
         try:
-            # Read 'Weather' table
+            # Read 'weather' table
             weather_data = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), update=update)
             # Save original data read from the database (the file is too big)
-            if not os.path.isfile(db.cdd_metex_db("Tables_original", table_name + ".csv")):
-                save(weather_data, db.cdd_metex_db("Tables_original", table_name + ".csv"))
+            if not os.path.isfile(cdd_metex_db("Tables_original", table_name + ".csv")):
+                save(weather_data, cdd_metex_db("Tables_original", table_name + ".csv"))
             # Firstly,
             i = 0
             snowfall, precipitation = weather_data.Snowfall.tolist(), weather_data.TotalPrecipitation.tolist()
@@ -593,22 +640,22 @@ def get_weather(update=False):
     return weather_data
 
 
-# Get Weather in a chunk-wise way
+# Get weather in a chunk-wise way
 def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chunk=False, save_by_value=False):
     """
-    Note that it might be too large for pd.read_sql to read with low memory. Instead, we may read the 'Weather' table
+    Note that it might be too large for pd.read_sql to read with low memory. Instead, we may read the 'weather' table
     chunk-wise and assemble the full data set from individual pieces afterwards, especially when we'd like to save
     the data locally.
     """
 
-    weather = db.read_table_by_part(db_name="NR_METEX",
-                                    table_name="Weather",
-                                    index_col=metex_pk("Weather") if index is True else None,
-                                    parse_dates=None,
-                                    chunk_size=chunk_size,
-                                    save_as=save_as,
-                                    save_by_chunk=save_by_chunk,
-                                    save_by_value=save_by_value)
+    weather = read_table_by_part(database_name="NR_METEX",
+                                 table_name="weather",
+                                 index_col=get_metex_pk("weather") if index is True else None,
+                                 parse_dates=None,
+                                 chunk_size=chunk_size,
+                                 save_as=save_as,
+                                 save_by_chunk=save_by_chunk,
+                                 save_by_value=save_by_value)
 
     return weather
 
@@ -624,7 +671,7 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
         try:
             # Read 'WeatherCell' table
             weather_cell_map = \
-                db.read_metex_table(table_name, index_col=metex_pk(table_name), save_as=".csv", update=update)
+                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
             weather_cell_map.index.rename('WeatherCellId', inplace=True)  # Rename index
             # Lower left corner:
             ll_longitude = weather_cell_map.Longitude  # - weather_cell_map.width / 2
@@ -774,13 +821,13 @@ get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as="
 # Form a file name in terms of specific 'Route' and 'weather' category
 def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
     if route is not None:
-        route_lookup = load_json(cdd("Network\\Routes", "route-names.json"))
+        route_lookup = load_json(cdd("network\\Routes", "route-names.json"))
         route = find_match(route, route_lookup['Route'])
     if weather is not None:
-        weather_category_lookup = load_json(cdd("Weather", "weather-categories.json"))
+        weather_category_lookup = load_json(cdd("weather", "weather-categories.json"))
         weather = find_match(weather, weather_category_lookup['WeatherCategory'])
     filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
-    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
     return filename
 
 
@@ -869,7 +916,7 @@ def merge_schedule8_data(save_as=".pickle"):
     """
 
     # Get a ELR-IMDM-Route "dictionary" from vegetation database
-    route_du_elr = dbv.get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
+    route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
     route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
 
     # Further cleaning the data
