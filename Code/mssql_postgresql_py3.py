@@ -1,21 +1,22 @@
+import getpass
+
 import sqlalchemy
 import sqlalchemy.engine.url
 import sqlalchemy_utils
 
-from database_utils import get_table_names, read_table_by_name
+from mssql_utils import read_table_by_name
 
 
 #
-def create_postgres_engine_url(db_name='postgres', password=None):
+def create_postgres_engine_url(db_name='postgres'):
     """
     :param db_name: 
-    :param password: 
-    :return: 
+    :return:
     """
     database_info = {'drivername': 'postgresql+psycopg2',
-                     'username': 'postgres',
-                     'password': password if password is not None else int(input('Password: ')),
-                     'host': 'localhost',
+                     'username': input('PostgreSQL username: '),
+                     'password': getpass.getpass('PostgreSQL password: '),
+                     'host': input('Host name: '),
                      'port': 5432,
                      'database': db_name}
     return sqlalchemy.engine.url.URL(**database_info)
@@ -53,10 +54,9 @@ def dump_data_to_postgresql(source_data, destination_db_name, destination_table_
 
 
 # Copy all tables from MSSQL to PostgreSQL
-def copy_mssql_to_postgresql(source_db_name, source_table_type, destination_db_name, update=True, verbose=True):
+def copy_mssql_to_postgresql(source_db_name, destination_db_name, update=True, verbose=True):
     """
     :param source_db_name:
-    :param source_table_type:
     :param destination_db_name:
     :param update:
     :param verbose:
@@ -69,9 +69,9 @@ def copy_mssql_to_postgresql(source_db_name, source_table_type, destination_db_n
 
     conn_engine = sqlalchemy.create_engine(conn_str, isolation_level='AUTOCOMMIT')
 
-    for table_name in get_table_names(source_db_name, schema='dbo', table_type=source_table_type):
+    for table_name in conn_engine.table_names(schema='dbo'):
         try:
-            source_data = read_table_by_name(source_db_name, table_name, schema='dbo')
+            source_data = read_table_by_name(source_db_name, table_name, schema_name='dbo')
         except Exception as e:
             print("Failed to identify the source database \"{}\". {}".format(source_db_name, e))
             break
