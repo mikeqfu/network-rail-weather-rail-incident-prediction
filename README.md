@@ -36,11 +36,11 @@ The prototype data model is generic and should also be adaptable to other contex
 - **Fu, Q**. and [Easton, J. M.](https://www.birmingham.ac.uk/staff/profiles/eese/easton-john.aspx) (2018), A data model for prediction of weather-related rail incidents: a case-study example of wind-related incidents on the rail network in Great Britain, paper presented at the 50th Annual Conference of the Universities’ Transport Study Group, London, UK, 3-5 January 2018. (*Unpublished*.) 
 - **Fu, Q**. and [Easton, J. M.](https://www.birmingham.ac.uk/staff/profiles/eese/easton-john.aspx) (2016), How does existing data improve decision making? A case study of wind-related incidents on rail network in Great Britain, paper presented at the 
   [2016 International Conference on Railway Engineering, Brussels, Belgium, 12-13 May 2016](
-  https://digital-library.theiet.org/content/conferences/cp703) \[[Presentation](https://tv.theiet.org/?videoid=8607)\]. Published in the Proceedings of the International Conference on Railway Engineering (ICRE 2016), Institution of Engineering and Technology, p.1-7. 
+  https://digital-library.theiet.org/content/conferences/cp703) \[[Presentation](https://tv.theiet.org/?videoid=8607)\]. Published in the Proceedings of the International Conference on Railway Engineering (ICRE 2016), Institution of Engineering and Technology. 
   [doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/). 
 
 
-##### *Python packages (in progress)*
+##### *Python packages (open for further development)*
 
 - [pydriosm](https://github.com/mikeqfu/pydriosm) - Download, read/parse and import/export OSM data extracts. 
 - [pyrcscraper](https://github.com/mikeqfu/pyrcscraper) - A little web scraping tool for collecting railway codes used in GB. 
