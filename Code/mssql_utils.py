@@ -26,7 +26,6 @@ import sqlalchemy
 
 from utils import save
 
-
 # ====================================================================================================================
 """ Establish a connection to a database server """
 
@@ -185,18 +184,21 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
     :param table_type: [str] table type
     :return: [dict] {table_name: primary keys}
     """
-    db_cursor = create_mssql_db_cursor(database_name)
-    # Get all table names
-    table_names = [table.table_name for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
-    # Get primary keys for each table
-    tbl_pks = [{k.table_name: k.column_name} for tbl_name in table_names for k in db_cursor.primaryKeys(tbl_name)]
-    # Close the cursor
-    db_cursor.close()
-    # ( Each element of 'tbl_pks' (as a dict) is in the format of {'table_name': 'primary key'} )
-    tbl_names_set = functools.reduce(operator.or_, (set(d.keys()) for d in tbl_pks), set())
-    # Find all primary keys for each table
-    tbl_pk_dict = dict((tbl, [d[tbl] for d in tbl_pks if tbl in d]) for tbl in tbl_names_set)
-    result_pks = tbl_pk_dict[table_name] if table_name else tbl_pk_dict
+    try:
+        db_cursor = create_mssql_db_cursor(database_name)
+        # Get all table names
+        table_names = [table.table_name for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
+        # Get primary keys for each table
+        tbl_pks = [{k.table_name: k.column_name} for tbl_name in table_names for k in db_cursor.primaryKeys(tbl_name)]
+        # Close the cursor
+        db_cursor.close()
+        # ( Each element of 'tbl_pks' (as a dict) is in the format of {'table_name': 'primary key'} )
+        tbl_names_set = functools.reduce(operator.or_, (set(d.keys()) for d in tbl_pks), set())
+        # Find all primary keys for each table
+        tbl_pk_dict = dict((tbl, [d[tbl] for d in tbl_pks if tbl in d]) for tbl in tbl_names_set)
+        result_pks = tbl_pk_dict[table_name] if table_name else tbl_pk_dict
+    except KeyError:  # Most likely that the table (i.e. 'table_name') does not have any primary key
+        result_pks = None
     return result_pks
 
 
