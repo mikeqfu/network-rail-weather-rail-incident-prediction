@@ -31,7 +31,7 @@ def wgs84_to_osgb36(longitude, latitude):
 
 
 # Convert british national grid (OSBG36) to latitude and longitude (WGS84)(Reference: http://www.hannahfry.co.uk)
-def osgb36_to_wgs84_raw(easting, northing):
+def osgb36_to_wgs84_calc(easting, northing):
     """
     :param easting: X
     :param northing: Y
@@ -39,7 +39,7 @@ def osgb36_to_wgs84_raw(easting, northing):
 
     'easting' and 'northing' are the British national grid coordinates
 
-    Convert British National grid coordinates (OSGB36 Eastings, Northings) to WGS84 latitude and longitude.
+    Convert British National grid coordinates (OSGB36 Easting, Northing) to WGS84 latitude and longitude.
     The code below was copied/adapted from Hannah Fry's blog; the original code and post can be found at:
     http://www.hannahfry.co.uk/blog/2012/02/01/converting-british-national-grid-to-latitude-and-longitude-ii
 
@@ -138,7 +138,7 @@ def osgb36_to_wgs84_raw(easting, northing):
 
 
 # Convert latitude and longitude (WGS84) to british national grid (OSBG36) (Reference: http://www.hannahfry.co.uk)
-def wgs84_to_osgb36_raw(latitude, longitude):
+def wgs84_to_osgb36_calc(latitude, longitude):
     """
     :param latitude:
     :param longitude:
@@ -146,7 +146,7 @@ def wgs84_to_osgb36_raw(latitude, longitude):
 
     This function converts lat lon (WGS84) to british national grid (OSBG36)
 
-    Convert WGS84 (latitude and longitude) to British National grid coordinates (OSGB36 Eastings, Northings).
+    Convert WGS84 (latitude and longitude) to British National grid coordinates (OSGB36 Easting, Northing).
     The code below was copied/adapted from Hannah Fry's blog; the original code and post can be found at:
     http://www.hannahfry.co.uk/blog/2012/02/01/converting-latitude-and-longitude-to-british-national-grid
 
@@ -237,7 +237,7 @@ def wgs84_to_osgb36_raw(latitude, longitude):
 
 
 # Convert "miles.chains" to Network Rail mileages
-def miles_chains_to_mileage(miles_chains):
+def mile_chain_to_nr_mileage(miles_chains):
     """
     :param miles_chains: [str] 'miles.chains'
     :return: [str] 'miles.yards'
@@ -255,33 +255,34 @@ def miles_chains_to_mileage(miles_chains):
 
 
 # Convert str type mileage to numerical type
-def str_to_num_mileage(x):
-    return '' if x == '' else round(float(x), 4)
+def str_to_num_mileage(str_mileage):
+    return '' if str_mileage == '' else round(float(str_mileage), 4)
 
 
 # Convert mileage to str type
-def mileage_to_str(x):
+def nr_mileage_num_to_str(x):
     return '%.4f' % round(float(x), 4)
 
 
 # Convert yards to Network Rail mileages
-def yards_to_mileage(yards):
-    yd = measurement.measures.Distance(yd=yards)
-    mileage_mi = np.floor(yd.mi)
-    mileage_yd = int(yards - measurement.measures.Distance(mi=mileage_mi).yd)
-    # Example: "%.2f" % round(2606.89579999999, 2)
-    mileage = str('%.4f' % round((mileage_mi + mileage_yd / (10 ** 4)), 4))
-    return mileage
+def yards_to_nr_mileage(yards):
+    if not pd.isnull(yards) and yards is not None:
+        yd = measurement.measures.Distance(yd=yards)
+        mileage_mi = np.floor(yd.mi)
+        mileage_yd = int(yards - measurement.measures.Distance(mi=mileage_mi).yd)
+        # Example: "%.2f" % round(2606.89579999999, 2)
+        mileage = str('%.4f' % round((mileage_mi + mileage_yd / (10 ** 4)), 4))
+        return mileage
 
 
 # Convert Network Rail mileages to yards
-def mileage_to_yards(mileage):
-    if isinstance(mileage, float):
-        mileage = str('%.4f' % mileage)
-    elif isinstance(mileage, str):
+def nr_mileage_to_yards(nr_mileage):
+    if isinstance(nr_mileage, float):
+        nr_mileage = str('%.4f' % nr_mileage)
+    elif isinstance(nr_mileage, str):
         pass
-    miles = int(mileage.split('.')[0])
-    yards = int(mileage.split('.')[1])
+    miles = int(nr_mileage.split('.')[0])
+    yards = int(nr_mileage.split('.')[1])
     yards += measurement.measures.Distance(mi=miles).yd
     return yards
 
@@ -295,5 +296,8 @@ def year_to_financial_year(date):
 # Convert a .svg file to, and save locally, a .emf file
 def svg_to_emf(path_to_svg, path_to_emf):
     print("Converting \".svg\" to \".emf\" ... ", end="")
-    subprocess.call(["C:\Program Files\Inkscape\inkscape.exe", '-z', path_to_svg, '-M', path_to_emf])
-    print("Done.")
+    try:
+        subprocess.call(["C:\\Program Files\\Inkscape\\inkscape.exe", '-z', path_to_svg, '-M', path_to_emf])
+        print("Done.")
+    except Exception as e:
+        print("Failed. {}".format(e))
