@@ -1,8 +1,10 @@
 """ Read and clean data of NR_METEX database """
 
+import copy
 import os
+import string
 
-import datetime_truncate
+import fuzzywuzzy.fuzz
 import fuzzywuzzy.process
 import matplotlib.patches
 import matplotlib.pyplot as plt
@@ -10,58 +12,60 @@ import mpl_toolkits.basemap
 import pandas as pd
 import shapely.geometry
 
-from converters import yards_to_mileage
+from converters import nr_mileage_num_to_str, osgb36_to_wgs84, yards_to_nr_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
-from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
-from mssql_utils import establish_mssql_connection, get_table_primary_keys
-from mssql_vegetation import get_furlong_location
-from railwaycodes_utils import get_location_codes, get_location_codes_dictionary, get_location_codes_dictionary_v2
-from utils import cd, cdd, cdd_rc, find_match, load_json, load_pickle, save, save_pickle
+from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
+from mssql_utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
+from railwaycodes_utils import get_location_codes, get_station_locations
+from railwaycodes_utils import get_location_codes_dictionary, get_location_codes_dictionary_v2
+from utils import cd, cdd, cdd_metex, cdd_rc, load_json, load_pickle, save, save_fig, save_pickle
 
 # ====================================================================================================================
 """ Change directories """
 
 
 # Change directory to "Data\\METEX\\Database"
-def cdd_metex_db(*directories):
-    path = cdd("METEX", "Database")
-    for directory in directories:
-        path = os.path.join(path, directory)
+def cdd_metex_db(*sub_dir):
+    path = cdd_metex("Database")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
 # Change directory to "Data\\METEX\\Database\\Tables" and sub-directories
-def cdd_metex_db_tables(*directories):
+def cdd_metex_db_tables(*sub_dir):
     path = cdd_metex_db("Tables")
     os.makedirs(path, exist_ok=True)
-    for directory in directories:
-        path = os.path.join(path, directory)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
 # Change directory to "Data\\METEX\\Database\\Views" and sub-directories
-def cdd_metex_db_views(*directories):
+def cdd_metex_db_views(*sub_dir):
     path = cdd_metex_db("Views")
     os.makedirs(path, exist_ok=True)
-    for directory in directories:
-        path = os.path.join(path, directory)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# Change directory to "METEX\\Database\\Figures" and sub-directories
-def cdd_metex_db_fig(*directories):
+# Change directory to "METEX\\Figures" and sub-directories
+def cdd_metex_fig_db(*sub_dir):
     path = cdd_metex_db("Figures")
     os.makedirs(path, exist_ok=True)
-    for directory in directories:
-        path = os.path.join(path, directory)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# Change directory to "Publications\\Journals\\Figures" and sub-directories
-def cdd_metex_db_fig_pub(pid, *directories):
-    path = cd("Publications", "{}".format(pid), "Figures")
-    for directory in directories:
-        path = os.path.join(path, directory)
+# Change directory to "Publications\\...\\Figures" and sub-directories
+def cdd_metex_fig_pub(pid, *sub_dir):
+    path = cd("Publications", "{} - ".format(pid), "Figures")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
@@ -70,60 +74,52 @@ def cdd_metex_db_fig_pub(pid, *directories):
 
 
 # Read tables available in Database
-def read_metex_table(table_name, schema_name='dbo', index_col=None, route=None, weather_category=None,
-                     save_as=None, update=False):
+def read_metex_table(table_name, index_col=None, route_name=None, weather_category=None, coerce_float=True,
+                     parse_dates=None, chunk_size=None, params=None, schema_name='dbo', save_as=None, update=False):
     """
     :param table_name: [str] name of a queried table from the Database
-    :param schema_name: [str] 'dbo', as default
     :param index_col: [str] name of a column that is set to be the index
-    :param route: [str] name of the specific Route
-    :param weather_category: [str] name of the specific weather category
+    :param route_name: [str] name of the specific Route
+    :param weather_category: [str] name of the specific Weather category
+    :param coerce_float: [bool]
+    :param parse_dates: [list; None]
+    :param chunk_size: [str; None]
+    :param params: [list, tuple or dict, optional, default: None]
+    :param schema_name: [str] 'dbo', as default
     :param save_as: [str]
-    :param update:
+    :param update: [bool]
     :return: [pandas.DataFrame] the queried data as a DataFrame
     """
     table = '{}."{}"'.format(schema_name, table_name)
     # Connect to the queried database
-    conn_metex = establish_mssql_connection(database_name='NR_METEX')
+    conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
     # Specify possible scenarios:
-    if not route and not weather_category:
+    if not route_name and not weather_category:
         sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
-    elif route and not weather_category:
-        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route)  # given Route
-    elif route is None and weather_category is not None:
-        sql_query = "SELECT * FROM {} WHERE WeatherCategory = '{}'".format(table, weather_category)  # given weather
+    elif route_name and not weather_category:
+        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given Route
+    elif route_name is None and weather_category is not None:
+        sql_query = "SELECT * FROM {} WHERE WeatherCategory = '{}'".format(table, weather_category)  # given Weather
     else:
-        # Get all data of a table, given Route and weather category e.g. data about wind-related events on Anglia Route
+        # Get all data of a table, given Route and Weather category e.g. data about wind-related events on Anglia Route
         sql_query = "SELECT * FROM {} WHERE Route = '{}' AND WeatherCategory = '{}'".format(
-            table, route, weather_category)
+            table, route_name, weather_category)
     # Create a pandas.DataFrame of the queried table
-    table_data = pd.read_sql_query(sql=sql_query, con=conn_metex, index_col=index_col)
+    table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, coerce_float=coerce_float,
+                             parse_dates=parse_dates, chunksize=chunk_size, params=params)
     # Disconnect the database
     conn_metex.close()
     if save_as:
-        path_to_file = cdd_metex_db("Tables_original", table_name + save_as)
+        path_to_file = cdd_metex_db_tables(table_name + save_as)
         if not os.path.isfile(path_to_file) or update:
-            save(table_data, path_to_file, index=False if index_col is None else True)
+            save(table_data, path_to_file, index=True if index_col else False)
     return table_data
 
 
 # Get primary keys of a table in database NR_METEX
-def get_metex_pk(table_name):
-    pri_key = get_table_primary_keys(database_name="NR_METEX", table_name=table_name)
+def get_metex_table_pk(table_name):
+    pri_key = get_table_primary_keys(database_name="NR_METEX_20190203", table_name=table_name)
     return pri_key
-
-
-# Transform a DataFrame to dictionary
-def group_items(data_frame, by, to_group, group_name, level=None, as_dict=False):
-    # Create a dictionary
-    temp_obj = data_frame.groupby(by, level=level)[to_group]
-    d = {group_name: {k: list(v) for k, v in temp_obj}}
-    if as_dict:
-        return d
-    else:
-        d_df = pd.DataFrame(d)
-        d_df.index.name = by
-        return d_df
 
 
 # ====================================================================================================================
@@ -131,370 +127,390 @@ def group_items(data_frame, by, to_group, group_name, level=None, as_dict=False)
 
 
 # Get IMDM
-def get_imdm(as_dict=False, update=False):
+def get_imdm(as_dict=False, update=False, save_original_as=None):
+    """
+    :param as_dict: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None (default)] e.g. ".csv"
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'IMDM'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if as_dict:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
-
-    if os.path.isfile(path_to_pickle) and not update:
-        imdm = load_pickle(path_to_pickle)
+    path_to_file = cdd_metex_db_tables("".join([table_name, ".json" if as_dict else ".pickle"]))
+    if os.path.isfile(path_to_file) and not update:
+        imdm = load_json(path_to_file) if as_dict else load_pickle(path_to_file)
     else:
         try:
-            imdm = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
+            imdm = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                    save_as=save_original_as, update=update)
             imdm.index.rename(name='IMDM', inplace=True)  # Rename a column and index
-            imdm.rename(columns={'Name': 'IMDM'}, inplace=True)
+            imdm.rename(columns={'Route': 'RouteAlias'}, inplace=True)
+            # Update route names
+            route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
+            imdm['Route'] = imdm.RouteAlias.replace(route_names_changes)
             if as_dict:
                 imdm_dict = imdm.to_dict()
                 imdm = imdm_dict['Route']
-                imdm.pop('None', None)
-            save_pickle(imdm, path_to_pickle)
+                imdm.pop('None')
+            save(imdm, path_to_file)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
-            imdm = pd.DataFrame()
-
+            print("Failed to get \"{}\"{}. {}.".format(table_name, " as a dictionary" if as_dict else "", e))
+            imdm = None
     return imdm
 
 
 # Get ImdmAlias
-def get_imdm_alias(as_dict=False, update=False):
+def get_imdm_alias(as_dict=False, update=False, save_original_as=None):
+    """
+    :param as_dict: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None (default)] e.g. ".csv"
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'ImdmAlias'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if as_dict:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
-
-    if os.path.isfile(path_to_pickle) and not update:
-        imdm_alias = load_pickle(path_to_pickle)
+    path_to_file = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
+    if os.path.isfile(path_to_file) and not update:
+        imdm_alias = load_json(path_to_file) if as_dict else load_pickle(path_to_file)
     else:
         try:
-            imdm_alias = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            imdm_alias.rename(columns={'Imdm': 'IMDM'}, inplace=True)  # Rename a column
+            imdm_alias = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                          save_as=save_original_as, update=update)
             imdm_alias.index.rename(name='ImdmAlias', inplace=True)  # Rename index
+            imdm_alias.rename(columns={'Imdm': 'IMDM'}, inplace=True)  # Rename a column
             if as_dict:
-                imdm_alias_dict = imdm_alias.to_dict()
-                imdm_alias = imdm_alias_dict['IMDM']
-            save_pickle(imdm_alias, path_to_pickle)
+                imdm_alias = imdm_alias.to_dict()
+                # imdm_alias = imdm_alias['IMDM']
+            save(imdm_alias, path_to_file)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
+            print("Failed to get \"{}\"{}. {}.".format(table_name, " as a dictionary" if as_dict else "", e))
             imdm_alias = None
-
     return imdm_alias
 
 
 # Get IMDMWeatherCellMap
-def get_imdm_weather_cell_map(grouped=False, update=False):
-    table_name = 'IMDMWeatherCellMap'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if grouped:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_grouped")
-
+def get_imdm_weather_cell_map(route_info=True, grouped=False, update=False, save_original_as=None):
+    """
+    :param route_info: [bool]
+    :param grouped: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
+    table_name = 'IMDMWeatherCellMap_pc' if route_info else 'IMDMWeatherCellMap'
+    path_to_pickle = cdd_metex_db_tables(table_name + ("_grouped.pickle" if grouped else ".pickle"))
     if os.path.isfile(path_to_pickle) and not update:
         weather_cell_map = load_pickle(path_to_pickle)
     else:
         try:
             # Read IMDMWeatherCellMap table
-            weather_cell_map = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-
-            weather_cell_map.rename(columns={'WeatherCell': 'WeatherCellId'}, inplace=True)  # Rename a column
+            weather_cell_map = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                                coerce_float=False, save_as=save_original_as, update=update)
+            if route_info:
+                weather_cell_map.rename(columns={'Route': 'RouteAlias'}, inplace=True)
+                route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
+                weather_cell_map['Route'] = weather_cell_map.RouteAlias.replace(route_names_changes)
+                weather_cell_map[['Id', 'WeatherCell']] = weather_cell_map[['Id', 'WeatherCell']].applymap(int)
+                weather_cell_map.set_index('Id', inplace=True)
             weather_cell_map.index.rename('IMDMWeatherCellMapId', inplace=True)  # Rename index
-
-            if grouped:  # Transform the dataframe into a dictionary-like form
-                weather_cell_map = group_items(weather_cell_map, by='WeatherCellId', to_group='IMDM', group_name='IMDM')
-
+            weather_cell_map.rename(columns={'WeatherCell': 'WeatherCellId'}, inplace=True)  # Rename a column
+            if grouped:  # To find out how many IMDMs each 'WeatherCellId' is associated with
+                weather_cell_map = weather_cell_map.groupby('Route' if route_info else 'WeatherCellId').aggregate(
+                    lambda x: list(set(x))[0] if len(list(set(x))) == 1 else list(set(x)))
             save_pickle(weather_cell_map, path_to_pickle)
-
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
+            print("Failed to get \"{}\"{}. {}.".format(table_name, " (being grouped)" if grouped else "", e))
             weather_cell_map = None
-
     return weather_cell_map
 
 
 # Get IncidentReasonInfo
-def get_incident_reason_info(database_plus=True, update=False):
+def get_incident_reason_info(plus=True, update=False, save_original_as=None):
+    """
+    :param plus: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'IncidentReasonInfo'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-    if database_plus:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_plus")
-
+    path_to_pickle = cdd_metex_db_tables(table_name + ("_plus.pickle" if plus else ".pickle"))
     if os.path.isfile(path_to_pickle) and not update:
         incident_reason_info = load_pickle(path_to_pickle)
     else:
         try:
             # Get data from the database
-            incident_reason_info = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename columns
+            incident_reason_info = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                                    save_as=save_original_as, update=update)
+            incident_reason_info.index.rename('IncidentReasonCode', inplace=True)  # Rename index label
             incident_reason_info.rename(columns={'Description': 'IncidentReasonDescription',
                                                  'Category': 'IncidentCategory',
-                                                 'CategoryDescription': 'IncidentCategoryDescription'}, inplace=True)
-            # Rename index label
-            incident_reason_info.index.rename('IncidentReason', inplace=True)
-
-            if database_plus:
+                                                 'CategoryDescription': 'IncidentCategoryDescription'},
+                                        inplace=True)
+            if plus:  # To include data of more detailed description about incident reasons
                 incident_reason_metadata = get_incident_reason_metadata()
-                incident_reason_metadata.index.name = 'IncidentReason'
+                incident_reason_metadata.index.name = 'IncidentReasonCode'
                 incident_reason_metadata.columns = [x.replace('_', '') for x in incident_reason_metadata.columns]
-                incident_reason_info = incident_reason_metadata.join(incident_reason_info, rsuffix='_orig')
-                incident_reason_info.dropna(axis=1, inplace=True)
-
+                incident_reason_info = incident_reason_info.join(incident_reason_metadata, rsuffix='_plus')
+                # incident_reason_info.dropna(axis=1, inplace=True)
             save_pickle(incident_reason_info, path_to_pickle)
-
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
+            print("Failed to get \"{}\"{}. {}.".format(table_name, " with extra information" if plus else "", e))
             incident_reason_info = None
-
     return incident_reason_info
 
 
 # Get WeatherCategoryLookup
-def get_weather_category_lookup(as_dict=False, update=False):
-    table_name = 'WeatherCategoryLookup'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if as_dict:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_dict")
-
-    if os.path.isfile(path_to_pickle) and not update:
-        weather_category_lookup = load_pickle(path_to_pickle)
+def get_weather_codes(as_dict=False, update=False, save_original_as=None):
+    """
+    :param as_dict: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
+    table_name = 'WeatherCategoryLookup'  # WeatherCodes
+    path_to_file = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
+    if os.path.isfile(path_to_file) and not update:
+        weather_codes = load_json(path_to_file) if as_dict else load_pickle(path_to_file)
     else:
         try:
-            weather_category_lookup = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename a column and index label
-            weather_category_lookup.rename(columns={'Name': 'WeatherCategory'}, inplace=True)
-            weather_category_lookup.index.rename(name='WeatherCategoryCode', inplace=True)
-            # Transform the DataFrame to a dictionary?
-            if as_dict:
-                weather_category_lookup = weather_category_lookup.to_dict()
-            save_pickle(weather_category_lookup, path_to_pickle)
+            weather_codes = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                             save_as=save_original_as, update=update)
+            weather_codes.rename(columns={'Name': 'WeatherCategory'}, inplace=True)
+            weather_codes.index.rename(name='WeatherCategoryCode', inplace=True)
+            save((weather_codes.to_dict() if as_dict else weather_codes), path_to_file)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
-            weather_category_lookup = None
-
-    return weather_category_lookup
+            weather_codes = None
+    return weather_codes
 
 
 # Get IncidentRecord and fill 'None' value with NaN
-def get_incident_record(update=False):
+def get_incident_record(update=False, save_original_as=None):
+    """
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'IncidentRecord'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
     if os.path.isfile(path_to_pickle) and not update:
         incident_record = load_pickle(path_to_pickle)
     else:
         try:
-            # Read the 'IncidentRecord' table
-            incident_record = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename column names
-            incident_record.rename(columns={'CreateDate': 'IncidentRecordCreateDate',
-                                            'Reason': 'IncidentReason'}, inplace=True)
-            # Rename index name
-            incident_record.index.rename('IncidentRecordId', inplace=True)
-            # Get a weather category lookup dictionary
-            weather_category_lookup = get_weather_category_lookup(as_dict=True)
-            # Replace the weather category code with the corresponding full name
-            incident_record.replace(weather_category_lookup, inplace=True)
-            incident_record.fillna(value='', inplace=True)
-            # Save the data
+            incident_record = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                               save_as=save_original_as, update=update)
+            incident_record.index.rename('IncidentRecordId', inplace=True)  # Rename index name
+            incident_record.rename(columns={'CreateDate': 'IncidentRecordCreateDate', 'Reason': 'IncidentReasonCode'},
+                                   inplace=True)  # Rename column names
+            weather_codes = get_weather_codes(as_dict=True)  # Get a weather category lookup dictionary
+            # Replace each weather category code with its full name
+            incident_record.replace(weather_codes, inplace=True)
+            incident_record.WeatherCategory.fillna(value='', inplace=True)
             save_pickle(incident_record, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             incident_record = None
-
     return incident_record
 
 
 # Get Location
-def get_location(update=False):
+def get_location(update=False, save_original_as=None):
+    """
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'Location'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
     if os.path.isfile(path_to_pickle) and not update:
         location = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'Location' table
-            location = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename a column and index label
-            location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
+            location = read_metex_table(table_name, index_col=get_metex_table_pk(table_name), coerce_float=False,
+                                        save_as=save_original_as, update=update)
             location.index.rename('LocationId', inplace=True)
-            # location['WeatherCell'].fillna(value='', inplace=True)
-            location.WeatherCell = location.WeatherCell.apply(lambda x: '' if pd.np.isnan(x) else int(x))
-            location.loc[610096, 0:4] = [-0.0751, 51.5461, -0.0751, 51.5461]
-            # Save the data
+            location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
+            location[['WeatherCell', 'SMDCell']] = location[['WeatherCell', 'SMDCell']].applymap(
+                lambda x: 0 if pd.np.isnan(x) else int(x))
+            # location.loc[610096, 0:4] = [-0.0751, 51.5461, -0.0751, 51.5461]
             save_pickle(location, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             location = None
-
     return location
 
 
 # Get PfPI (Process for Performance Improvement)
-def get_pfpi(update=False):
+def get_pfpi(plus=True, update=False, save_original_as=None):
+    """
+    :param plus: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'PfPI'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
+    path_to_pickle = cdd_metex_db_tables(table_name + ("_plus.pickle" if plus else ".pickle"))
     if os.path.isfile(path_to_pickle) and not update:
         pfpi = load_pickle(path_to_pickle)
     else:
         try:
             # Read the 'PfPI' table
-            pfpi = read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename a column name
+            pfpi = read_metex_table(table_name, index_col=get_metex_table_pk(table_name), save_as=save_original_as,
+                                    update=update)
             pfpi.index.rename('PfPIId', inplace=True)
-            # To replace Performance Event Code
-            performance_event_code = get_performance_event_code()
-            performance_event_code.index.name = 'PerformanceEventCode'
-            performance_event_code.columns = [x.replace('_', '') for x in performance_event_code.columns]
-            # Merge pfpi and pe_code
-            pfpi = pfpi.join(performance_event_code, on='PerformanceEventCode')
-            # Change columns' order
-            cols = pfpi.columns.tolist()
-            pfpi = pfpi[cols[0:2] + cols[-2:] + cols[2:4]]
+            if plus:  # To include more information for 'PerformanceEventCode'
+                performance_event_code = get_performance_event_code()
+                performance_event_code.index.rename('PerformanceEventCode', inplace=True)
+                performance_event_code.columns = [x.replace('_', '') for x in performance_event_code.columns]
+                # Merge pfpi and pe_code
+                pfpi = pfpi.join(performance_event_code, on='PerformanceEventCode')
             # Save the data
             save_pickle(pfpi, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
+            print("Failed to get \"{}\"{}. {}.".format(table_name, " with extra information" if plus else "", e))
             pfpi = None
-
     return pfpi
 
 
 # Get Route (Note that there is only one column in the original table)
-def get_route(update=False):
+def get_route(as_dict=False, update=False, save_original_as=None):
+    """
+    :param as_dict: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = "Route"
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
+    path_to_pickle = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
     if os.path.isfile(path_to_pickle) and not update:
         route = load_pickle(path_to_pickle)
     else:
         try:
-            route = read_metex_table(table_name, save_as=".csv", update=update)
-            # Rename a column
-            route.rename(columns={'Name': 'Route'}, inplace=True)
-            # Save the processed data
-            save_pickle(route, path_to_pickle)
+            route = read_metex_table(table_name, save_as=save_original_as, update=update)
+            route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
+            route['Route'] = route.Name.replace(route_names_changes)
+            route.rename(columns={'Name': 'RouteAlias'}, inplace=True)
+            if as_dict:
+                route.drop_duplicates('Route', inplace=True)
+                route = dict(zip(range(len(route)), route.Route))
+            save(route, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             route = None
-
     return route
 
 
 # Get StanoxLocation
-def get_stanox_location(nr_mileage_format=True, update=False):
+def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_as=None):
+    """
+    :param use_nr_mileage_format: [bool]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'StanoxLocation'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if not nr_mileage_format:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_miles")
+    path_to_pickle = cdd_metex_db_tables(table_name + (".pickle" if use_nr_mileage_format else "_miles.pickle"))
 
     if os.path.isfile(path_to_pickle) and not update:
         stanox_location = load_pickle(path_to_pickle)
     else:
         try:
             # Read StanoxLocation table from the database
-            stanox_location = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
+            stanox_location = read_metex_table(table_name, index_col=None, save_as=save_original_as, update=update)
 
-            # Cleanse stanox_location ---------------------------
-            stanox_location.reset_index(inplace=True)
-            location_codes = get_location_codes()['Locations']
+            # stanox_location.rename(columns={'Stanox': 'STANOX'}, inplace=True)
 
-            errata = load_json(cdd_rc("errata.json"))  # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
-            errata_stanox, errata_tiploc, errata_stanme = errata.values()
-            stanox_location.Stanox = stanox_location.Stanox.replace(errata_stanox)
-            stanox_location.Description = stanox_location.Description.replace(errata_tiploc)
-            stanox_location.Name = stanox_location.Name.replace(errata_stanme)
+            def cleanse_stanox_location(sta_loc):
+                # sta_loc = stanox_location
+                dat = copy.deepcopy(sta_loc)
 
-            #
-            na_desc = stanox_location.Description.isnull()
-            for i, v in stanox_location[na_desc].Stanox.iteritems():
-                idx = location_codes[location_codes.STANOX == v].index
-                if len(idx) != 1:
-                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
-                    break
-                else:
-                    idx = idx[0]
-                    stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].Location[idx]
-                    stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].STANME[idx]
+                # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
+                errata = load_json(cdd_rc("errata.json"))
+                errata_stanox, errata_tiploc, errata_stanme = errata.values()
+                dat.Stanox = dat.Stanox.replace(errata_stanox)
+                dat.Description = dat.Description.replace(errata_tiploc)
+                dat.Name = dat.Name.replace(errata_stanme)
 
-            #
-            na_name = stanox_location.Name.isnull()
-            for i, v in stanox_location[na_name].Stanox.iteritems():
-                if location_codes[location_codes.STANOX == v].shape[0] > 1:
-                    desc = stanox_location[stanox_location.Stanox == v].Description[i]
-                    if desc in list(location_codes[location_codes.STANOX == v].TIPLOC):
-                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.TIPLOC == desc)].index
-                    elif desc in list(location_codes[location_codes.STANOX == v].STANME):
-                        idx = location_codes[(location_codes.STANOX == v) & (location_codes.STANME == desc)].index
+                # Use external data - Railway Codes
+                location_codes = get_location_codes()['Locations']
+
+                #
+                for i, x in dat[dat.Description.isnull()].Stanox.items():
+                    idx = location_codes[location_codes.STANOX == x].index
+                    if len(idx) == 1:
+                        idx = idx[0]
+                        dat.loc[i, 'Description'] = location_codes[location_codes.STANOX == x].Location[idx]
+                        dat.loc[i, 'Name'] = location_codes[location_codes.STANOX == x].STANME[idx]
                     else:
-                        print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
+                        print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, x))
                         break
-                else:
-                    idx = location_codes[location_codes.STANOX == v].index
-                if len(idx) != 1:
-                    print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, v))
-                    break
-                else:
-                    idx = idx[0]
-                stanox_location.loc[i, 'Description'] = location_codes[location_codes.STANOX == v].loc[idx, 'Location']
-                stanox_location.loc[i, 'Name'] = location_codes[location_codes.STANOX == v].loc[idx, 'STANME']
+                #
+                for i, x in dat[dat.Name.isnull()].Stanox.items():
+                    if location_codes[location_codes.STANOX == x].shape[0] > 1:
+                        desc = dat[dat.Stanox == x].Description[i]
+                        if desc in location_codes[location_codes.STANOX == x].TIPLOC.tolist():
+                            idx = location_codes[(location_codes.STANOX == x) & (location_codes.TIPLOC == desc)].index
+                        elif desc in location_codes[location_codes.STANOX == x].STANME.tolist():
+                            idx = location_codes[(location_codes.STANOX == x) & (location_codes.STANME == desc)].index
+                        else:
+                            print("Errors occur at index \"{}\" where the corresponding STANOX is \"{}\"".format(i, x))
+                            break
+                    else:
+                        idx = location_codes[location_codes.STANOX == x].index
+                    if len(idx) > 1:
+                        print("Warning: The STANOX \"{}\" is not unique. Check at index \"{}\"".format(i, x))
+                    idx = idx[0]  # Temporary solution!
+                    dat.loc[i, 'Description'] = location_codes[location_codes.STANOX == x].Location.loc[idx]
+                    dat.loc[i, 'Name'] = location_codes[location_codes.STANOX == x].STANME.loc[idx]
 
-            location_stanme_dict = location_codes[['Location', 'STANME']].set_index('Location').to_dict()['STANME']
-            stanox_location.Name = stanox_location.Name.replace(location_stanme_dict)
+                location_stanme_dict = location_codes[['Location', 'STANME']].set_index('Location').to_dict()['STANME']
+                dat.Name.replace(location_stanme_dict, inplace=True)
 
-            loc_name_replacement_dict = create_location_names_replacement_dict('Description')
-            stanox_location = stanox_location.replace(loc_name_replacement_dict)
-            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('Description')
-            stanox_location = stanox_location.replace(loc_name_regexp_replacement_dict)
+                # Use manually-created dictionary of regular expressions
+                dat.replace(location_names_replacement_dict('Description'), inplace=True)
+                dat.replace(location_names_regexp_replacement_dict('Description'), inplace=True)
 
-            # STANOX dictionary
-            stanox_dict = get_location_codes_dictionary_v2(['STANOX'], update=update)
-            temp = stanox_location.join(stanox_dict, on='Stanox')[['Description', 'Location']]
-            na_loc = temp.Location.isnull()
-            temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
-            stanox_location.Description = temp.apply(
-                lambda x: fuzzywuzzy.process.extractOne(x[0], x[1], score_cutoff=10)[0]
-                if isinstance(x[1], list) else x[1], axis=1)
+                # Use STANOX dictionary
+                stanox_dict = get_location_codes_dictionary_v2(['STANOX'], update=update)
+                temp = dat.join(stanox_dict, on='Stanox')[['Description', 'Location']]
+                na_loc = temp.Location.isnull()
+                temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
+                dat.Description = temp.apply(
+                    lambda y: fuzzywuzzy.process.extractOne(y.Description, y.Location, scorer=fuzzywuzzy.fuzz.ratio)[0]
+                    if isinstance(y.Location, list) else y.Location, axis=1)
 
-            stanox_location.Name = stanox_location.Name.str.upper()
+                dat.Name = dat.Name.str.upper()
 
-            location_codes_cut = location_codes[['Location', 'STANME', 'STANOX']]
-            location_codes_cut = location_codes_cut.groupby(['STANOX', 'Location']).agg({'STANME': list})
-            location_codes_cut.STANME = location_codes_cut.STANME.map(
-                lambda x: x if isinstance(x, list) and len(x) > 1 else x[0])
-            temp = stanox_location.join(location_codes_cut, on=['Stanox', 'Description'])
-            stanox_location.Name = temp.STANME
+                location_codes_cut = location_codes[['Location', 'STANME', 'STANOX']]
+                location_codes_cut = location_codes_cut.groupby(['STANOX', 'Location']).agg({'STANME': list})
+                location_codes_cut.STANME = location_codes_cut.STANME.map(
+                    lambda y: x if isinstance(y, list) and len(y) > 1 else x[0])
+                temp = dat.join(location_codes_cut, on=['Stanox', 'Description'])
+                dat.Name = temp.STANME
 
-            # Change location names
+                return dat
+
+            # Cleanse raw stanox_location
+            stanox_location = cleanse_stanox_location(stanox_location)
+
+            # Rename names
             stanox_location.rename(columns={'Description': 'Location', 'Name': 'LocationAlias'}, inplace=True)
 
             # For 'ELR', replace NaN with ''
             stanox_location.ELR.fillna('', inplace=True)
 
             # For 'LocationId'
-            stanox_location.LocationId = stanox_location.LocationId.map(lambda x: int(x) if not pd.np.isnan(x) else '')
+            stanox_location.LocationId = stanox_location.LocationId.map(lambda x: '' if pd.np.isnan(x) else int(x))
 
-            # For 'Mileages'
-            if nr_mileage_format:
-                yards = stanox_location.Yards.map(lambda x: yards_to_mileage(x) if not pd.isnull(x) else '')
-            else:  # to convert yards to miles (Note: Not the 'mileage' used by network Rail)
-                yards = stanox_location.Yards.map(lambda x: x / 1760 if not pd.isnull(x) else '')
-            stanox_location.Yards = yards
-            stanox_location.rename(columns={'Yards': 'Mileage'}, inplace=True)
+            # For 'Mileages' - to convert yards to miles (Note: Not the 'mileage' used by Network Rail)
+            stanox_location['Mileage'] = stanox_location.Yards.map(
+                lambda x: yards_to_nr_mileage(x) if use_nr_mileage_format else (None if pd.isnull(x) else x / 1760))
 
+            # Set index
             stanox_location.set_index('Stanox', inplace=True)
 
-            stanox_location.loc['52053', 'ELR':'LocationId'] = ['BOK1', '3.0792', 534877]  # Revise '52053'
-            stanox_location.loc['52074', 'ELR':'LocationId'] = ['ELL1', '0.0440', 610096]  # Revise '52074'
+            # Most likely errors
+            stanox_location.loc['52053', 'ELR':'LocationId'] = ['BOK1', '3.0792', 534877]
+            stanox_location.loc['52074', 'ELR':'LocationId'] = ['ELL1', '0.0440', 610096]
 
             save_pickle(stanox_location, path_to_pickle)
 
@@ -506,57 +522,71 @@ def get_stanox_location(nr_mileage_format=True, update=False):
 
 
 # Get StanoxSection
-def get_stanox_section(update=False):
+def get_stanox_section(update=False, save_original_as=None):
+    """
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'StanoxSection'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         stanox_section = load_pickle(path_to_pickle)
+
     else:
         try:
             # Read StanoxSection table from the database
-            stanox_section = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Pre-cleaning the original data
-            stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: int(x) if not pd.np.isnan(x) else '')
+            stanox_section = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                              save_as=save_original_as, update=update)
             stanox_section.index.name = 'StanoxSectionId'
+            stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: int(x) if not pd.np.isnan(x) else '')
+
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
-            stanox_loc = get_stanox_location(nr_mileage_format=True)
-            stanox_dict_1 = stanox_loc.Location.to_dict()
-            stanox_dict_2 = get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
-            # Processing 'StartStanox'
-            stanox_section['StartStanox_loc'] = stanox_section.StartStanox.replace(stanox_dict_1).replace(stanox_dict_2)
-            # Processing 'EndStanox'
-            stanox_section['EndStanox_loc'] = stanox_section.EndStanox.replace(stanox_dict_1).replace(stanox_dict_2)
+            def cleanse_upon_stanox(dat, *stanox_col_names):
+                for stanox_col_name in stanox_col_names:
+                    temp_col = stanox_col_name + '_temp'
+                    # Load stanox dictionary 1
+                    stanox_dict = get_stanox_location(use_nr_mileage_format=True).Location.to_dict()
+                    dat[temp_col] = dat[stanox_col_name].replace(stanox_dict)  # Create a temp column
+                    # Load stanox dictionary 2
+                    stanox_dat = get_location_codes_dictionary_v2(['STANOX'], update=update)
+                    temp = dat.join(stanox_dat, on=temp_col).Location
+                    temp_idx = temp[temp.notnull()].index
+                    dat[temp_col][temp_idx] = temp[temp_idx]
+                    dat[temp_col] = dat[temp_col].map(lambda x: x[0] if isinstance(x, list) else x)
+
+            cleanse_upon_stanox(stanox_section, 'StartStanox')
+            cleanse_upon_stanox(stanox_section, 'EndStanox')
+
             # Secondly, process 'STANME' and 'TIPLOC'
             stanme_dict = get_location_codes_dictionary(keyword='STANME')
             tiploc_dict = get_location_codes_dictionary(keyword='TIPLOC')
-            loc_name_replacement_dict = create_location_names_replacement_dict()
-            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict()
-            # Processing 'StartStanox_loc'
-            stanox_section.StartStanox_loc = stanox_section.StartStanox_loc. \
+            loc_name_replacement_dict = location_names_replacement_dict()
+            loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict()
+            # Processing 'StartStanox_tmp'
+            stanox_section.StartStanox_temp = stanox_section.StartStanox_temp. \
                 replace(stanme_dict).replace(tiploc_dict). \
                 replace(loc_name_replacement_dict).replace(loc_name_regexp_replacement_dict)
-            # Processing 'EndStanox_loc'
-            stanox_section.EndStanox_loc = stanox_section.EndStanox_loc. \
+            # Processing 'EndStanox_tmp'
+            stanox_section.EndStanox_temp = stanox_section.EndStanox_temp. \
                 replace(stanme_dict).replace(tiploc_dict). \
                 replace(loc_name_replacement_dict).replace(loc_name_regexp_replacement_dict)
             # Create 'STANOX' sections
-            start_end = stanox_section.StartStanox_loc + ' - ' + stanox_section.EndStanox_loc
-            point_idx = stanox_section.StartStanox_loc == stanox_section.EndStanox_loc
-            start_end[point_idx] = stanox_section.StartStanox_loc[point_idx]
+            start_end = stanox_section.StartStanox_temp + ' - ' + stanox_section.EndStanox_temp
+            point_idx = stanox_section.StartStanox_temp == stanox_section.EndStanox_temp
+            start_end[point_idx] = stanox_section.StartStanox_temp[point_idx]
             stanox_section['StanoxSection'] = start_end
+
             # Finalising the cleaning process
             stanox_section.drop('Description', axis=1, inplace=True)  # Drop original
-            # Rename the columns of the start and end locations
-            stanox_section.rename(columns={'StartStanox_loc': 'StanoxSection_Start',
-                                           'EndStanox_loc': 'StanoxSection_End'}, inplace=True)
-            # Reorder columns
-            stanox_section = stanox_section[[
-                'StanoxSection', 'StanoxSection_Start', 'StartStanox', 'StanoxSection_End', 'EndStanox',
-                'LocationId', 'ApproximateLocation']]
-            # Save the data
+            stanox_section.rename(columns={'StartStanox_temp': 'StartLocation', 'EndStanox_temp': 'EndLocation'},
+                                  inplace=True)
+            stanox_section = stanox_section[['StanoxSection', 'StartLocation', 'StartStanox', 'EndLocation',
+                                             'EndStanox', 'LocationId', 'ApproximateLocation']]
+
             save_pickle(stanox_section, path_to_pickle)
+
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             stanox_section = None
@@ -565,164 +595,173 @@ def get_stanox_section(update=False):
 
 
 # Get TrustIncident
-def get_trust_incident(financial_years_06_14=True, update=False):
+def get_trust_incident(start_year=2006, end_year=None, update=False, save_original_as=None):
+    """
+    :param start_year: [int; None]
+    :param end_year: [int; None]
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
     table_name = 'TrustIncident'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
-    if financial_years_06_14:  # StartDate is between 01/04/2006 and 31/03/2014
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_06_14")
-
+    path_to_pickle = cdd_metex_db_tables(
+        table_name + "{}.pickle".format(
+            "{}".format("_y{}".format(start_year) if start_year else "_up_to") +
+            "{}".format("_y{}".format(2018 if not end_year or end_year >= 2019 else end_year))))
     if os.path.isfile(path_to_pickle) and not update:
         trust_incident = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'TrustIncident' table
-            trust_incident = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
-            # Rename column names
-            trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
-            # Rename index label
+            trust_incident = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                              save_as=save_original_as, update=update)
             trust_incident.index.name = 'TrustIncidentId'
+            trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
+            # Extract a subset of data, in which the StartDate is between 'start_year' and 'end_year'?
+            trust_incident = trust_incident[
+                (trust_incident.FinancialYear >= (start_year if start_year else 0)) &
+                (trust_incident.FinancialYear <= (end_year if end_year else pd.datetime.now().year))]
             # Convert float to int values for 'SourceLocationId'
-            trust_incident.SourceLocationId = \
-                trust_incident.SourceLocationId.apply(lambda x: '' if pd.isnull(x) else int(x))
-            # Retain data of which the StartDate is between 01/04/2006 and 31/03/2014?
-            if financial_years_06_14:
-                trust_incident = trust_incident[(trust_incident.FinancialYear >= 2006) &
-                                                (trust_incident.FinancialYear <= 2014)]
-            # Save the processed data
+            trust_incident.SourceLocationId = trust_incident.SourceLocationId.map(lambda x: 0 if pd.isna(x) else int(x))
             save_pickle(trust_incident, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             trust_incident = None
-
     return trust_incident
 
 
-# Get weather
-def get_weather(update=False):
-    table_name = 'weather'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
+# Get Weather data by 'WeatherCell' and 'DateTime'
+def get_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, update=False):
+    """
+    :param weather_cell_id: [int]
+    :param start_dt: [datetime.datetime; str; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
+    :param end_dt: [datetime.datetime; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
+    :param postulate: [bool]
+    :param update: [bool]
+    :return: [pandas.DataFrame; None]
+    """
+    assert isinstance(weather_cell_id, int)
+    path_to_pickle = cdd_metex_db_tables(
+        'Weather_{}{}{}.pickle'.format(
+            weather_cell_id,
+            start_dt.strftime('>%Y%m%d%H%M%S') if start_dt else "",
+            end_dt.strftime('<%Y%m%d%H%M%S') if end_dt else ""))
 
     if os.path.isfile(path_to_pickle) and not update:
-        weather_data = load_pickle(path_to_pickle)
+        weather = load_pickle(path_to_pickle)
+
     else:
         try:
-            # Read 'weather' table
-            weather_data = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), update=update)
-            # Save original data read from the database (the file is too big)
-            if not os.path.isfile(cdd_metex_db("Tables_original", table_name + ".csv")):
-                save(weather_data, cdd_metex_db("Tables_original", table_name + ".csv"))
-            # Firstly,
-            i = 0
-            snowfall, precipitation = weather_data.Snowfall.tolist(), weather_data.TotalPrecipitation.tolist()
-            while i + 3 < len(weather_data):
-                snowfall[i + 1: i + 3] = pd.np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
-                precipitation[i + 1: i + 3] = pd.np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
-                i += 3
-            # Secondly,
-            if i + 2 == len(weather_data):
-                snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
-            elif i + 3 == len(weather_data):
-                snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
-            else:
-                pass
-            # Finally,
-            weather_data.Snowfall = snowfall
-            weather_data.TotalPrecipitation = precipitation
+            conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
+            sql_query = \
+                "SELECT * FROM dbo.Weather WHERE WeatherCell = {}{}{};".format(
+                    weather_cell_id,
+                    " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
+                    " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
+            weather = pd.read_sql(sql_query, conn_metex)
+
+            if postulate:
+                def postulate_missing_hourly_precipitation(dat):
+                    i = 0
+                    snowfall, precipitation = dat.Snowfall.tolist(), dat.TotalPrecipitation.tolist()
+                    while i + 3 < len(dat):
+                        snowfall[i + 1: i + 3] = pd.np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
+                        precipitation[i + 1: i + 3] = pd.np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
+                        i += 3
+                    if i + 2 == len(dat):
+                        snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
+                    elif i + 3 == len(dat):
+                        snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
+                    dat.Snowfall = snowfall
+                    dat.TotalPrecipitation = precipitation
+
+                postulate_missing_hourly_precipitation(weather)
+
             # Save the processed data
-            save_pickle(weather_data, path_to_pickle)
+            save_pickle(weather, path_to_pickle)
+
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(table_name, e))
-            weather_data = None
-
-    return weather_data
-
-
-# Get weather in a chunk-wise way
-def get_weather_by_part(chunk_size=100000, index=True, save_as=None, save_by_chunk=False, save_by_value=False):
-    """
-    Note that it might be too large for pd.read_sql to read with low memory. Instead, we may read the 'weather' table
-    chunk-wise and assemble the full data set from individual pieces afterwards, especially when we'd like to save
-    the data locally.
-    """
-
-    weather = read_table_by_part(database_name="NR_METEX",
-                                 table_name="weather",
-                                 index_col=get_metex_pk("weather") if index is True else None,
-                                 parse_dates=None,
-                                 chunk_size=chunk_size,
-                                 save_as=save_as,
-                                 save_by_chunk=save_by_chunk,
-                                 save_by_value=save_by_value)
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
+            weather = None
 
     return weather
 
 
+# Get Weather
+def get_weather():
+    conn_db = establish_mssql_connection('NR_METEX_20190203')
+    sql_query = "SELECT * FROM dbo.Weather"
+    #
+    chunks = pd.read_sql_query(sql_query, conn_db, index_col=None, parse_dates=['DateTime'], chunksize=1000000)
+    weather = pd.concat([pd.DataFrame(chunk) for chunk in chunks], ignore_index=True)
+    return weather
+
+
 # Get WeatherCell
-def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_as=".png", dpi=600):
+def get_weather_cell(update=False, save_original_as=None,
+                     show_map=False, projection='tmerc', save_map_as=".png", dpi=600):
+    """
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :param show_map: [bool]
+    :param projection: [str]
+    :param save_map_as: [str; None]
+    :param dpi: [int; None]
+    :return: [pandas.DataFrame]
+    """
     table_name = 'WeatherCell'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
-
     if os.path.isfile(path_to_pickle) and not update:
         weather_cell_map = load_pickle(path_to_pickle)
     else:
         try:
             # Read 'WeatherCell' table
-            weather_cell_map = \
-                read_metex_table(table_name, index_col=get_metex_pk(table_name), save_as=".csv", update=update)
+            weather_cell_map = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
+                                                save_as=save_original_as, update=update)
             weather_cell_map.index.rename('WeatherCellId', inplace=True)  # Rename index
             # Lower left corner:
-            ll_longitude = weather_cell_map.Longitude  # - weather_cell_map.width / 2
-            weather_cell_map['ll_Longitude'] = ll_longitude
-            ll_latitude = weather_cell_map.Latitude  # - weather_cell_map.height / 2
-            weather_cell_map['ll_Latitude'] = ll_latitude
+            weather_cell_map['ll_Longitude'] = weather_cell_map.Longitude  # - weather_cell_map.width / 2
+            weather_cell_map['ll_Latitude'] = weather_cell_map.Latitude  # - weather_cell_map.height / 2
             # Upper left corner:
-            ul_lon = weather_cell_map.Longitude  # - cell['width'] / 2
-            weather_cell_map['ul_lon'] = ul_lon
-            ul_lat = weather_cell_map.Latitude + weather_cell_map.height  # / 2
-            weather_cell_map['ul_lat'] = ul_lat
+            weather_cell_map['ul_Longitude'] = weather_cell_map.ll_Longitude  # - cell['width'] / 2
+            weather_cell_map['ul_Latitude'] = weather_cell_map.ll_Latitude + weather_cell_map.height  # / 2
             # Upper right corner:
-            ur_longitude = weather_cell_map.Longitude + weather_cell_map.width  # / 2
-            weather_cell_map['ur_Longitude'] = ur_longitude
-            ur_latitude = weather_cell_map.Latitude + weather_cell_map.height  # / 2
-            weather_cell_map['ur_Latitude'] = ur_latitude
+            weather_cell_map['ur_Longitude'] = weather_cell_map.ul_Longitude + weather_cell_map.width  # / 2
+            weather_cell_map['ur_Latitude'] = weather_cell_map.ul_Latitude  # + weather_cell_map.height / 2
             # Lower right corner:
-            lr_lon = weather_cell_map.Longitude + weather_cell_map.width  # / 2
-            weather_cell_map['lr_lon'] = lr_lon
-            lr_lat = weather_cell_map.Latitude  # - weather_cell_map.height / 2
-            weather_cell_map['lr_lat'] = lr_lat
-            # Get weather cell map
-            imdm_weather_cell_map = get_imdm_weather_cell_map()
-            # Get IMDM info
-            imdm = get_imdm(as_dict=False)
+            weather_cell_map['lr_Longitude'] = weather_cell_map.ur_Longitude  # + weather_cell_map.width  # / 2
+            weather_cell_map['lr_Latitude'] = weather_cell_map.ur_Latitude - weather_cell_map.height  # / 2
+            # Get IMDM Weather cell map
+            imdm_weather_cell_map = get_imdm_weather_cell_map().reset_index()[['WeatherCellId', 'IMDM', 'Route']]
+            imdm_weather_cell_map = imdm_weather_cell_map.groupby('WeatherCellId').agg(
+                lambda x: x if len(list(set(x))) == 1 else list(set(x)))
             # Merge the acquired data set
-            weather_cell_map = imdm_weather_cell_map.join(weather_cell_map, on='WeatherCellId').join(imdm, on='IMDM')
+            weather_cell_map = weather_cell_map.join(imdm_weather_cell_map)
             # Save the processed data
             save_pickle(weather_cell_map, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_cell_map = None
 
-    # Plot the weather cells on the map?
+    # Plot the Weather cells on the map?
     if show_map:
         print("Plotting the map ...", end="")
 
-        plt.figure(figsize=(7, 8))
+        plt.figure(figsize=(5, 8))
 
-        ll = weather_cell_map[['ll_Longitude', 'll_Latitude']].apply(min).values
-        ur = weather_cell_map[['ur_Longitude', 'ur_Latitude']].apply(max).values
+        min_val, max_val = weather_cell_map.min(), weather_cell_map.max()
+        boundary_box = ((min(min_val.ll_Longitude, min_val.ul_Longitude),
+                         min(min_val.ll_Latitude, min_val.ul_Latitude)),
+                        (max(max_val.lr_Longitude, max_val.ur_Longitude),
+                         max(max_val.lr_Latitude, max_val.ur_Latitude)))
 
         base_map = mpl_toolkits.basemap.Basemap(projection=projection,  # Transverse Mercator Projection
-                                                lon_0=-2.,
-                                                lat_0=49.,
                                                 ellps='WGS84',
                                                 epsg=27700,
-                                                llcrnrlon=ll[0] - 0.285,  # -0.570409,  #
-                                                llcrnrlat=ll[1] - 0.255,  # 51.23622,  #
-                                                urcrnrlon=ur[0] + 0.285,  # 1.915975,  #
-                                                urcrnrlat=ur[1] + 0.255,  # 53.062591,  #
+                                                llcrnrlon=boundary_box[0][0] - 0.285,
+                                                llcrnrlat=boundary_box[0][1] - 0.255,
+                                                urcrnrlon=boundary_box[1][0] + 1.185,
+                                                urcrnrlat=boundary_box[1][1] + 0.255,
                                                 lat_ts=0,
                                                 resolution='h',
                                                 suppress_ticks=True)
@@ -734,19 +773,21 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
         weather_cell_map_plot = weather_cell_map.drop_duplicates([s for s in weather_cell_map.columns if '_' in s])
 
         for i in weather_cell_map_plot.index:
-            ll_x, ll_y = base_map(weather_cell_map_plot['ll_Longitude'][i], weather_cell_map_plot['ll_Latitude'][i])
-            ul_x, ul_y = base_map(weather_cell_map_plot['ul_lon'][i], weather_cell_map_plot['ul_lat'][i])
-            ur_x, ur_y = base_map(weather_cell_map_plot['ur_Longitude'][i], weather_cell_map_plot['ur_Latitude'][i])
-            lr_x, lr_y = base_map(weather_cell_map_plot['lr_lon'][i], weather_cell_map_plot['lr_lat'][i])
+            ll_x, ll_y = base_map(weather_cell_map_plot.ll_Longitude[i], weather_cell_map_plot.ll_Latitude[i])
+            ul_x, ul_y = base_map(weather_cell_map_plot.ul_Longitude[i], weather_cell_map_plot.ul_Latitude[i])
+            ur_x, ur_y = base_map(weather_cell_map_plot.ur_Longitude[i], weather_cell_map_plot.ur_Latitude[i])
+            lr_x, lr_y = base_map(weather_cell_map_plot.lr_Longitude[i], weather_cell_map_plot.lr_Latitude[i])
             xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-            poly = matplotlib.patches.Polygon(list(xy), fc='#fff68f', ec='b', alpha=0.5)
-            plt.gca().add_patch(poly)
+            polygons = matplotlib.patches.Polygon(list(xy), fc='#fff68f', ec='b', alpha=0.5)
+            plt.gca().add_patch(polygons)
         plt.tight_layout()
 
         # # Plot points
         # from shapely.geometry import Point, MultiPoint, Polygon, MultiPolygon
-        # ll_lon_lat = [Point(m(lon, lat)) for lon, lat in zip(cell['ll_Longitude'], cell['ll_Latitude'])]
-        # ur_lon_lat = [Point(m(lon, lat)) for lon, lat in zip(cell['ur_Longitude'], cell['ur_Latitude'])]
+        # ll_lon_lat = [Point(base_map(lon, lat))
+        #               for lon, lat in zip(weather_cell_map_plot.ll_Longitude, weather_cell_map_plot.ll_Latitude)]
+        # ur_lon_lat = [Point(base_map(lon, lat))
+        #               for lon, lat in zip(weather_cell_map_plot.ur_Longitude, weather_cell_map_plot.ur_Latitude)]
         # map_points = MultiPoint(ll_lon_lat + ur_lon_lat)
         # base_map.scatter([geom.x for geom in map_points], [geom.y for geom in map_points],
         #                  marker='x', s=16, lw=1, facecolor='#5a7b6c', edgecolor='w', label='Hazardous tress',
@@ -754,126 +795,179 @@ def get_weather_cell(update=False, show_map=False, projection='tmerc', save_map_
         #
         # # Plot squares
         # for i in range(len(cell)):
-        #     ll_x, ll_y = base_map(cell['ll_Longitude'].iloc[i], cell['ll_Latitude'].iloc[i])
-        #     ur_x, ur_y = base_map(cell['ur_Longitude'].iloc[i], cell['ur_Latitude'].iloc[i])
-        #     ul_x, ul_y = base_map(cell['ul_lon'].iloc[i], cell['ul_lat'].iloc[i])
-        #     lr_x, lr_y = base_map(cell['lr_lon'].iloc[i], cell['lr_lat'].iloc[i])
+        #     ll_x, ll_y = base_map(weather_cell_map_plot.ll_Longitude[i], weather_cell_map_plot.ll_Latitude[i])
         #     base_map.plot([ll_x, ul_x], [ll_y, ul_y], color='#5a7b6c')
+        #     ul_x, ul_y = base_map(weather_cell_map_plot.ul_Longitude[i], weather_cell_map_plot.ul_Latitude[i])
         #     base_map.plot([ul_x, ur_x], [ul_y, ur_y], color='#5a7b6c')
+        #     ur_x, ur_y = base_map(weather_cell_map_plot.ur_Longitude[i], weather_cell_map_plot.ur_Latitude[i])
         #     base_map.plot([ur_x, lr_x], [ur_y, lr_y], color='#5a7b6c')
+        #     lr_x, lr_y = base_map(weather_cell_map_plot.lr_Longitude[i], weather_cell_map_plot.lr_Latitude[i])
         #     base_map.plot([lr_x, ll_x], [lr_y, ll_y], color='#5a7b6c')
 
         print("Done.")
-        # Save the map
+
         if save_map_as:
-            plt.savefig(cdd_metex_db_fig(table_name + save_map_as), dpi=dpi)
+            save_fig(cdd_metex_fig_db(table_name + save_map_as), dpi=dpi)
 
     return weather_cell_map
 
 
-# Get the lower-left and upper-right boundaries of weather cells
-def get_weather_cell_map_boundary(route=None, adjusted=(0.285, 0.255)):
-    # Get weather cell
-    weather_cell = get_weather_cell()
-    # For a certain Route?
-    if route is not None:
-        rte = find_match(route, get_route().Route.tolist())
-        weather_cell = weather_cell[weather_cell.Route == rte]  # Select data for the specified route only
-    ll = tuple(weather_cell[['ll_Longitude', 'll_Latitude']].apply(pd.np.min))
-    lr = weather_cell.lr_lon.max(), weather_cell.lr_lat.min()
-    ur = tuple(weather_cell[['ur_Longitude', 'ur_Latitude']].apply(pd.np.max))
-    ul = weather_cell.ul_lon.min(), weather_cell.ul_lat.max()
-    # Adjust (broaden) the boundaries?
-    if adjusted:
-        adj_values = pd.np.array(adjusted)
-        ll = ll - adj_values
-        lr = lr + (adj_values, -adj_values)
-        ur = ur + adj_values
-        ul = ul + (-adj_values, adj_values)
+# Get the lower-left and upper-right boundaries of Weather cells
+def get_weather_cell_map_boundary(route=None, adjustment=(0.285, 0.255)):
+    weather_cell = get_weather_cell()  # Get Weather cell
+    if route:  # For a specific Route
+        weather_cell = weather_cell[weather_cell.Route == fuzzywuzzy.process.extractOne(route, get_route().Route)[0]]
+    ll = tuple(weather_cell[['ll_Longitude', 'll_Latitude']].apply(min))
+    lr = weather_cell.lr_Longitude.max(), weather_cell.lr_Latitude.min()
+    ur = tuple(weather_cell[['ur_Longitude', 'ur_Latitude']].apply(max))
+    ul = weather_cell.ul_Longitude.min(), weather_cell.ul_Latitude.max()
+    if adjustment:  # Adjust the boundaries
+        adj_values = pd.np.array(adjustment)
+        ll -= adj_values
+        lr += (adj_values, -adj_values)
+        ur += adj_values
+        ul += (-adj_values, adj_values)
     return shapely.geometry.Polygon((ll, lr, ur, ul))
 
 
-"""
-update = True
+# Track
+def get_track(update=False, save_original_as=None):
+    """
+    :param update: [bool]
+    :param save_original_as: [str; None]
+    :return: [pandas.DataFrame; None]
+    """
+    table_name = 'Track'
+    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
+    if os.path.isfile(path_to_pickle) and not update:
+        track = load_pickle(path_to_pickle)
+    else:
+        try:
+            track = read_table_by_query('NR_METEX_20190203', table_name, save_as=save_original_as)
+            track.rename(columns={'S_MILEAGE': 'StartMileage', 'F_MILEAGE': 'EndMileage',
+                                  'S_YARDAGE': 'StartYardage', 'F_YARDAGE': 'EndYardage',
+                                  'MAINTAINER': 'Maintainer', 'ROUTE': 'RouteAlias', 'DELIVERY_U': 'IMDM',
+                                  'StartEasti': 'StartEasting', 'StartNorth': 'StartNorthing',
+                                  'EndNorthin': 'EndNorthing'},
+                         inplace=True)
+            # Mileage and Yardage
+            track[['StartMileage', 'EndMileage']] = track[['StartMileage', 'EndMileage']].applymap(
+                nr_mileage_num_to_str)
+            track[['StartYardage', 'EndYardage']] = track[['StartYardage', 'EndYardage']].applymap(int)
+            # Route
+            route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
+            track['Route'] = track.RouteAlias.replace(route_names_changes)
+            # Delivery Unit and IMDM
+            track.IMDM = track.IMDM.map(lambda x: 'IMDM ' + x)
+            # Coordinates
+            track[['StartLongitude', 'StartLatitude']] = track[['StartEasting', 'StartNorthing']].apply(
+                lambda x: pd.Series(osgb36_to_wgs84(x.StartEasting, x.StartNorthing)), axis=1)
+            track[['EndLongitude', 'EndLatitude']] = track[['EndEasting', 'EndNorthing']].apply(
+                lambda x: pd.Series(osgb36_to_wgs84(x.EndEasting, x.EndNorthing)), axis=1)
+            save_pickle(track, path_to_pickle)
+        except Exception as e:
+            print("Failed to get \"{}\". {}.".format(table_name, e))
+            track = None
+    return track
 
-get_performance_event_code(update=update)
-get_incident_reason_info_ref(update=update)
-get_imdm(as_dict=False, update=update)
-get_imdm_alias(as_dict=False, update=update)
-get_imdm_weather_cell_map(grouped=False, update=update)
-get_incident_reason_info(database_plus=True, update=update)
-get_incident_record(update=update)
-get_location(update=update)
-get_pfpi(update=update)
-get_route(update=update)
-get_stanox_location(nr_mileage_format=True, update=update)
-get_stanox_section(update=update)
-get_trust_incident(financial_years_06_14=True, update=update)
-get_weather(update=update)
-get_weather_category_lookup(as_dict=False, update=update)
-get_weather_cell(update=update, show_map=True, projection='tmerc', save_map_as=".png", dpi=600)
-"""
+
+# Track Summary
+def get_track_summary(update=False, save_original_as=None):
+    table_name = 'Track Summary'
+    path_to_pickle = cdd_metex_db_tables(table_name.replace(' ', '') + ".pickle")
+    if os.path.isfile(path_to_pickle) and not update:
+        track_summary = load_pickle(path_to_pickle)
+    else:
+        try:
+            track_summary = read_metex_table(table_name, save_as=save_original_as, update=update)
+            # Column names
+            rename_cols = {'Sub-route': 'SubRoute',
+                           'CP6 criticality': 'CP6Criticality', 'CP5 Start Route': 'CP5StartRoute',
+                           'Adjacent S&C': 'AdjacentS&C',
+                           'Rail cumulative EMGT': 'RailCumulativeEMGT',
+                           'Sleeper cumulative EMGT': 'SleeperCumulativeEMGT',
+                           'Ballast cumulative EMGT': 'BallastCumulativeEMGT'}
+            track_summary.rename(columns=rename_cols, inplace=True)
+            renamed_cols = list(rename_cols.values())
+            upper_columns = ['SRS', 'ELR', 'TID', 'IMDM', 'TME', 'TSM', 'MGTPA', 'EMGTPA', 'LTSF', 'IRJs']
+            track_summary.columns = [string.capwords(x).replace(' ', '') if x not in upper_columns + renamed_cols else x
+                                     for x in track_summary.columns]
+            # IMDM
+            track_summary.IMDM = track_summary.IMDM.map(lambda x: 'IMDM ' + x)
+            # Route
+            route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
+            temp1 = pd.DataFrame.from_dict(route_names_changes, orient='index', columns=['Route'])
+            route_names_in_table = list(track_summary.SubRoute.unique())
+            route_alt = [fuzzywuzzy.process.extractOne(x, temp1.index)[0] for x in route_names_in_table]
+            temp2 = pd.DataFrame.from_dict(dict(zip(route_alt, route_names_in_table)), 'index', columns=['RouteAlias'])
+            temp = temp1.join(temp2).dropna()
+            route_names_changes_alt = dict(zip(temp.RouteAlias, temp.Route))
+            track_summary['Route'] = track_summary.SubRoute.replace(route_names_changes_alt)
+            save_pickle(track_summary, path_to_pickle)
+        except Exception as e:
+            print("Failed to get \"{}\". {}.".format(table_name, e))
+            track_summary = None
+    return track_summary
+
 
 # ====================================================================================================================
 """ Utils for creating views """
 
 
-# Form a file name in terms of specific 'Route' and 'weather' category
-def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
-    if route is not None:
-        route_lookup = load_json(cdd("network\\Routes", "route-names.json"))
-        route = find_match(route, route_lookup['Route'])
-    if weather is not None:
-        weather_category_lookup = load_json(cdd("weather", "weather-categories.json"))
-        weather = find_match(weather, weather_category_lookup['WeatherCategory'])
-    filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
-    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+# Form a file name in terms of specific 'Route' and 'Weather' category
+def make_filename(base_name, route_name, weather_category, *extra_suffixes, save_as=".pickle"):
+    if route_name:
+        route_name = fuzzywuzzy.process.extractOne(route_name, get_route().Route, scorer=fuzzywuzzy.fuzz.ratio)[0]
+    if weather_category:
+        weather_category = fuzzywuzzy.process.extractOne(weather_category, get_weather_codes().WeatherCategory,
+                                                         scorer=fuzzywuzzy.fuzz.ratio)[0]
+    filename_suffix = [s for s in (route_name, weather_category) if s]  # "s" stands for "suffix"
+    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes if s]) + save_as
     return filename
 
 
-# Subset the required data given 'route' and 'weather'
+# Subset the required data given 'route' and 'Weather'
 def subset(data, route_name=None, weather_category=None, reset_index=False):
-    if data is None:
-        data_subset = None
-    else:
-        route_lookup = list(set(data.Route))
-        weather_category_lookup = list(set(data.WeatherCategory)) if weather_category else None
-        # Select data for a specific route and weather category
-        if not route_name and not weather_category:
-            data_subset = data.copy()
+    if data is not None:
+        assert 'Route' in data.columns and 'WeatherCategory' in data.columns
+        route_name = fuzzywuzzy.process.extractOne(route_name, list(set(data.Route)), scorer=fuzzywuzzy.fuzz.ratio)[0] \
+            if route_name else None
+        weather_category = fuzzywuzzy.process.extractOne(weather_category, list(set(data.WeatherCategory)),
+                                                         scorer=fuzzywuzzy.fuzz.ratio)[0] \
+            if weather_category else None
+        # Select data for a specific route and Weather category
+        if route_name and weather_category:
+            data_subset = data[(data.Route == route_name) & (data.WeatherCategory == weather_category)]
         elif route_name and not weather_category:
-            data_subset = data[data.Route == find_match(route_name, route_lookup)]
+            data_subset = data[data.Route == route_name]
         elif not route_name and weather_category:
-            data_subset = data[data.WeatherCategory == find_match(weather_category, weather_category_lookup)]
+            data_subset = data[data.WeatherCategory == weather_category]
         else:
-            data_subset = data[(data.Route == find_match(route_name, route_lookup)) &
-                               (data.WeatherCategory == find_match(weather_category, weather_category_lookup))]
-        # Reset index
+            data_subset = data
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
+    else:
+        data_subset = None
     return data_subset
 
 
 # Calculate the DelayMinutes and DelayCosts for grouped data
-def agg_pfpi_stats(dat, selected_features, sort_by=None):
+def pfpi_stats(dat, selected_features, sort_by=None):
     data = dat.groupby(selected_features[1:-2]).aggregate({
         # 'IncidentId_and_CreateDate': {'IncidentCount': np.count_nonzero},
         'PfPIId': pd.np.count_nonzero,
         'PfPIMinutes': pd.np.sum,
         'PfPICosts': pd.np.sum})
     data.columns = ['IncidentCount', 'DelayMinutes', 'DelayCost']
-
     # data = dat.groupby(selected_features[1:-2]).aggregate({
     #     # 'IncidentId_and_CreateDate': {'IncidentCount': np.count_nonzero},
     #     'PfPIId': {'IncidentCount': np.count_nonzero},
     #     'PfPIMinutes': {'DelayMinutes': np.sum},
     #     'PfPICosts': {'DelayCost': np.sum}})
     # data.columns = data.columns.droplevel(0)
-
     data.reset_index(inplace=True)  # Reset the grouped indexes to columns
-    if sort_by is not None:
+    if sort_by:
         data.sort_values(sort_by, inplace=True)
-
     return data
 
 
@@ -882,237 +976,233 @@ def agg_pfpi_stats(dat, selected_features, sort_by=None):
 
 
 # Retrieve the TRUST
-def merge_schedule8_data(save_as=".pickle"):
-    pfpi = get_pfpi()  # Get PfPI (260645, 6)
-    incident_record = get_incident_record()  # (233452, 4)
-    trust_incident = get_trust_incident(financial_years_06_14=True)  # (192054, 11)
-    location = get_location()  # (228851, 6)
-    imdm = get_imdm()  # (42, 1)
-    incident_reason_info = get_incident_reason_info()  # (393, 7)
-    stanox_location = get_stanox_location()  # (7560, 5)
-    stanox_section = get_stanox_section()  # (9440, 7)
-
-    # Merge the acquired data sets
-    data = pfpi. \
-        join(incident_record,  # (260645, 10)
-             on='IncidentRecordId', how='inner'). \
-        join(trust_incident,  # (260483, 21)
-             on='TrustIncidentId', how='inner'). \
-        join(stanox_section,  # (260483, 28)
-             on='StanoxSectionId', how='inner'). \
-        join(location,  # (260470, 34)
-             on='LocationId', how='inner', lsuffix='', rsuffix='_Location'). \
-        join(stanox_location,  # (260190, 39)
-             on='StartStanox', how='inner', lsuffix='_Section', rsuffix=''). \
-        join(stanox_location,  # (260140, 44)
-             on='EndStanox', how='inner', lsuffix='_Start', rsuffix='_End'). \
-        join(incident_reason_info,  # (260140, 51)
-             on='IncidentReason', how='inner')  # .\
-    # join(imdm, on='IMDM_Location', how='inner')  # (260140, 52)
-
+def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
     """
-    There are "errors" in the IMDM data/column of the TrustIncident table.
-    Not sure if the information about location id number is correct.
+    :param weather_attributed: [bool]
+    :param save_as: [str]
+    :return: [pandas.DataFrame]
     """
+    try:
+        pfpi = get_pfpi(plus=True)  # Get PfPI # (260645, 6)  # (5165562, 6)
+        incident_record = get_incident_record()  # (233452, 4)  # (4661505, 5)
+        trust_incident = get_trust_incident(start_year=2006)  # (192054, 11)  # (3988006, 11)
+        location = get_location()  # (228851, 6)  # (653882, 7)
+        imdm = get_imdm(as_dict=False)  # (42, 1)  # (42, 2)
+        incident_reason_info = get_incident_reason_info(plus=True)  # (393, 7)  # (174, 9)
+        stanox_location = get_stanox_location(use_nr_mileage_format=True)  # (7560, 5)  # (7560, 6)
+        stanox_section = get_stanox_section()  # (9440, 7)  # (10601, 7)
 
-    # Get a ELR-IMDM-Route "dictionary" from vegetation database
-    route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
-    route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
+        # Merge the acquired data sets
+        data = pfpi. \
+            join(incident_record,  # (260645, 10)  # (5165562, 11)
+                 on='IncidentRecordId', how='inner'). \
+            join(trust_incident,  # (260483, 21)  # (5165538, 22)
+                 on='TrustIncidentId', how='inner'). \
+            join(stanox_section,  # (260483, 28)  # (5165538, 29)
+                 on='StanoxSectionId', how='inner'). \
+            join(location,  # (260470, 34)  # (5162033, 36)
+                 on='LocationId', how='inner', lsuffix='', rsuffix='_Location'). \
+            join(stanox_location,  # (260190, 39)  # (5154847, 42)
+                 on='StartStanox', how='inner', lsuffix='_Section', rsuffix=''). \
+            join(stanox_location,  # (260140, 44)  # (5155047, 48)
+                 on='EndStanox', how='inner', lsuffix='_Start', rsuffix='_End'). \
+            join(incident_reason_info,  # (260140, 51)  # (5155047, 57)
+                 on='IncidentReasonCode', how='inner'). \
+            join(imdm, on='IMDM_Location', how='inner')
 
-    # Further cleaning the data
-    data.reset_index(inplace=True)
-    temp = data.merge(route_du_elr, how='left', left_on=['ELR_Start', 'IMDM'], right_on=['ELR', 'DU'])  # (260140, 55)
-    temp = temp.merge(route_du_elr, how='left', left_on=['ELR_End', 'IMDM'], right_on=['ELR', 'DU'])  # (260140, 58)
+        if weather_attributed:
+            data = data[data.WeatherCategory != '']
+            data.sort_index(inplace=True)
 
-    temp[['Route_', 'IMDM_']] = temp[['Route_x', 'DU_x']]
-    idx_x = (temp.Route_x.isnull()) & (~temp.Route_y.isnull())
-    temp.loc[idx_x, 'Route_'], temp.loc[idx_x, 'IMDM_'] = temp.Route_y.loc[idx_x], temp.DU_y.loc[idx_x]
+        """ Note: There may be errors in e.g. IMDM data/column, location id, of the TrustIncident table. 
+    
+        # Get a ELR-IMDM-Route "dictionary" from Vegetation database
+        route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
+        route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
+    
+        # Further cleaning the data
+        data.reset_index(inplace=True)
+        temp = data.merge(route_du_elr, how='left', left_on=['ELR_Start', 'IMDM'], right_on=['ELR', 'DU'])
+        temp = temp.merge(route_du_elr, how='left', left_on=['ELR_End', 'IMDM'], right_on=['ELR', 'DU'])
+    
+        temp[['Route_', 'IMDM_']] = temp[['Route_x', 'DU_x']]
+        idx_x = (temp.Route_x.isnull()) & (~temp.Route_y.isnull())
+        temp.loc[idx_x, 'Route_'], temp.loc[idx_x, 'IMDM_'] = temp.Route_y.loc[idx_x], temp.DU_y.loc[idx_x]
+    
+        idx_y = (temp.Route_x.isnull()) & (temp.Route_y.isnull())
+        temp.loc[idx_y, 'IMDM_'] = temp.IMDM_Location.loc[idx_y]
+        temp.loc[idx_y, 'Route_'] = temp.loc[idx_y, 'IMDM_'].replace(imdm.to_dict()['Route'])
+    
+        temp.drop(labels=['Route_x', 'ELR_x', 'DU_x', 'Route_y', 'ELR_y', 'DU_y',
+                          'StanoxSection_Start', 'StanoxSection_End',
+                          'IMDM', 'IMDM_Location'], axis=1, inplace=True)
+        """
 
-    idx_y = (temp.Route_x.isnull()) & (temp.Route_y.isnull())
-    temp.loc[idx_y, 'IMDM_'] = temp.IMDM_Location.loc[idx_y]
-    temp.loc[idx_y, 'Route_'] = temp.loc[idx_y, 'IMDM_'].replace(imdm.to_dict()['Route'])
+        i = data[~data.StartLocation.eq(data.Location_Start)].index
+        for i in i:
+            data.loc[i, 'StartLocation'] = data.loc[i, 'Location_Start']
+            data.loc[i, 'EndLocation'] = data.loc[i, 'Location_End']
+            if data.loc[i, 'StartLocation'] == data.loc[i, 'EndLocation']:
+                data.loc[i, 'StanoxSection'] = data.loc[i, 'StartLocation']
+            else:
+                data.loc[i, 'StanoxSection'] = data.loc[i, 'StartLocation'] + ' - ' + data.loc[i, 'EndLocation']
 
-    temp.drop(labels=['Route_x', 'ELR_x', 'DU_x', 'Route_y', 'ELR_y', 'DU_y',
-                      'StanoxSection_Start', 'StanoxSection_End',
-                      'IMDM', 'IMDM_Location'], axis=1, inplace=True)  # (260140, 50)
+        data.drop(['IMDM', 'Location_Start', 'Location_End'], axis=1, inplace=True)
 
-    data = temp.rename(columns={'Location_Start': 'StartLocation',
-                                'Location_End': 'EndLocation',
-                                'LocationAlias_Start': 'StartLocationAlias',
-                                'LocationAlias_End': 'EndLocationAlias',
-                                'ELR_Start': 'StartELR',
-                                'ELR_End': 'EndELR',
-                                'Mileage_Start': 'StartMileage',
-                                'Mileage_End': 'EndMileage',
-                                'LocationId_Start': 'StartLocationId',
-                                'LocationId_End': 'EndLocationId',
-                                'LocationId_Section': 'SectionLocationId',
-                                'Route_': 'Route',
-                                'IMDM_': 'IMDM'})  # (260140, 50)
+        # (260140, 50)  # (5155014, 56)
+        data.rename(columns={'LocationAlias_Start': 'StartLocationAlias', 'LocationAlias_End': 'EndLocationAlias',
+                             'ELR_Start': 'StartELR', 'Yards_Start': 'StartYards',
+                             'ELR_End': 'EndELR', 'Yards_End': 'EndYards',
+                             'Mileage_Start': 'StartMileage', 'Mileage_End': 'EndMileage',
+                             'LocationId_Start': 'StartLocationId', 'LocationId_End': 'EndLocationId',
+                             'LocationId_Section': 'SectionLocationId', 'IMDM_Location': 'IMDM'}, inplace=True)
 
-    idx = data.StartLocation == 'Highbury & Islington (North London Lines)'
-    data.loc[idx, ['StartLongitude', 'StartLatitude']] = [-0.1045, 51.5460]
-    idx = data.EndLocation == 'Highbury & Islington (North London Lines)'
-    data.loc[idx, ['EndLongitude', 'EndLatitude']] = [-0.1045, 51.5460]
-    idx = data.StartLocation == 'Dalston Junction (East London Line)'
-    data.loc[idx, ['StartLongitude', 'StartLatitude']] = [-0.0751, 51.5461]
-    idx = data.EndLocation == 'Dalston Junction (East London Line)'
-    data.loc[idx, ['EndLongitude', 'EndLatitude']] = [-0.0751, 51.5461]
+        # Use 'Station' data from Railway Codes website
+        station_locations = get_station_locations()['Station'][['Station', 'Degrees Longitude', 'Degrees Latitude']]
+        station_locations = station_locations.dropna().drop_duplicates('Station', keep='first')
+        station_locations.set_index('Station', inplace=True)
+        temp = data[['StartLocation']].join(station_locations, on='StartLocation', how='left')
+        i = temp[temp['Degrees Longitude'].notna()].index
+        data.loc[i, 'StartLongitude':'StartLatitude'] = \
+            temp.loc[i, 'Degrees Longitude':'Degrees Latitude'].values.tolist()
+        temp = data[['EndLocation']].join(station_locations, on='EndLocation', how='left')
+        i = temp[temp['Degrees Longitude'].notna()].index
+        data.loc[i, 'EndLongitude':'EndLatitude'] = temp.loc[i, 'Degrees Longitude':'Degrees Latitude'].values.tolist()
 
-    data.EndELR.replace({'STM': 'SDC', 'TIR': 'TLL'}, inplace=True)
+        # data.EndELR.replace({'STM': 'SDC', 'TIR': 'TLL'}, inplace=True)
+        i = data.StartLocation == 'Highbury & Islington (North London Lines)'
+        data.loc[i, ['StartLongitude', 'StartLatitude']] = [-0.1045, 51.5460]
+        i = data.EndLocation == 'Highbury & Islington (North London Lines)'
+        data.loc[i, ['EndLongitude', 'EndLatitude']] = [-0.1045, 51.5460]
+        i = data.StartLocation == 'Dalston Junction (East London Line)'
+        data.loc[i, ['StartLongitude', 'StartLatitude']] = [-0.0751, 51.5461]
+        i = data.EndLocation == 'Dalston Junction (East London Line)'
+        data.loc[i, ['EndLongitude', 'EndLatitude']] = [-0.0751, 51.5461]
 
-    # Sort the merged data frame by index 'PfPIId'
-    data = data.set_index('PfPIId').sort_index()  # (260140, 49)
+        """
+        # Sort the merged data frame by index 'PfPIId'
+        data = data.set_index('PfPIId').sort_index()  # (260140, 49)
+        
+        # Further cleaning the 'IMDM' and 'Route'
+        for section in data.StanoxSection.unique():
+            temp = data[data.StanoxSection == section]
+            # IMDM
+            if len(temp.IMDM.unique()) >= 2:
+                imdm_temp = data.loc[temp.index].IMDM.value_counts()
+                data.loc[temp.index, 'IMDM'] = imdm_temp[imdm_temp == imdm_temp.max()].index[0]
+            # Route
+            if len(temp.Route.unique()) >= 2:
+                route_temp = data.loc[temp.index].Route.value_counts()
+                data.loc[temp.index, 'Route'] = route_temp[route_temp == route_temp.max()].index[0]
+        """
 
-    # Further cleaning the 'IMDM' and 'Route'
-    for section in data.StanoxSection.unique():
-        temp = data[data.StanoxSection == section]
-        # IMDM
-        if len(temp.IMDM.unique()) >= 2:
-            imdm_temp = data.loc[temp.index].IMDM.value_counts()
-            data.loc[temp.index, 'IMDM'] = imdm_temp[imdm_temp == imdm_temp.max()].index[0]
-        # Route
-        if len(temp.Route.unique()) >= 2:
-            route_temp = data.loc[temp.index].Route.value_counts()
-            data.loc[temp.index, 'Route'] = route_temp[route_temp == route_temp.max()].index[0]
+        save_pickle(data, cdd_metex_db_views("Schedule8_details" + save_as))
 
-    if save_as:
-        filename = make_filename("Schedule8_details", route=None, weather=None, save_as=save_as)
-        save_pickle(data, cdd_metex_db_views(filename))
+    except Exception as e:
+        print("Failed to merge Schedule 8 details. {}".format(e))
+        data = None
 
-    # Return the DataFrame
     return data
 
 
 # Get the TRUST data
-def get_schedule8_details(route=None, weather=None, reset_index=False, update=False):
-    filename = make_filename("Schedule8_details", route, weather)
-    path_to_pickle = cdd_metex_db_views(filename)
-
+def view_schedule8_details(route_name=None, weather_category=None, reset_index=False, weather_attributed=True,
+                           update=False, pickle_it=True):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param reset_index: [bool]
+    :param weather_attributed: [bool]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pandas.DataFrame]
+    """
+    pickle_filename = make_filename("Schedule8_details", route_name, weather_category, save_as=".pickle")
+    path_to_pickle = cdd_metex_db_views(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         schedule8_details = load_pickle(path_to_pickle)
-        if reset_index:
+        if reset_index and schedule8_details.index.name == 'PfPIId':
             schedule8_details.reset_index(inplace=True)
     else:
         try:
-            schedule8_details = merge_schedule8_data(save_as=".pickle")
-            schedule8_details = subset(schedule8_details, route, weather, reset_index)
-            save_pickle(schedule8_details, path_to_pickle)
+            path_to_merged = cdd_metex_db_views("Schedule8_details.pickle")
+            if not os.path.isfile(path_to_merged) or update:
+                schedule8_details = merge_schedule8_data(weather_attributed, save_as=".pickle")
+            else:
+                schedule8_details = load_pickle(path_to_merged)
+            schedule8_details = subset(schedule8_details, route_name, weather_category, reset_index)
+            if pickle_it:
+                if path_to_pickle != path_to_merged:
+                    save_pickle(schedule8_details, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve details about Schedule 8 incidents. {}".format(e))
             schedule8_details = None
-
     return schedule8_details
 
 
-# Essential details about incidents
-def get_schedule8_details_pfpi(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_details_pfpi", route, weather)
+# Essential details about Incidents
+def view_schedule8_details_pfpi(route_name=None, weather_category=None, update=False, pickle_it=False):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it:
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_details_pfpi", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
-
     if os.path.isfile(path_to_pickle) and not update:
         data = load_pickle(path_to_pickle)
     else:
         try:
             # Get merged data sets
-            schedule8_data = get_schedule8_details(route, weather, reset_index=True)
+            schedule8_data = view_schedule8_details(route_name, weather_category, reset_index=True)
             # Select a list of columns
             selected_features = [
-                'PfPIId',  # 260140
-                'IncidentRecordId',  # 232978
-                'TrustIncidentId',  # 191759
-                'IncidentNumber',  # 176370
+                'PfPIId',
+                'IncidentRecordId',
+                'TrustIncidentId',
+                'IncidentNumber',
                 'PerformanceEventCode', 'PerformanceEventGroup', 'PerformanceEventName',
-                'PfPIMinutes', 'PfPICosts', 'FinancialYear',  # 9
-                'IncidentRecordCreateDate',  # 3287
+                'PfPIMinutes', 'PfPICosts', 'FinancialYear',
+                'IncidentRecordCreateDate',
                 'StartDate', 'EndDate',
                 'IncidentDescription', 'IncidentJPIPCategory',
-                'WeatherCategory',  # 10
-                'IncidentReason', 'IncidentReasonDescription', 'IncidentCategory', 'IncidentCategoryDescription',
-                'IncidentCategoryGroupDescription', 'IncidentFMS', 'IncidentEquipment',
-                'WeatherCell',  # 106
+                'WeatherCategory',
+                'IncidentReasonCode', 'IncidentReasonDescription', 'IncidentCategory', 'IncidentCategoryDescription',
+                # 'IncidentCategoryGroupDescription',
+                'IncidentFMS', 'IncidentEquipment',
+                'WeatherCell',
                 'Route', 'IMDM',
                 'StanoxSection', 'StartLocation', 'EndLocation',
                 'StartELR', 'StartMileage', 'EndELR', 'EndMileage', 'StartStanox', 'EndStanox',
                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
                 'ApproximateLocation']
-            # Acquire the subset (260140, 40)
             data = schedule8_data[selected_features]
-            save_pickle(data, path_to_pickle)
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
-
     return data
 
 
-# Schedule 8 details combined with weather data
-def get_schedule8_details_and_weather(route=None, weather=None, ip_start_hrs=-12, ip_end_hrs=12, update=False):
+# Get Schedule 8 data by incident location and Weather category
+def view_schedule8_cost_by_location(route_name=None, weather_category=None, update=False, pickle_it=True):
     """
-    :param route:
-    :param weather:
-    :param ip_start_hrs: [numeric] incident period start time, i.e. hours before the recorded incident start
-    :param ip_end_hrs: [numeric] incident period end time, i.e. hours after the recorded incident end time
-    :param update: [bool] default, False
-    :return:
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pandas.DataFrame]
     """
-
-    filename = make_filename("Schedule8_details_and_weather", route, weather)
-    add_suffix = [str(s) for s in (ip_start_hrs, ip_end_hrs)]
-    filename = "_".join([filename] + add_suffix) + ".pickle"
+    filename = make_filename("Schedule8_costs_by_location", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
-
     if os.path.isfile(path_to_pickle) and not update:
         data = load_pickle(path_to_pickle)
     else:
         try:
-            # Getting Schedule 8 details (i.e. 'Schedule8_details')
-            schedule8_details = get_schedule8_details(route, weather, reset_index=False)
-            # Truncates "month" and "time" parts from datetime
-            schedule8_details['incident_duration'] = \
-                schedule8_details.EndDate - schedule8_details.StartDate
-            schedule8_details['critical_start'] = \
-                schedule8_details.StartDate.apply(datetime_truncate.truncate_hour) + \
-                pd.DateOffset(hours=ip_start_hrs)
-            schedule8_details['critical_end'] = \
-                schedule8_details.EndDate.apply(datetime_truncate.truncate_hour) + \
-                pd.DateOffset(hours=ip_end_hrs)
-            schedule8_details['critical_period'] = \
-                schedule8_details.critical_end - schedule8_details.critical_start
-            # Get weather data
-            weather_data = get_weather()
-            # Merge the two data sets
-            data = schedule8_details.join(weather_data, on=['WeatherCell', 'critical_start'], how='inner')
-            data.sort_index(inplace=True)  # (257608, 61)
-            # Save the merged data
-            save_pickle(data, path_to_pickle)
-
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-
-    return data
-
-
-# Get Schedule 8 data by incident location and weather category
-def get_schedule8_cost_by_location(route=None, weather=None, update=False):
-    """
-    :param route: 
-    :param weather: 
-    :param update: 
-    :return: 
-    """
-
-    filename = make_filename("Schedule8_costs_by_location", route, weather)
-    path_to_pickle = cdd_metex_db_views(filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
-    else:
-        try:
-            # Get Schedule8_details
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            # Select columns
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = [
                 'PfPIId',
                 # 'TrustIncidentId', 'IncidentRecordCreateDate',
@@ -1125,58 +1215,31 @@ def get_schedule8_cost_by_location(route=None, weather=None, update=False):
                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
                 'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_pickle)
+            data = pfpi_stats(schedule8_data, selected_features)
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Getting '{}' ... Failed due to {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
-
-    return data
-
-
-# Get Schedule 8 data by datetime and weather category
-def get_schedule8_cost_by_datetime(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_datetime", route, weather)
-    path_to_pickle = cdd_metex_db_views(filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
-    else:
-        try:
-            # Get Schedule8_details
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            # Select a list of columns
-            selected_features = [
-                'PfPIId',
-                # 'TrustIncidentId', 'IncidentRecordCreateDate',
-                'FinancialYear',
-                'StartDate', 'EndDate',
-                'WeatherCategory',
-                'Route', 'IMDM',
-                'WeatherCell',
-                'PfPICosts', 'PfPIMinutes']
-            schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
-            save_pickle(data, path_to_pickle)
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-
     return data
 
 
 # Get Schedule 8 data by datetime and location
-def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_datetime_location", route, weather)
+def view_schedule8_cost_by_datetime_location(route_name=None, weather_category=None, update=False, pickle_it=True):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it:
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_costs_by_datetime_location", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
-
     if os.path.isfile(path_to_pickle) and not update:
         data = load_pickle(path_to_pickle)
     else:
         try:
-            # Get merged data sets
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            # Select a list of columns
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = [
                 'PfPIId',
                 # 'TrustIncidentId', 'IncidentRecordCreateDate',
@@ -1192,138 +1255,32 @@ def get_schedule8_cost_by_datetime_location(route=None, weather=None, update=Fal
                 'WeatherCell',
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
-            save_pickle(data, path_to_pickle)
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
-
-    return data
-
-
-# Get Schedule 8 data by datetime, location and weather
-def get_schedule8_cost_by_datetime_location_weather(route=None, weather=None, ip_start=-12, ip_end=12, update=False):
-    filename = make_filename("Schedule8_costs_by_datetime_location_weather", route, weather)
-    add_suffix = [str(s) for s in (ip_start, ip_end)]
-    filename = "_".join([filename] + add_suffix) + ".pickle"
-    path_to_pickle = cdd_metex_db_views(filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
-    else:
-        try:
-            # Get Schedule8_costs_by_datetime_location
-            schedule8_data = get_schedule8_cost_by_datetime_location(route, weather)
-            # Create critical start and end datetimes (truncating "month" and "time" parts from datetime)
-            schedule8_data['incident_duration'] = \
-                schedule8_data.EndDate - schedule8_data.StartDate
-            schedule8_data['critical_start'] = \
-                schedule8_data.StartDate.apply(datetime_truncate.truncate_hour) + \
-                pd.DateOffset(hours=ip_start)
-            schedule8_data['critical_end'] = \
-                schedule8_data.EndDate.apply(datetime_truncate.truncate_hour) + \
-                pd.DateOffset(hours=ip_end)
-            schedule8_data['critical_period'] = \
-                schedule8_data.critical_end - schedule8_data.critical_start
-            # Get weather data
-            weather_data = get_weather()
-            # Merge the two data sets
-            data = schedule8_data.join(weather_data, on=['WeatherCell', 'critical_start'], how='inner')
-            # Save the merged data
-            save_pickle(data, path_to_pickle)
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-
-    return data
-
-
-# Get Schedule 8 cost by incident reason
-def get_schedule8_cost_by_reason(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_reason", route, weather)
-    path_to_pickle = cdd_metex_db_views(filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
-    else:
-        try:
-            # Get merged data sets
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
-            # Select columns
-            selected_features = ['PfPIId',
-                                 'FinancialYear',
-                                 'Route',
-                                 # 'IMDM',
-                                 'WeatherCategory',
-                                 'IncidentDescription',
-                                 'IncidentCategory',
-                                 'IncidentCategoryDescription',
-                                 'IncidentCategorySuperGroupCode',
-                                 'IncidentCategoryGroupDescription',
-                                 'IncidentReason',
-                                 'IncidentReasonName',
-                                 'IncidentReasonDescription',
-                                 'IncidentJPIPCategory',
-                                 'PfPIMinutes', 'PfPICosts']
-            schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_pickle)
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-
-    return data
-
-
-# Get Schedule 8 cost by location and incident reason
-def get_schedule8_cost_by_location_reason(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_location_reason", route, weather)
-    path_to_pickle = cdd_metex_db_views(filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
-    else:
-        try:
-            schedule8_details = get_schedule8_details(route, weather).reset_index()
-            selected_features = ['PfPIId',
-                                 'FinancialYear',
-                                 'WeatherCategory',
-                                 'Route', 'IMDM',
-                                 'StanoxSection',
-                                 'StartStanox', 'EndStanox',
-                                 'StartLocation', 'EndLocation',
-                                 'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
-                                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
-                                 'IncidentDescription',
-                                 'IncidentCategory',
-                                 'IncidentCategoryDescription',
-                                 'IncidentCategorySuperGroupCode',
-                                 'IncidentCategoryGroupDescription',
-                                 'IncidentReason',
-                                 'IncidentReasonName',
-                                 'IncidentReasonDescription',
-                                 'IncidentJPIPCategory',
-                                 'PfPIMinutes', 'PfPICosts']
-            schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_pickle)
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-
     return data
 
 
 # Get Schedule 8 cost by datetime, location and incident reason
-def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_datetime_location_reason", route, weather)
+def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_category=None, update=False,
+                                                    pickle_it=True):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_costs_by_datetime_location_reason", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
-
     if os.path.isfile(path_to_pickle) and not update:
         data = load_pickle(path_to_pickle)
     else:
         try:
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = ['PfPIId',
                                  'FinancialYear',
                                  'StartDate', 'EndDate',
@@ -1339,32 +1296,152 @@ def get_schedule8_cost_by_datetime_location_reason(route=None, weather=None, upd
                                  'IncidentCategory',
                                  'IncidentCategoryDescription',
                                  'IncidentCategorySuperGroupCode',
-                                 'IncidentCategoryGroupDescription',
-                                 'IncidentReason',
+                                 # 'IncidentCategoryGroupDescription',
+                                 'IncidentReasonCode',
                                  'IncidentReasonName',
                                  'IncidentReasonDescription',
                                  'IncidentJPIPCategory',
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_pickle)
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
-
     return data
 
 
-# Get Schedule 8 cost by weather category
-def get_schedule8_cost_by_weather_category(route=None, weather=None, update=False):
-    filename = make_filename("Schedule8_costs_by_weather_category", route, weather)
+# Get Schedule 8 data by datetime and Weather category
+def view_schedule8_cost_by_datetime(route_name=None, weather_category=None, update=False, pickle_it=False):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it:
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_costs_by_datetime", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
-
     if os.path.isfile(path_to_pickle) and not update:
         data = load_pickle(path_to_pickle)
     else:
         try:
-            schedule8_details = get_schedule8_details(route, weather, reset_index=True)
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
+            selected_features = [
+                'PfPIId',
+                # 'TrustIncidentId', 'IncidentRecordCreateDate',
+                'FinancialYear',
+                'StartDate', 'EndDate',
+                'WeatherCategory',
+                'Route', 'IMDM',
+                'WeatherCell',
+                'PfPICosts', 'PfPIMinutes']
+            schedule8_data = schedule8_details[selected_features]
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
+        except Exception as e:
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            data = None
+    return data
+
+
+# Get Schedule 8 cost by incident reason
+def view_schedule8_cost_by_reason(route_name=None, weather_category=None, update=False, pickle_it=False):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_costs_by_reason", route_name, weather_category)
+    path_to_pickle = cdd_metex_db_views(filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
+    else:
+        try:
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'Route',
+                                 # 'IMDM',
+                                 'WeatherCategory',
+                                 'IncidentDescription',
+                                 'IncidentCategory',
+                                 'IncidentCategoryDescription',
+                                 'IncidentCategorySuperGroupCode',
+                                 # 'IncidentCategoryGroupDescription',
+                                 'IncidentReasonCode',
+                                 'IncidentReasonName',
+                                 'IncidentReasonDescription',
+                                 'IncidentJPIPCategory',
+                                 'PfPIMinutes', 'PfPICosts']
+            schedule8_data = schedule8_details[selected_features]
+            data = pfpi_stats(schedule8_data, selected_features)
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
+        except Exception as e:
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            data = None
+    return data
+
+
+# Get Schedule 8 cost by location and incident reason
+def view_schedule8_cost_by_location_reason(route_name=None, weather_category=None, update=False, pickle_it=False):
+    filename = make_filename("Schedule8_costs_by_location_reason", route_name, weather_category)
+    path_to_pickle = cdd_metex_db_views(filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
+    else:
+        try:
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
+            selected_features = ['PfPIId',
+                                 'FinancialYear',
+                                 'WeatherCategory',
+                                 'Route', 'IMDM',
+                                 'StanoxSection',
+                                 'StartStanox', 'EndStanox',
+                                 'StartLocation', 'EndLocation',
+                                 'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
+                                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
+                                 'IncidentDescription',
+                                 'IncidentCategory',
+                                 'IncidentCategoryDescription',
+                                 'IncidentCategorySuperGroupCode',
+                                 # 'IncidentCategoryGroupDescription',
+                                 'IncidentReasonCode',
+                                 'IncidentReasonName',
+                                 'IncidentReasonDescription',
+                                 'IncidentJPIPCategory',
+                                 'PfPIMinutes', 'PfPICosts']
+            schedule8_data = schedule8_details[selected_features]
+            data = pfpi_stats(schedule8_data, selected_features)
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
+        except Exception as e:
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            data = None
+    return data
+
+
+# Get Schedule 8 cost by Weather category
+def view_schedule8_cost_by_weather_category(route_name=None, weather_category=None, update=False, pickle_it=False):
+    """
+    :param route_name: [str; None]
+    :param weather_category: [str; None]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pandas.DataFrame]
+    """
+    filename = make_filename("Schedule8_costs_by_weather_category", route_name, weather_category)
+    path_to_pickle = cdd_metex_db_views(filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        data = load_pickle(path_to_pickle)
+    else:
+        try:
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = ['PfPIId',
                                  'FinancialYear',
                                  'Route',
@@ -1373,29 +1450,10 @@ def get_schedule8_cost_by_weather_category(route=None, weather=None, update=Fals
                                  'PfPICosts',
                                  'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = agg_pfpi_stats(schedule8_data, selected_features)
-            save_pickle(data, path_to_pickle)
+            data = pfpi_stats(schedule8_data, selected_features)
+            if pickle_it:
+                save_pickle(data, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(filename)[0], e))
+            print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
-
     return data
-
-
-"""
-route = None
-weather = None
-update = True
-
-get_schedule8_details(route, weather, reset_index=False, update=update)
-get_schedule8_details_pfpi(route, weather, update)
-get_schedule8_details_and_weather(route, weather, -12, 12, update=update)
-get_schedule8_cost_by_location(route, weather, update=update)
-get_schedule8_cost_by_datetime(route, weather, update=update)
-get_schedule8_cost_by_datetime_location(route, weather, update=update)
-get_schedule8_cost_by_datetime_location_weather(route, weather, -12, 12, update=update)
-get_schedule8_cost_by_reason(route, weather, update=update)
-get_schedule8_cost_by_location_reason(route, weather, update=update)
-get_schedule8_cost_by_datetime_location_reason(route, weather, update=update)
-get_schedule8_cost_by_weather_category(route, weather, update=update)
-"""
