@@ -955,7 +955,7 @@ def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, pos
     :return: [pandas.DataFrame; None]
     """
     # assert all(isinstance(x, pd.np.int64) for x in weather_cell_id)
-    assert isinstance(weather_cell_id, tuple) or isinstance(weather_cell_id, pd.np.int64)
+    assert isinstance(weather_cell_id, tuple) or isinstance(weather_cell_id, (int, pd.np.integer))
     pickle_filename = "{}{}{}.pickle".format(
         "_".join(str(x) for x in list(weather_cell_id)) if isinstance(weather_cell_id, tuple) else weather_cell_id,
         start_dt.strftime('_fr%Y%m%d%H%M') if start_dt else "", end_dt.strftime('_to%Y%m%d%H%M') if end_dt else "")
@@ -970,8 +970,8 @@ def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, pos
             conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
             sql_query = \
                 "SELECT * FROM dbo.Weather WHERE WeatherCell {} {}{}{};".format(
-                    "=" if isinstance(weather_cell_id, pd.np.int64) else "IN",
-                    weather_cell_id[0] if len(weather_cell_id) == 1 else weather_cell_id,
+                    "=" if isinstance(weather_cell_id, (int, pd.np.integer)) else "IN",
+                    weather_cell_id,
                     " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
                     " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
             weather = pd.read_sql(sql_query, conn_metex)
