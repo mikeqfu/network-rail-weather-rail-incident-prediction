@@ -617,7 +617,7 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
                                               save_as=save_original_as, update=update)
             trust_incident.index.name = 'TrustIncidentId'
             trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
-            # Extract a subset of data, in which the StartDate is between 'start_year' and 'end_year'?
+            # Extract a subset of data, in which the StartDateTime is between 'start_year' and 'end_year'?
             trust_incident = trust_incident[
                 (trust_incident.FinancialYear >= (start_year if start_year else 0)) &
                 (trust_incident.FinancialYear <= (end_year if end_year else pd.datetime.now().year))]
@@ -640,22 +640,22 @@ def get_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, post
     :param update: [bool]
     :return: [pandas.DataFrame; None]
     """
-    assert isinstance(weather_cell_id, int)
-    path_to_pickle = cdd_metex_db_tables(
-        'Weather_{}{}{}.pickle'.format(
-            weather_cell_id,
-            start_dt.strftime('>%Y%m%d%H%M%S') if start_dt else "",
-            end_dt.strftime('<%Y%m%d%H%M%S') if end_dt else ""))
+    # assert all(isinstance(x, pd.np.int64) for x in weather_cell_id)
+    assert isinstance(weather_cell_id, tuple)
+    pickle_filename = "Weather_{}{}{}.pickle".format("_".join(str(x) for x in list(weather_cell_id)),
+                                                     start_dt.strftime('_fr%Y%m%d%H%M') if start_dt else "",
+                                                     end_dt.strftime('_to%Y%m%d%H%M') if end_dt else "")
+    path_to_pickle = cdd("modelling\\intermediate\\dat", pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         weather = load_pickle(path_to_pickle)
-
     else:
         try:
             conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
             sql_query = \
-                "SELECT * FROM dbo.Weather WHERE WeatherCell = {}{}{};".format(
-                    weather_cell_id,
+                "SELECT * FROM dbo.Weather WHERE WeatherCell {} {}{}{};".format(
+                    "=" if len(weather_cell_id) == 1 else "IN",
+                    weather_cell_id[0] if len(weather_cell_id) == 1 else weather_cell_id,
                     " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
                     " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
             weather = pd.read_sql(sql_query, conn_metex)
@@ -737,7 +737,10 @@ def get_weather_cell(update=False, save_original_as=None,
                 lambda x: x if len(list(set(x))) == 1 else list(set(x)))
             # Merge the acquired data set
             weather_cell_map = weather_cell_map.join(imdm_weather_cell_map)
-            # Save the processed data
+            weather_cell_map['poly'] = weather_cell_map.apply(
+                lambda x: shapely.geometry.Polygon(
+                    zip([x.ll_Longitude, x.ul_Longitude, x.ur_Longitude, x.lr_Longitude],
+                        [x.ll_Latitude, x.ul_Latitude, x.ur_Latitude, x.lr_Latitude])), axis=1)
             save_pickle(weather_cell_map, path_to_pickle)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -1013,30 +1016,32 @@ def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
         if weather_attributed:
             data = data[data.WeatherCategory != '']
             data.sort_index(inplace=True)
+            filename = "Schedule8_details_weather_attributed"
+        else:
+            filename = "Schedule8_details"
 
-        """ Note: There may be errors in e.g. IMDM data/column, location id, of the TrustIncident table. 
+        # Note: There may be errors in e.g. IMDM data/column, location id, of the TrustIncident table.
     
-        # Get a ELR-IMDM-Route "dictionary" from Vegetation database
-        route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
-        route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
-    
-        # Further cleaning the data
-        data.reset_index(inplace=True)
-        temp = data.merge(route_du_elr, how='left', left_on=['ELR_Start', 'IMDM'], right_on=['ELR', 'DU'])
-        temp = temp.merge(route_du_elr, how='left', left_on=['ELR_End', 'IMDM'], right_on=['ELR', 'DU'])
-    
-        temp[['Route_', 'IMDM_']] = temp[['Route_x', 'DU_x']]
-        idx_x = (temp.Route_x.isnull()) & (~temp.Route_y.isnull())
-        temp.loc[idx_x, 'Route_'], temp.loc[idx_x, 'IMDM_'] = temp.Route_y.loc[idx_x], temp.DU_y.loc[idx_x]
-    
-        idx_y = (temp.Route_x.isnull()) & (temp.Route_y.isnull())
-        temp.loc[idx_y, 'IMDM_'] = temp.IMDM_Location.loc[idx_y]
-        temp.loc[idx_y, 'Route_'] = temp.loc[idx_y, 'IMDM_'].replace(imdm.to_dict()['Route'])
-    
-        temp.drop(labels=['Route_x', 'ELR_x', 'DU_x', 'Route_y', 'ELR_y', 'DU_y',
-                          'StanoxSection_Start', 'StanoxSection_End',
-                          'IMDM', 'IMDM_Location'], axis=1, inplace=True)
-        """
+        # # Get a ELR-IMDM-Route "dictionary" from Vegetation database
+        # route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
+        # route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
+        #
+        # # Further cleaning the data
+        # data.reset_index(inplace=True)
+        # temp = data.merge(route_du_elr, how='left', left_on=['ELR_Start', 'IMDM'], right_on=['ELR', 'DU'])
+        # temp = temp.merge(route_du_elr, how='left', left_on=['ELR_End', 'IMDM'], right_on=['ELR', 'DU'])
+        #
+        # temp[['Route_', 'IMDM_']] = temp[['Route_x', 'DU_x']]
+        # idx_x = (temp.Route_x.isnull()) & (~temp.Route_y.isnull())
+        # temp.loc[idx_x, 'Route_'], temp.loc[idx_x, 'IMDM_'] = temp.Route_y.loc[idx_x], temp.DU_y.loc[idx_x]
+        #
+        # idx_y = (temp.Route_x.isnull()) & (temp.Route_y.isnull())
+        # temp.loc[idx_y, 'IMDM_'] = temp.IMDM_Location.loc[idx_y]
+        # temp.loc[idx_y, 'Route_'] = temp.loc[idx_y, 'IMDM_'].replace(imdm.to_dict()['Route'])
+        #
+        # temp.drop(labels=['Route_x', 'ELR_x', 'DU_x', 'Route_y', 'ELR_y', 'DU_y',
+        #                   'StanoxSection_Start', 'StanoxSection_End',
+        #                   'IMDM', 'IMDM_Location'], axis=1, inplace=True)
 
         i = data[~data.StartLocation.eq(data.Location_Start)].index
         for i in i:
@@ -1055,7 +1060,8 @@ def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
                              'ELR_End': 'EndELR', 'Yards_End': 'EndYards',
                              'Mileage_Start': 'StartMileage', 'Mileage_End': 'EndMileage',
                              'LocationId_Start': 'StartLocationId', 'LocationId_End': 'EndLocationId',
-                             'LocationId_Section': 'SectionLocationId', 'IMDM_Location': 'IMDM'}, inplace=True)
+                             'LocationId_Section': 'SectionLocationId', 'IMDM_Location': 'IMDM',
+                             'StartDate': 'StartDateTime', 'EndDate': 'EndDateTime'}, inplace=True)
 
         # Use 'Station' data from Railway Codes website
         station_locations = get_station_locations()['Station'][['Station', 'Degrees Longitude', 'Degrees Latitude']]
@@ -1079,24 +1085,22 @@ def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
         i = data.EndLocation == 'Dalston Junction (East London Line)'
         data.loc[i, ['EndLongitude', 'EndLatitude']] = [-0.0751, 51.5461]
 
-        """
-        # Sort the merged data frame by index 'PfPIId'
-        data = data.set_index('PfPIId').sort_index()  # (260140, 49)
-        
-        # Further cleaning the 'IMDM' and 'Route'
-        for section in data.StanoxSection.unique():
-            temp = data[data.StanoxSection == section]
-            # IMDM
-            if len(temp.IMDM.unique()) >= 2:
-                imdm_temp = data.loc[temp.index].IMDM.value_counts()
-                data.loc[temp.index, 'IMDM'] = imdm_temp[imdm_temp == imdm_temp.max()].index[0]
-            # Route
-            if len(temp.Route.unique()) >= 2:
-                route_temp = data.loc[temp.index].Route.value_counts()
-                data.loc[temp.index, 'Route'] = route_temp[route_temp == route_temp.max()].index[0]
-        """
+        # # Sort the merged data frame by index 'PfPIId'
+        # data = data.set_index('PfPIId').sort_index()  # (260140, 49)
+        #
+        # # Further cleaning the 'IMDM' and 'Route'
+        # for section in data.StanoxSection.unique():
+        #     temp = data[data.StanoxSection == section]
+        #     # IMDM
+        #     if len(temp.IMDM.unique()) >= 2:
+        #         imdm_temp = data.loc[temp.index].IMDM.value_counts()
+        #         data.loc[temp.index, 'IMDM'] = imdm_temp[imdm_temp == imdm_temp.max()].index[0]
+        #     # Route
+        #     if len(temp.Route.unique()) >= 2:
+        #         route_temp = data.loc[temp.index].Route.value_counts()
+        #         data.loc[temp.index, 'Route'] = route_temp[route_temp == route_temp.max()].index[0]
 
-        save_pickle(data, cdd_metex_db_views("Schedule8_details" + save_as))
+        save_pickle(data, cdd_metex_db_views(filename + save_as))
 
     except Exception as e:
         print("Failed to merge Schedule 8 details. {}".format(e))
@@ -1117,7 +1121,8 @@ def view_schedule8_details(route_name=None, weather_category=None, reset_index=F
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    pickle_filename = make_filename("Schedule8_details", route_name, weather_category, save_as=".pickle")
+    filename = "Schedule8_details" + ("_weather_attributed" if weather_attributed else "")
+    pickle_filename = make_filename(filename, route_name, weather_category, save_as=".pickle")
     path_to_pickle = cdd_metex_db_views(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         schedule8_details = load_pickle(path_to_pickle)
@@ -1125,7 +1130,7 @@ def view_schedule8_details(route_name=None, weather_category=None, reset_index=F
             schedule8_details.reset_index(inplace=True)
     else:
         try:
-            path_to_merged = cdd_metex_db_views("Schedule8_details.pickle")
+            path_to_merged = cdd_metex_db_views("{}.pickle".format(filename))
             if not os.path.isfile(path_to_merged) or update:
                 schedule8_details = merge_schedule8_data(weather_attributed, save_as=".pickle")
             else:
@@ -1166,7 +1171,7 @@ def view_schedule8_details_pfpi(route_name=None, weather_category=None, update=F
                 'PerformanceEventCode', 'PerformanceEventGroup', 'PerformanceEventName',
                 'PfPIMinutes', 'PfPICosts', 'FinancialYear',
                 'IncidentRecordCreateDate',
-                'StartDate', 'EndDate',
+                'StartDateTime', 'EndDateTime',
                 'IncidentDescription', 'IncidentJPIPCategory',
                 'WeatherCategory',
                 'IncidentReasonCode', 'IncidentReasonDescription', 'IncidentCategory', 'IncidentCategoryDescription',
@@ -1244,7 +1249,7 @@ def view_schedule8_cost_by_datetime_location(route_name=None, weather_category=N
                 'PfPIId',
                 # 'TrustIncidentId', 'IncidentRecordCreateDate',
                 'FinancialYear',
-                'StartDate', 'EndDate',
+                'StartDateTime', 'EndDateTime',
                 'WeatherCategory',
                 'StanoxSection',
                 'Route', 'IMDM',
@@ -1255,7 +1260,7 @@ def view_schedule8_cost_by_datetime_location(route_name=None, weather_category=N
                 'WeatherCell',
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
@@ -1283,7 +1288,7 @@ def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_cat
             schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = ['PfPIId',
                                  'FinancialYear',
-                                 'StartDate', 'EndDate',
+                                 'StartDateTime', 'EndDateTime',
                                  'WeatherCategory',
                                  'WeatherCell',
                                  'Route', 'IMDM',
@@ -1303,7 +1308,7 @@ def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_cat
                                  'IncidentJPIPCategory',
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
@@ -1332,13 +1337,13 @@ def view_schedule8_cost_by_datetime(route_name=None, weather_category=None, upda
                 'PfPIId',
                 # 'TrustIncidentId', 'IncidentRecordCreateDate',
                 'FinancialYear',
-                'StartDate', 'EndDate',
+                'StartDateTime', 'EndDateTime',
                 'WeatherCategory',
                 'Route', 'IMDM',
                 'WeatherCell',
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDate', 'EndDate'])
+            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
