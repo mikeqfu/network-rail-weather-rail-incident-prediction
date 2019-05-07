@@ -12,7 +12,7 @@ import mpl_toolkits.basemap
 import pandas as pd
 import shapely.geometry
 
-from converters import nr_mileage_num_to_str, osgb36_to_wgs84, yards_to_nr_mileage
+from converters import nr_mileage_num_to_str, osgb36_to_wgs84, wgs84_to_osgb36, yards_to_nr_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
 from mssql_utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
@@ -630,63 +630,6 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
     return trust_incident
 
 
-# Get Weather data by 'WeatherCell' and 'DateTime'
-def get_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, update=False):
-    """
-    :param weather_cell_id: [int]
-    :param start_dt: [datetime.datetime; str; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
-    :param end_dt: [datetime.datetime; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
-    :param postulate: [bool]
-    :param update: [bool]
-    :return: [pandas.DataFrame; None]
-    """
-    # assert all(isinstance(x, pd.np.int64) for x in weather_cell_id)
-    assert isinstance(weather_cell_id, tuple)
-    pickle_filename = "Weather_{}{}{}.pickle".format("_".join(str(x) for x in list(weather_cell_id)),
-                                                     start_dt.strftime('_fr%Y%m%d%H%M') if start_dt else "",
-                                                     end_dt.strftime('_to%Y%m%d%H%M') if end_dt else "")
-    path_to_pickle = cdd("modelling\\intermediate\\dat", pickle_filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        weather = load_pickle(path_to_pickle)
-    else:
-        try:
-            conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
-            sql_query = \
-                "SELECT * FROM dbo.Weather WHERE WeatherCell {} {}{}{};".format(
-                    "=" if len(weather_cell_id) == 1 else "IN",
-                    weather_cell_id[0] if len(weather_cell_id) == 1 else weather_cell_id,
-                    " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
-                    " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
-            weather = pd.read_sql(sql_query, conn_metex)
-
-            if postulate:
-                def postulate_missing_hourly_precipitation(dat):
-                    i = 0
-                    snowfall, precipitation = dat.Snowfall.tolist(), dat.TotalPrecipitation.tolist()
-                    while i + 3 < len(dat):
-                        snowfall[i + 1: i + 3] = pd.np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
-                        precipitation[i + 1: i + 3] = pd.np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
-                        i += 3
-                    if i + 2 == len(dat):
-                        snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
-                    elif i + 3 == len(dat):
-                        snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
-                    dat.Snowfall = snowfall
-                    dat.TotalPrecipitation = precipitation
-
-                postulate_missing_hourly_precipitation(weather)
-
-            # Save the processed data
-            save_pickle(weather, path_to_pickle)
-
-        except Exception as e:
-            print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
-            weather = None
-
-    return weather
-
-
 # Get Weather
 def get_weather():
     conn_db = establish_mssql_connection('NR_METEX_20190203')
@@ -719,6 +662,7 @@ def get_weather_cell(update=False, save_original_as=None,
             weather_cell_map = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                                 save_as=save_original_as, update=update)
             weather_cell_map.index.rename('WeatherCellId', inplace=True)  # Rename index
+
             # Lower left corner:
             weather_cell_map['ll_Longitude'] = weather_cell_map.Longitude  # - weather_cell_map.width / 2
             weather_cell_map['ll_Latitude'] = weather_cell_map.Latitude  # - weather_cell_map.height / 2
@@ -731,17 +675,37 @@ def get_weather_cell(update=False, save_original_as=None,
             # Lower right corner:
             weather_cell_map['lr_Longitude'] = weather_cell_map.ur_Longitude  # + weather_cell_map.width  # / 2
             weather_cell_map['lr_Latitude'] = weather_cell_map.ur_Latitude - weather_cell_map.height  # / 2
+
             # Get IMDM Weather cell map
             imdm_weather_cell_map = get_imdm_weather_cell_map().reset_index()[['WeatherCellId', 'IMDM', 'Route']]
             imdm_weather_cell_map = imdm_weather_cell_map.groupby('WeatherCellId').agg(
                 lambda x: x if len(list(set(x))) == 1 else list(set(x)))
+
             # Merge the acquired data set
             weather_cell_map = weather_cell_map.join(imdm_weather_cell_map)
-            weather_cell_map['poly'] = weather_cell_map.apply(
+
+            # Create polygons (Longitude, Latitude)
+            weather_cell_map['Polygon_WGS84'] = weather_cell_map.apply(
                 lambda x: shapely.geometry.Polygon(
                     zip([x.ll_Longitude, x.ul_Longitude, x.ur_Longitude, x.lr_Longitude],
                         [x.ll_Latitude, x.ul_Latitude, x.ur_Latitude, x.lr_Latitude])), axis=1)
+
+            weather_cell_map[['ll_Easting', 'll_Northing']] = weather_cell_map[['ll_Longitude', 'll_Latitude']].apply(
+                lambda x: pd.Series(wgs84_to_osgb36(x.ll_Longitude, x.ll_Latitude)), axis=1)
+            weather_cell_map[['ul_Easting', 'ul_Northing']] = weather_cell_map[['ul_Longitude', 'ul_Latitude']].apply(
+                lambda x: pd.Series(wgs84_to_osgb36(x.ul_Longitude, x.ul_Latitude)), axis=1)
+            weather_cell_map[['ur_Easting', 'ur_Northing']] = weather_cell_map[['ur_Longitude', 'ur_Latitude']].apply(
+                lambda x: pd.Series(wgs84_to_osgb36(x.ur_Longitude, x.ur_Latitude)), axis=1)
+            weather_cell_map[['lr_Easting', 'lr_Northing']] = weather_cell_map[['lr_Longitude', 'lr_Latitude']].apply(
+                lambda x: pd.Series(wgs84_to_osgb36(x.lr_Longitude, x.lr_Latitude)), axis=1)
+
+            weather_cell_map['Polygon_OSGB36'] = weather_cell_map.apply(
+                lambda x: shapely.geometry.Polygon(
+                    zip([x.ll_Easting, x.ul_Easting, x.ur_Easting, x.lr_Easting],
+                        [x.ll_Northing, x.ul_Northing, x.ur_Northing, x.lr_Northing])), axis=1)
+
             save_pickle(weather_cell_map, path_to_pickle)
+
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_cell_map = None
@@ -918,14 +882,14 @@ def get_track_summary(update=False, save_original_as=None):
 
 
 # Form a file name in terms of specific 'Route' and 'Weather' category
-def make_filename(base_name, route_name, weather_category, *extra_suffixes, save_as=".pickle"):
+def make_filename(base_name, route_name, weather_category, *extra_suffixes, sep="_", save_as=".pickle"):
     if route_name:
         route_name = fuzzywuzzy.process.extractOne(route_name, get_route().Route, scorer=fuzzywuzzy.fuzz.ratio)[0]
     if weather_category:
         weather_category = fuzzywuzzy.process.extractOne(weather_category, get_weather_codes().WeatherCategory,
                                                          scorer=fuzzywuzzy.fuzz.ratio)[0]
     filename_suffix = [s for s in (route_name, weather_category) if s]  # "s" stands for "suffix"
-    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes if s]) + save_as
+    filename = sep.join([base_name] + filename_suffix + [str(s) for s in extra_suffixes if s]) + save_as
     return filename
 
 
@@ -978,6 +942,67 @@ def pfpi_stats(dat, selected_features, sort_by=None):
 """ Get views based on the NR_METEX data """
 
 
+# Get Weather data by 'WeatherCell' and 'DateTime'
+def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, dat_dir=None,
+                                update=False):
+    """
+    :param weather_cell_id: [int]
+    :param start_dt: [datetime.datetime; str; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
+    :param end_dt: [datetime.datetime; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
+    :param postulate: [bool]
+    :param dat_dir: [str; None]
+    :param update: [bool]
+    :return: [pandas.DataFrame; None]
+    """
+    # assert all(isinstance(x, pd.np.int64) for x in weather_cell_id)
+    assert isinstance(weather_cell_id, tuple) or isinstance(weather_cell_id, pd.np.int64)
+    pickle_filename = "{}{}{}.pickle".format(
+        "_".join(str(x) for x in list(weather_cell_id)) if isinstance(weather_cell_id, tuple) else weather_cell_id,
+        start_dt.strftime('_fr%Y%m%d%H%M') if start_dt else "", end_dt.strftime('_to%Y%m%d%H%M') if end_dt else "")
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_metex_db_views()
+    path_to_pickle = cd(dat_dir, pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        weather = load_pickle(path_to_pickle)
+
+    else:
+        try:
+            conn_metex = establish_mssql_connection(database_name='NR_METEX_20190203')
+            sql_query = \
+                "SELECT * FROM dbo.Weather WHERE WeatherCell {} {}{}{};".format(
+                    "=" if isinstance(weather_cell_id, pd.np.int64) else "IN",
+                    weather_cell_id[0] if len(weather_cell_id) == 1 else weather_cell_id,
+                    " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
+                    " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
+            weather = pd.read_sql(sql_query, conn_metex)
+
+            if postulate:
+                def postulate_missing_hourly_precipitation(dat):
+                    i = 0
+                    snowfall, precipitation = dat.Snowfall.tolist(), dat.TotalPrecipitation.tolist()
+                    while i + 3 < len(dat):
+                        snowfall[i + 1: i + 3] = pd.np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
+                        precipitation[i + 1: i + 3] = pd.np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
+                        i += 3
+                    if i + 2 == len(dat):
+                        snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
+                    elif i + 3 == len(dat):
+                        snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
+                    dat.Snowfall = snowfall
+                    dat.TotalPrecipitation = precipitation
+
+                postulate_missing_hourly_precipitation(weather)
+
+            # Save the processed data
+            save_pickle(weather, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
+            weather = None
+
+    return weather
+
+
 # Retrieve the TRUST
 def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
     """
@@ -1021,7 +1046,7 @@ def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
             filename = "Schedule8_details"
 
         # Note: There may be errors in e.g. IMDM data/column, location id, of the TrustIncident table.
-    
+
         # # Get a ELR-IMDM-Route "dictionary" from Vegetation database
         # route_du_elr = get_furlong_location(useful_columns_only=True)[['Route', 'ELR', 'DU']].drop_duplicates()
         # route_du_elr.index = range(len(route_du_elr))  # (1276, 3)
