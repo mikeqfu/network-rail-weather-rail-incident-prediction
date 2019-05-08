@@ -737,7 +737,8 @@ def get_weather_cell(update=False, save_original_as=None,
         # base_map.fillcontinents()
         base_map.arcgisimage(service='World_Shaded_Relief', xpixels=1500, dpi=300, verbose=False)
 
-        weather_cell_map_plot = weather_cell_map.drop_duplicates([s for s in weather_cell_map.columns if '_' in s])
+        weather_cell_map_plot = weather_cell_map.drop_duplicates([s for s in weather_cell_map.columns if '_' in s and
+                                                                  not s.startswith('Polygon')])
 
         for i in weather_cell_map_plot.index:
             ll_x, ll_y = base_map(weather_cell_map_plot.ll_Longitude[i], weather_cell_map_plot.ll_Latitude[i])
@@ -745,8 +746,12 @@ def get_weather_cell(update=False, save_original_as=None,
             ur_x, ur_y = base_map(weather_cell_map_plot.ur_Longitude[i], weather_cell_map_plot.ur_Latitude[i])
             lr_x, lr_y = base_map(weather_cell_map_plot.lr_Longitude[i], weather_cell_map_plot.lr_Latitude[i])
             xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
-            polygons = matplotlib.patches.Polygon(list(xy), fc='#fff68f', ec='b', alpha=0.5)
+            polygons = matplotlib.patches.Polygon(list(xy), fc='#D5EAFF', ec='#4b4747', alpha=0.5)
             plt.gca().add_patch(polygons)
+        plt.plot([], 's', label="Weather cell", ms=14, color='#D5EAFF', markeredgecolor='#4b4747')
+        legend = plt.legend(numpoints=1, loc='best', fancybox=True, labelspacing=0.5)
+        frame = legend.get_frame()
+        frame.set_edgecolor('k')
         plt.tight_layout()
 
         # # Plot points
