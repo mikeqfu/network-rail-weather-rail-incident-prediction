@@ -1,4 +1,4 @@
-""" Read and clean data of NR_METEX database """
+""" Read and cleanse data of NR_METEX database """
 
 import copy
 import os
@@ -1009,7 +1009,7 @@ def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, pos
 
 
 # Retrieve the TRUST
-def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
+def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
     """
     :param weather_attributed: [bool]
     :param save_as: [str]
@@ -1140,7 +1140,7 @@ def merge_schedule8_data(weather_attributed=True, save_as=".pickle"):
 
 
 # Get the TRUST data
-def view_schedule8_details(route_name=None, weather_category=None, reset_index=False, weather_attributed=True,
+def view_schedule8_details(route_name=None, weather_category=None, reset_index=False, weather_attributed=False,
                            update=False, pickle_it=True):
     """
     :param route_name: [str; None]
@@ -1315,7 +1315,8 @@ def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_cat
         data = load_pickle(path_to_pickle)
     else:
         try:
-            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True,
+                                                       weather_attributed=False)
             selected_features = ['PfPIId',
                                  'FinancialYear',
                                  'StartDateTime', 'EndDateTime',
