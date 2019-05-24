@@ -948,13 +948,14 @@ def pfpi_stats(dat, selected_features, sort_by=None):
 
 
 # Get Weather data by 'WeatherCell' and 'DateTime'
-def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, dat_dir=None,
-                                update=False):
+def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False,
+                                pickle_it=True, dat_dir=None, update=False):
     """
     :param weather_cell_id: [int]
     :param start_dt: [datetime.datetime; str; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
     :param end_dt: [datetime.datetime; None] e.g. pd.datetime(2019, 5, 1, 12), '2019-05-01 12:00:00'
     :param postulate: [bool]
+    :param pickle_it: [bool]
     :param dat_dir: [str; None]
     :param update: [bool]
     :return: [pandas.DataFrame; None]
@@ -999,7 +1000,8 @@ def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, pos
                 postulate_missing_hourly_precipitation(weather)
 
             # Save the processed data
-            save_pickle(weather, path_to_pickle)
+            if pickle_it:
+                save_pickle(weather, path_to_pickle)
 
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
