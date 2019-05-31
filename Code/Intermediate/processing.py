@@ -7,6 +7,7 @@ import os
 import random
 
 import datetime_truncate
+import gc
 import geopandas as gpd
 import geopy.distance
 import matplotlib.font_manager
@@ -19,12 +20,16 @@ import scipy.stats
 import shapely.geometry
 import shapely.ops
 
-import Intermediate.spreadsheet_incidents as isi
-import Intermediate.utils as iu
-import Intermediate.weather as iw
+import Intermediate.spreadsheet_incidents as itm_wb
+import Intermediate.utils as itm_utils
+import Intermediate.weather as itm_weather
 import mssql_metex
-from converters import svg_to_emf, wgs84_to_osgb36
-from utils import load_pickle, save_pickle
+import settings
+import utils
+
+settings.np_preferences()
+settings.pd_preferences()
+
 
 # ====================================================================================================================
 """ 1 """
@@ -36,19 +41,19 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
                                  trial=True, illustrate_buf_cir=False, update=False):
 
     filename = "Incidents-with-Weather-conditions"
-    pickle_filename = isi.make_filename(
+    pickle_filename = itm_wb.make_filename(
         filename, route_name, weather_category, "-".join([season] if isinstance(season, str) else season),
         "trial" if trial else "full")
-    path_to_pickle = iu.cdd_intermediate(pickle_filename)
+    path_to_pickle = itm_utils.cdd_intermediate(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        iw_data = load_pickle(path_to_pickle)
+        iw_data = utils.load_pickle(path_to_pickle)
     else:
         try:
             # Incidents data
-            incidents_all = isi.get_schedule8_weather_incidents()
-            incidents_all = iu.get_data_by_season(incidents_all, season)
-            incidents = isi.subset(incidents_all, route=route_name, weather_category=weather_category)
+            incidents_all = itm_wb.get_schedule8_weather_incidents()
+            incidents_all = itm_utils.get_data_by_season(incidents_all, season)
+            incidents = itm_wb.subset(incidents_all, route=route_name, weather_category=weather_category)
             # For testing purpose ...
             if trial:
                 # import random
@@ -56,23 +61,23 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
                 incidents = incidents.iloc[0:10, :]
 
             # Weather observations
-            weather_obs = iw.get_integrated_daily_gridded_weather_obs()
+            weather_obs = itm_weather.get_integrated_daily_gridded_weather_obs()
             weather_obs.reset_index(inplace=True)
 
             # Radiation observations
-            irad_data = iw.get_midas_radtob()
+            irad_data = itm_weather.get_midas_radtob()
             irad_data.reset_index(inplace=True)
 
             # --------------------------------------------------------------------------------------------------------
             """ In the spatial context """
 
             # Weather observation grids
-            observation_grids = iw.get_observation_grids()
+            observation_grids = itm_weather.get_observation_grids()
             obs_cen_geom = shapely.geometry.MultiPoint(list(observation_grids.Centroid_XY))
             obs_grids_geom = shapely.geometry.MultiPolygon(list(observation_grids.Grid))
 
             # Find the closest grid centroid and return the corresponding (pseudo) grid id
-            def find_closest_obs_grid(x, centroids_geom):
+            def find_closest_weather_grid(x, centroids_geom):
                 """
                 :param x: e.g. Incidents.StartNE.iloc[0]
                 :param centroids_geom: i.e. obs_cen_geom
@@ -82,10 +87,12 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
                 return pseudo_id[0][0]
 
             # Start
-            incidents['Start_Pseudo_Grid_ID'] = incidents.StartNE.map(lambda x: find_closest_obs_grid(x, obs_cen_geom))
+            incidents['Start_Pseudo_Grid_ID'] = incidents.StartNE.map(
+                lambda x: find_closest_weather_grid(x, obs_cen_geom))
             incidents = incidents.join(observation_grids, on='Start_Pseudo_Grid_ID')
             # End
-            incidents['End_Pseudo_Grid_ID'] = incidents.EndNE.map(lambda x: find_closest_obs_grid(x, obs_cen_geom))
+            incidents['End_Pseudo_Grid_ID'] = incidents.EndNE.map(
+                lambda x: find_closest_weather_grid(x, obs_cen_geom))
             incidents = incidents.join(observation_grids, on='End_Pseudo_Grid_ID', lsuffix='_Start', rsuffix='_End')
             # Modify column names
             for l in ['Start', 'End']:
@@ -96,8 +103,8 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
             # Get midpoint between two points
             def find_midpoint(start, end, as_geom=True):
                 """
-                :param start: [shapely.geometry.point.Point] e.g. Incidents.StartNE.iloc[0]
-                :param end: [shapely.geometry.point.Point] e.g. Incidents.EndNE.iloc[0]
+                :param start: [shapely.geometry.point.Point] e.g. incidents.StartEN.iloc[0]
+                :param end: [shapely.geometry.point.Point] e.g. incidents.EndEN.iloc[0]
                 :param as_geom: [bool] whether to return a shapely.geometry obj
                 :return:
                 """
@@ -108,13 +115,13 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
             incidents['MidpointNE'] = incidents.apply(lambda x: find_midpoint(x.StartNE, x.EndNE, as_geom=True), axis=1)
 
             # Create a circle buffer for start location
-            def create_circle_buffer(start, end, midpoint, whisker=500):
+            def create_circle_buffer_upon_weather_grid(start, end, midpoint, whisker=500):
                 """
-                :param start: e.g. Incidents.StartNE[0]
-                :param end: e.g. Incidents.EndNE[0]
-                :param midpoint: e.g. Incidents.MidpointNE[0]
+                :param start: e.g. incidents.StartNE[0]
+                :param end: e.g. incidents.EndNE[0]
+                :param midpoint: e.g. incidents.MidpointNE[0]
                 :param whisker: An extended length to the diameter (i.e. on both sides of the start and end locations)
-                :return:
+                :return: [shapely.geometry.Polygon]
                 """
                 if start == end:
                     buffer_circle = start.buffer(2000 + whisker)
@@ -126,10 +133,10 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
 
             # Make a buffer zone for Weather data aggregation
             incidents['Buffer_Zone'] = incidents.apply(
-                lambda x: create_circle_buffer(x.StartNE, x.EndNE, x.MidpointNE, whisker=500), axis=1)
+                lambda x: create_circle_buffer_upon_weather_grid(x.StartNE, x.EndNE, x.MidpointNE, whisker=500), axis=1)
 
             # Find all intersecting geom objects
-            def find_intersecting_grid(x, grids_geom, as_grid_id=True):
+            def find_intersecting_weather_grid(x, grids_geom, as_grid_id=True):
                 """
                 :param x: e.g. Incidents.Buffer_Zone.iloc[0]
                 :param grids_geom: i.e. obs_grids_geom
@@ -142,10 +149,11 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
                 return intxn_grids
 
             # Find all Weather observation grids that intersect with the created buffer zone for each incident location
-            incidents['Weather_Grid'] = incidents.Buffer_Zone.map(lambda x: find_intersecting_grid(x, obs_grids_geom))
+            incidents['Weather_Grid'] = incidents.Buffer_Zone.map(
+                lambda x: find_intersecting_weather_grid(x, obs_grids_geom))
 
             # Met station locations
-            met_stations = iw.get_meteorological_stations()[['E_N', 'E_N_GEOM']]
+            met_stations = itm_weather.get_meteorological_stations()[['E_N', 'E_N_GEOM']]
             met_stations_geom = shapely.geometry.MultiPoint(list(met_stations.E_N_GEOM))
 
             # Find the closest grid centroid and return the corresponding (pseudo) grid id
@@ -166,8 +174,8 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
                 def illustrate_example_buffer_circle():
                     start_point, end_point = incidents.StartNE.iloc[4], incidents.EndNE.iloc[4]
                     midpoint = incidents.MidpointNE.iloc[4]
-                    bf_circle = create_circle_buffer(start_point, end_point, midpoint, whisker=500)
-                    i_obs_grids = find_intersecting_grid(bf_circle, obs_grids_geom, as_grid_id=False)
+                    bf_circle = create_circle_buffer_upon_weather_grid(start_point, end_point, midpoint, whisker=500)
+                    i_obs_grids = find_intersecting_weather_grid(bf_circle, obs_grids_geom, as_grid_id=False)
                     plt.figure(figsize=(7, 6))
                     ax = plt.subplot2grid((1, 1), (0, 0))
                     for g in i_obs_grids:
@@ -431,12 +439,12 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
             iw_data = pd.concat([prior_ip_data, non_ip_data], axis=0, ignore_index=True, sort=False)
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
-            iw_data = iw_data.join(iu.categorise_track_orientations(iw_data[['StartNE', 'EndNE']]))
+            iw_data = iw_data.join(itm_utils.categorise_track_orientations(iw_data[['StartNE', 'EndNE']]))
 
             # Categorise temperature: 25, 26, 27, 28, 29, 30
-            iw_data = iw_data.join(iu.categorise_temperatures(iw_data.Maximum_Temperature_max))
+            iw_data = iw_data.join(itm_utils.categorise_temperatures(iw_data.Maximum_Temperature_max))
 
-            save_pickle(iw_data, path_to_pickle)
+            utils.save_pickle(iw_data, path_to_pickle)
 
         except Exception as e:
             print("Failed to get Incidents with Weather conditions. {}.".format(e))
@@ -445,69 +453,14 @@ def get_incidents_with_weather_1(route_name=None, weather_category='Heat', seaso
     return iw_data
 
 
-# Describe basic statistics about the main explanatory variables
-def describe_explanatory_variables_1(train_set, save_as=".pdf", dpi=None):
-    plt.figure(figsize=(13, 5))
-    colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
-
-    ax1 = plt.subplot2grid((1, 8), (0, 0))
-    train_set.Temperature_Change_max.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
-    ax1.set_xticklabels('')
-    plt.xlabel('Temp.\nChange', fontsize=13, labelpad=39)
-    plt.ylabel('(°C)', fontsize=12, rotation=0)
-    ax1.yaxis.set_label_coords(0.05, 1.01)
-
-    ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
-    train_set.Temperature_Category.value_counts().plot.bar(color='#537979', rot=-90, fontsize=12)
-    plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'], fontsize=12)
-    plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
-    plt.ylabel('No.', fontsize=12, rotation=0)
-    ax2.yaxis.set_label_coords(0.0, 1.01)
-
-    ax3 = plt.subplot2grid((1, 8), (0, 3), colspan=2)
-    track_orientation = train_set.Track_Orientation.value_counts()
-    track_orientation.index = [i.replace('_', '-') for i in track_orientation.index]
-    track_orientation.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
-    plt.xlabel('Track orientation', fontsize=13)
-    plt.ylabel('No.', fontsize=12, rotation=0)
-    ax3.yaxis.set_label_coords(0.0, 1.01)
-
-    ax4 = plt.subplot2grid((1, 8), (0, 5))
-    train_set.GLBL_IRAD_AMT_max.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
-    ax4.set_xticklabels('')
-    plt.xlabel('Max.\nirradiation', fontsize=13, labelpad=29)
-    plt.ylabel('(KJ/m$\\^2$)', fontsize=12, rotation=0)
-    ax4.yaxis.set_label_coords(0.2, 1.01)
-
-    ax5 = plt.subplot2grid((1, 8), (0, 6))
-    train_set.Rainfall_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
-    ax5.set_xticklabels('')
-    plt.xlabel('Max.\nPrecip.', fontsize=13, labelpad=29)
-    plt.ylabel('(mm)', fontsize=12, rotation=0)
-    ax5.yaxis.set_label_coords(0.0, 1.01)
-
-    ax6 = plt.subplot2grid((1, 8), (0, 7))
-    hottest_heretofore = train_set.Hottest_Heretofore.value_counts()
-    hottest_heretofore.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
-    plt.xlabel('Hottest\nheretofore', fontsize=13)
-    plt.ylabel('No.', fontsize=12, rotation=0)
-    ax6.yaxis.set_label_coords(0.0, 1.01)
-
-    plt.tight_layout()
-
-    path_to_file_weather = iu.cdd_intermediate(0, "Variables" + save_as)
-    plt.savefig(path_to_file_weather, dpi=dpi)
-    if save_as == ".svg":
-        svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
-
-
 # ====================================================================================================================
 """ 2 """
 
 
 # Create shapely.points for StartLocations and EndLocations
-def create_start_end_shapely_points(incidents):
-    data = incidents.copy()
+def create_start_end_shapely_points(incidents_data):
+    print("Creating shapely.geometry.Points for each incident location ... ", end="")
+    data = incidents_data.copy()
     # Make shapely.geometry.points in longitude and latitude
     data.insert(data.columns.get_loc('StartLatitude') + 1, 'StartLonLat',
                 gpd.points_from_xy(data.StartLongitude, data.StartLatitude))
@@ -516,18 +469,26 @@ def create_start_end_shapely_points(incidents):
     data.insert(data.columns.get_loc('EndLonLat') + 1, 'MidLonLat',
                 data[['StartLonLat', 'EndLonLat']].apply(
                     lambda x: shapely.geometry.LineString([x.StartLonLat, x.EndLonLat]).centroid, axis=1))
-    # Add Easting and Northing points
-    data[['StartEasting', 'StartNorthing']] = data[['StartLongitude', 'StartLatitude']].apply(
-        lambda x: pd.Series(wgs84_to_osgb36(x.StartLongitude, x.StartLatitude)), axis=1)
-    data['StartEN'] = gpd.points_from_xy(data.StartEasting, data.StartNorthing)
-    data[['EndEasting', 'EndNorthing']] = data[['EndLongitude', 'EndLatitude']].apply(
-        lambda x: pd.Series(wgs84_to_osgb36(x.EndLongitude, x.EndLatitude)), axis=1)
-    data['EndEN'] = gpd.points_from_xy(data.EndEasting, data.EndNorthing)
+    # # Add Easting and Northing points
+    # import converters
+    # start_en_pt = [converters.wgs84_to_osgb36(data.StartLongitude[i], data.StartLatitude[i]) for i in data.index]
+    # data = pd.concat([data, pd.DataFrame(start_en_pt, columns=['StartEasting', 'StartNorthing'])], axis=1)
+    # data['StartEN'] = gpd.points_from_xy(data.StartEasting, data.StartNorthing)
+    # end_en_pt = [converters.wgs84_to_osgb36(data.EndLongitude[i], data.EndLatitude[i]) for i in data.index]
+    # data = pd.concat([data, pd.DataFrame(end_en_pt, columns=['EndEasting', 'EndNorthing'])], axis=1)
+    # data['EndEN'] = gpd.points_from_xy(data.EndEasting, data.EndNorthing)
+    # # data[['StartEasting', 'StartNorthing']] = data[['StartLongitude', 'StartLatitude']].apply(
+    # #     lambda x: pd.Series(converters.wgs84_to_osgb36(x.StartLongitude, x.StartLatitude)), axis=1)
+    # # data['StartEN'] = gpd.points_from_xy(data.StartEasting, data.StartNorthing)
+    # # data[['EndEasting', 'EndNorthing']] = data[['EndLongitude', 'EndLatitude']].apply(
+    # #     lambda x: pd.Series(converters.wgs84_to_osgb36(x.EndLongitude, x.EndLatitude)), axis=1)
+    # # data['EndEN'] = gpd.points_from_xy(data.EndEasting, data.EndNorthing)
+    print("Done.")
     return data
 
 
 # Create a circle buffer for an incident location
-def create_circle_buffer_for_incident(midpoint, incident_start, incident_end, whisker_km=0.1, as_geom=True):
+def create_circle_buffer_upon_weather_cell(midpoint, incident_start, incident_end, whisker_km=0.008, as_geom=True):
     """
     Ref: https://gis.stackexchange.com/questions/289044/creating-buffer-circle-x-kilometers-from-point-using-python
 
@@ -545,7 +506,7 @@ def create_circle_buffer_for_incident(midpoint, incident_start, incident_end, wh
     if incident_start != incident_end:
         radius_km = geopy.distance.distance(incident_start.coords, incident_end.coords).km / 2 + whisker_km
     else:
-        radius_km = 0.5
+        radius_km = 2
     buffer = shapely.ops.transform(project, shapely.geometry.Point(0, 0).buffer(radius_km * 1000))
     buffer_circle = buffer if as_geom else buffer.exterior.coords[:]
     return buffer_circle
@@ -558,34 +519,37 @@ def find_intersecting_weather_cells(x, as_geom=False):
     :param as_geom: [bool] whether to return shapely.geometry.Polygon of intersecting weather cells
     :return:
     """
-    weather_cell_geoms = mssql_metex.get_weather_cell().poly
+    weather_cell_geoms = mssql_metex.get_weather_cell().Polygon_WGS84
     intxn_weather_cells = tuple(cell for cell in weather_cell_geoms if x.intersects(cell))
     if as_geom:
         return intxn_weather_cells
     else:
         intxn_weather_cell_ids = tuple(weather_cell_geoms[weather_cell_geoms == cell].index[0]
                                        for cell in intxn_weather_cells)
+        if len(intxn_weather_cell_ids) == 1:
+            intxn_weather_cell_ids = intxn_weather_cell_ids[0]
         return intxn_weather_cell_ids
 
 
 # Illustration of the buffer circle
-def illustrate_buffer_circle(midpoint, incident_start, incident_end, whisker_km=0.05):
+def illustrate_buffer_circle(midpoint, incident_start, incident_end, whisker_km=0.008, legend_loc='best'):
     """
-    :param midpoint: e.g. midpoint = incidents.MidLonLat.iloc[4]
-    :param incident_start: e.g. incident_start = incidents.StartLonLat.iloc[4]
-    :param incident_end: e.g. incident_end = incidents.EndLonLat.iloc[4]
+    :param midpoint: e.g. midpoint = incidents.MidLonLat.iloc[2]
+    :param incident_start: e.g. incident_start = incidents.StartLonLat.iloc[2]
+    :param incident_end: e.g. incident_end = incidents.EndLonLat.iloc[2]
     :param whisker_km:
+    :param legend_loc:
     """
-    buffer_circle = create_circle_buffer_for_incident(midpoint, incident_start, incident_end, whisker_km=whisker_km)
+    buffer_circle = create_circle_buffer_upon_weather_cell(midpoint, incident_start, incident_end, whisker_km)
     i_weather_cells = find_intersecting_weather_cells(buffer_circle, as_geom=True)
     plt.figure(figsize=(6, 6))
     ax = plt.subplot2grid((1, 1), (0, 0))
     for g in i_weather_cells:
         x, y = g.exterior.xy
         ax.plot(x, y, color='#433f3f')
-        polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#fff68f', ec='b', alpha=0.5)
+        polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#D5EAFF', ec='#4b4747', alpha=0.5)
         plt.gca().add_patch(polygons)
-    ax.plot([], 's', label="Weather observation grid", ms=16, color='none', markeredgecolor='#433f3f')
+    ax.plot([], 's', label="Weather cell", ms=16, color='#D5EAFF', markeredgecolor='#4b4747')
     x, y = buffer_circle.exterior.xy
     ax.plot(x, y)
     sx, sy, ex, ey = incident_start.xy + incident_end.xy
@@ -597,58 +561,94 @@ def illustrate_buffer_circle(midpoint, incident_start, incident_end, whisker_km=
     ax.set_xlabel('Longitude')  # ax.set_xlabel('Easting')
     ax.set_ylabel('Latitude')  # ax.set_ylabel('Northing')
     font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=14)
-    legend = plt.legend(numpoints=1, loc='best', prop=font, fancybox=True, labelspacing=0.5)
+    legend = plt.legend(numpoints=1, loc=legend_loc, prop=font, fancybox=True, labelspacing=0.5)
     frame = legend.get_frame()
     frame.set_edgecolor('k')
     plt.tight_layout()
 
 
-#
-def get_incidents_with_weather_2(route_name=None, weather_category='Heat',
-                                 season='summer', lp=5 * 24, non_ip=24,
-                                 trial=10, random_select=False, illustrate_buf_cir=False, update=False):
+# Integrate incidents and weather data
+def get_incidents_with_weather_2(trial_id=0, route_name=None, weather_category='Heat',
+                                 regional=True, reason=None, season='summer',
+                                 prep_test=False, random_select=True, use_buffer_zone=False, illustrate_buf_cir=False,
+                                 lp=5 * 24, non_ip=24,
+                                 update=False):
+
     pickle_filename = mssql_metex.make_filename(
-        "Incidents-and-Weather", route_name, weather_category,
-        "-".join([season] if isinstance(season, str) else season), "trial" if trial else "", "2")
-    path_to_pickle = iu.cdd_intermediate(pickle_filename)
+        "incidents-and-weather", route_name, weather_category, "regional" if regional else "",
+        "-".join([season] if isinstance(season, str) else season), "trial" if prep_test else "", sep="-")
+    path_to_pickle = itm_utils.cd_intermediate("Heat", "{}".format(trial_id), pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        incidents_and_weather = load_pickle(path_to_pickle)
+        incidents_and_weather = utils.load_pickle(path_to_pickle)
     else:
         try:
             # Incidents data
-            incidents = mssql_metex.view_schedule8_cost_by_datetime_location_reason(route_name, weather_category)
-            incidents = iu.get_data_by_season(incidents, season)
-            if trial:  # For initial testing ...
-                incidents = incidents.iloc[random.sample(range(len(incidents)), trial), :] \
-                    if random_select else incidents.iloc[-trial-100:-100, :]
+            incidents_data = mssql_metex.view_schedule8_cost_by_datetime_location_reason(route_name)
+            incidents = incidents_data.copy()
+            incidents = incidents[incidents.WeatherCategory.isin(['', weather_category])]
+
+            # Investigate only the following incident reasons
+            if reason is not None:
+                reason_codes = mssql_metex.get_incident_reason_metadata().index.tolist()
+                assert all(x for x in reason if x in reason_codes) and isinstance(reason, list)
+            else:
+                reason = ['IR', 'XH', 'IB', 'JH']
+            incidents = incidents[incidents.IncidentReasonCode.isin(reason)]
+            # Select season data
+            incidents = itm_utils.get_data_by_season(incidents, season)
+
+            if regional:
+                incidents = incidents[incidents.Route.isin(['South East', 'Anglia', 'Wessex'])]
+
+            if prep_test:  # For initial testing ...
+                if random_select:
+                    incidents = incidents.iloc[random.sample(range(len(incidents)), prep_test), :]
+                else:
+                    incidents = incidents.iloc[-prep_test - 1:-1, :]
 
             # --------------------------------------------------------------------------------------------------------
             """ In the spatial context """
 
-            # Create shapely points
             incidents = create_start_end_shapely_points(incidents)
 
-            # Make a buffer zone for gathering data of weather observations
-            incidents['Buffer_Zone'] = incidents.apply(
-                lambda x: create_circle_buffer_for_incident(x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.05),
-                axis=1)
+            if use_buffer_zone:
+                # Make a buffer zone for gathering data of weather observations
+                print("Creating a buffer zone for each incident location ... ", end="")
+                incidents['Buffer_Zone'] = incidents.apply(
+                    lambda x: create_circle_buffer_upon_weather_cell(
+                        x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.0), axis=1)
+                print("Done.")
 
-            # Find all Weather observation grids that intersect with the created buffer zone for each incident location
-            incidents['WeatherCells_Obs'] = incidents.Buffer_Zone.map(lambda x: find_intersecting_weather_cells(x))
+                # Find all weather observation grids intersecting with the buffer zone for each incident location
+                print("Delimiting zone for calculating weather statistics  ... ", end="")
+                incidents['WeatherCell_Obs'] = incidents.Buffer_Zone.map(lambda x: find_intersecting_weather_cells(x))
+                print("Done.")
 
-            if illustrate_buf_cir:
-                x_incident_start, x_incident_end = incidents.StartLonLat.iloc[-1], incidents.EndLonLat.iloc[-1]
-                x_midpoint = incidents.MidLonLat.iloc[-1]
-                illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end, whisker_km=0.01)
+                if illustrate_buf_cir:
+                    # Example 1
+                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[12], incidents.EndLonLat.iloc[12]
+                    x_midpoint = incidents.MidLonLat.iloc[12]
+                    illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end, whisker_km=0.0,
+                                             legend_loc='upper left')
+                    utils.save_fig(itm_utils.cd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
+                    # Example 2
+                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[16], incidents.EndLonLat.iloc[16]
+                    x_midpoint = incidents.MidLonLat.iloc[16]
+                    illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end, whisker_km=0.0,
+                                             legend_loc='lower right')
+                    utils.save_fig(itm_utils.cd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
 
             # --------------------------------------------------------------------------------------------------------
             """ In the temporal context """
 
             incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-            incidents['Critical_EndDateTime'] = incidents.StartDateTime
+            # Incident period (IP)
             incidents['Critical_StartDateTime'] = incidents.StartDateTime.map(
                 lambda x: x.replace(hour=0, minute=0, second=0)) - pd.DateOffset(hours=24)
+            incidents['Critical_EndDateTime'] = incidents.StartDateTime.map(
+                lambda x: x.replace(minute=0) + pd.Timedelta(hours=1) if x.minute > 45 else x.replace(minute=0))
+            incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
 
             # Specify the statistics needed for Weather observations (except radiation)
             def specify_weather_stats_calculations():
@@ -656,8 +656,8 @@ def get_incidents_with_weather_2(route_name=None, weather_category='Heat',
                                               'RelativeHumidity': max,
                                               'WindSpeed': max,
                                               'WindGust': max,
-                                              'Snowfall': max,
-                                              'TotalPrecipitation': max}
+                                              'Snowfall': sum,
+                                              'TotalPrecipitation': sum}
                 return weather_stats_calculations
 
             # Calculate average wind speed and direction
@@ -683,21 +683,26 @@ def get_incidents_with_weather_2(route_name=None, weather_category='Heat',
             def specify_weather_variable_names():
                 # var_names = db.colnames_db_table('NR_METEX', table_name='Weather')[2:]
                 weather_stats_calculations = specify_weather_stats_calculations()
-                stats_names = [k + '_max' for k in weather_stats_calculations.keys()]
+                stats_names = [x + '_max' for x in weather_stats_calculations.keys()]
+                stats_names[stats_names.index('TotalPrecipitation_max')] = 'TotalPrecipitation_sum'
+                stats_names[stats_names.index('Snowfall_max')] = 'Snowfall_sum'
                 stats_names.insert(stats_names.index('Temperature_max') + 1, 'Temperature_min')
                 stats_names.insert(stats_names.index('Temperature_min') + 1, 'Temperature_avg')
                 stats_names.insert(stats_names.index('Temperature_avg') + 1, 'Temperature_dif')
                 wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
-                return stats_names + wind_speed_variables + ['Hottest_by_far']
+                return stats_names + wind_speed_variables + ['Hottest_Heretofore']
 
             # Get the highest temperature of year by far
             def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
                 # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-                year_start = datetime_truncate.truncate_year(period_start_dt)
-                non_ip_weather_obs = mssql_metex.get_weather_by_id_datetime(weather_cell_id, year_start,
-                                                                            period_start_dt)
-                weather_obs_by_far = non_ip_weather_obs[
-                    (non_ip_weather_obs.DateTime < period_start_dt) & (non_ip_weather_obs.DateTime > year_start)]
+                yr_start_dt = datetime_truncate.truncate_year(period_start_dt)
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = itm_utils.cdd_intermediate("weather-slices")
+                # Get weather observations
+                weather_obs = mssql_metex.view_weather_by_id_datetime(
+                    weather_cell_id, yr_start_dt, period_start_dt, pickle_it=False, dat_dir=weather_dat_dir)
+                weather_obs_by_far = weather_obs[
+                    (weather_obs.DateTime < period_start_dt) & (weather_obs.DateTime > yr_start_dt)]
                 highest_temp = weather_obs_by_far.Temperature.max()
                 return highest_temp
 
@@ -723,57 +728,81 @@ def get_incidents_with_weather_2(route_name=None, weather_category='Heat',
                     # Temperature change between the the highest and lowest temperatures
                     weather_stats.insert(3, 'Temperature_dif',
                                          weather_stats.Temperature['max'] - weather_stats.Temperature['min'])
+                    # Find out weather cell ids
+                    weather_cell_obs = weather_obs.WeatherCell.unique()
+                    weather_cell_id = weather_cell_obs[0] if len(weather_cell_obs) == 1 else tuple(weather_cell_obs)
+                    obs_start_dt = weather_obs.DateTime.min()  # Observation start datetime
                     # Whether it is the hottest of the year by far
-                    weather_cell_id = tuple(weather_obs.WeatherCell.unique())
-                    obs_start_dt = weather_obs.DateTime.min()
                     highest_temp = get_highest_temperature_of_year_by_far(weather_cell_id, obs_start_dt)
-                    weather_stats['Hottest_by_far'] = 1 if weather_stats.Temperature['max'][0] >= highest_temp else 0
+                    highest_temp_obs = weather_stats.Temperature['max'][0]
+                    weather_stats['Hottest_Heretofore'] = 1 if highest_temp_obs >= highest_temp else 0
                     weather_stats.columns = specify_weather_variable_names()
+                    # Scale up variable
+                    scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg', 'RelativeHumidity_max',
+                                     'Snowfall_sum']
+                    weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
                     weather_stats.index.name = None
                     if values_only:
                         weather_stats = weather_stats.values[0].tolist()
                 return weather_stats
 
             # Calculate weather statistics based on the retrieved weather observation data
-            def retrieve_weather_stats_for_incidents(weather_cell_id, start_dt, end_dt):
+            def get_ip_weather_stats(weather_cell_id, start_dt, end_dt):
+                """
+                :param weather_cell_id: e.g. weather_cell_id = incidents.WeatherCell.iloc[0]
+                :param start_dt: e.g. start_dt = incidents.Critical_StartDateTime.iloc[0]
+                :param end_dt: e.g. end_dt = incidents.Critical_EndDateTime.iloc[0]
+                :return:
+                """
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = itm_utils.cdd_intermediate("weather-slices")
                 # Query weather observations
-                weather_obs = mssql_metex.get_weather_by_id_datetime(weather_cell_id, start_dt, end_dt)
+                ip_weather = mssql_metex.view_weather_by_id_datetime(weather_cell_id, start_dt, end_dt,
+                                                                     pickle_it=False, dat_dir=weather_dat_dir)
                 # Calculate basic statistics of the weather observations
                 weather_stats_calculations = specify_weather_stats_calculations()
-                weather_stats = calculate_weather_stats(weather_obs, weather_stats_calculations, values_only=True)
+                weather_stats = calculate_weather_stats(ip_weather, weather_stats_calculations, values_only=True)
                 return weather_stats
 
             # Prior-IP ---------------------------------------------------
+            print("Calculating weather statistics for IPs ... ", end="")
             incidents[specify_weather_variable_names()] = incidents.apply(
-                lambda x: pd.Series(retrieve_weather_stats_for_incidents(
-                    x.WeatherCells_Obs, x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
+                lambda x: pd.Series(get_ip_weather_stats(
+                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
+            print("Done.")
 
+            gc.collect()
+
+            incidents.Hottest_Heretofore = incidents.Hottest_Heretofore.astype(int)
             incidents['Incident_Reported'] = 1
 
             # Non-IP ---------------------------------------------------
             non_ip_data = incidents.copy(deep=True)
 
-            non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime - pd.DateOffset(hours=lp)
-            non_ip_data.Critical_StartDateTime = non_ip_data.Critical_EndDateTime - pd.DateOffset(hours=non_ip)
+            non_ip_data.Critical_StartDateTime = incidents.Critical_StartDateTime - pd.DateOffset(hours=non_ip + lp)
+            # non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + pd.DateOffset(hours=non_ip)
+            non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + incidents.Critical_Period
 
             # Gather gridded Weather observations of the corresponding non-incident period for each incident record
-            def retrieve_weather_stats_for_non_incidents(weather_cell_id, start_dt, end_dt, stanox_section):
+            def get_non_ip_weather_stats(weather_cell_id, start_dt, end_dt, stanox_section):
                 """
-                :param weather_cell_id: weather_cell_id = non_ip_data.WeatherCells_Obs.iloc[0]
+                :param weather_cell_id: weather_cell_id = non_ip_data.WeatherCell.iloc[0]
                 :param start_dt: e.g. start_dt = non_ip_data.Critical_StartDateTime.iloc[0]
                 :param end_dt: e.g. end_dt = non_ip_data.Critical_EndDateTime.iloc[0]
                 :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[0]
                 :return:
                 """
-                non_ip_weather = mssql_metex.get_weather_by_id_datetime(weather_cell_id, start_dt, end_dt)
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = itm_utils.cdd_intermediate("weather-slices")
+                # Query weather observations
+                non_ip_weather = mssql_metex.view_weather_by_id_datetime(weather_cell_id, start_dt, end_dt,
+                                                                         pickle_it=False, dat_dir=weather_dat_dir)
                 # Get all incident period data on the same section
-                critical_period = pd.date_range(start_dt, end_dt, normalize=True)
                 ip_overlap = incidents[
                     (incidents.StanoxSection == stanox_section) &
-                    (((incidents.Critical_StartDateTime <= min(critical_period)) &
-                      (incidents.Critical_EndDateTime >= min(critical_period))) |
-                     ((incidents.Critical_StartDateTime <= max(critical_period)) &
-                      (incidents.Critical_EndDateTime >= max(critical_period))))]
+                    (((incidents.Critical_StartDateTime <= start_dt) & (incidents.Critical_EndDateTime >= start_dt)) |
+                     ((incidents.Critical_StartDateTime <= end_dt) & (incidents.Critical_EndDateTime >= end_dt)))]
                 # Skip data of Weather causing Incidents at around the same time; but
                 if not ip_overlap.empty:
                     non_ip_weather = non_ip_weather[
@@ -784,15 +813,29 @@ def get_incidents_with_weather_2(route_name=None, weather_category='Heat',
                 weather_stats = calculate_weather_stats(non_ip_weather, weather_stats_calculations, values_only=True)
                 return weather_stats
 
+            print("Calculating weather statistics for Non-IPs ... ", end="")
             non_ip_data[specify_weather_variable_names()] = non_ip_data.apply(
-                lambda x: pd.Series(retrieve_weather_stats_for_non_incidents(
-                    x.WeatherCells_Obs, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
+                lambda x: pd.Series(get_non_ip_weather_stats(
+                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
+            print("Done.")
+
+            gc.collect()
 
             non_ip_data['Incident_Reported'] = 0
+            # non_ip_data.DelayMinutes = 0.0
+            non_ip_data.DelayCost = 0.0
 
-            incidents_and_weather = pd.concat([incidents, non_ip_data])
+            # Combine IP data and Non-IP data ----------------------------------------------------
+            incidents_and_weather = pd.concat([incidents, non_ip_data], axis=0, ignore_index=True)
 
-            save_pickle(incidents_and_weather, path_to_pickle)
+            # Get track orientation
+            incidents_and_weather = itm_utils.categorise_track_orientations(incidents_and_weather)
+
+            # Create temperature categories
+            incidents_and_weather = itm_utils.categorise_temperatures(incidents_and_weather, 'Temperature_max')
+
+            utils.save_pickle(incidents_and_weather, path_to_pickle)
 
         except Exception as e:
             print(e)
