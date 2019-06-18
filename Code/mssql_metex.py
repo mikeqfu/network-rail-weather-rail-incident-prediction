@@ -11,14 +11,17 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.basemap
 import pandas as pd
 import shapely.geometry
+from pyhelpers.dir import cd, cdd
+from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
+from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
+from pyrcs.line_data import LineData
+from pyrcs.other_assets import OtherAssets
+from pyrcs.utils import nr_mileage_num_to_str, yards_to_nr_mileage
 
-from converters import nr_mileage_num_to_str, osgb36_to_wgs84, wgs84_to_osgb36, yards_to_nr_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
 from mssql_utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
-from railwaycodes_utils import get_location_codes, get_station_locations
-from railwaycodes_utils import get_location_codes_dictionary, get_location_codes_dictionary_v2
-from utils import cd, cdd, cdd_metex, cdd_rc, load_json, load_pickle, save, save_fig, save_pickle
+from utils import cdd_metex, cdd_rc
 
 # ====================================================================================================================
 """ Change directories """
@@ -431,7 +434,8 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                 dat.Name = dat.Name.replace(errata_stanme)
 
                 # Use external data - Railway Codes
-                location_codes = get_location_codes()['Locations']
+                line_data = LineData()
+                location_codes = line_data.LocationIdentifiers.fetch_location_codes()['Location_codes']
 
                 #
                 for i, x in dat[dat.Description.isnull()].Stanox.items():
@@ -470,7 +474,9 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                 dat.replace(location_names_regexp_replacement_dict('Description'), inplace=True)
 
                 # Use STANOX dictionary
-                stanox_dict = get_location_codes_dictionary_v2(['STANOX'], update=update)
+                line_data = LineData()
+                stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
+                # stanox_dict = get_location_codes_dictionary_v2(['STANOX'], update=update)
                 temp = dat.join(stanox_dict, on='Stanox')[['Description', 'Location']]
                 na_loc = temp.Location.isnull()
                 temp.loc[na_loc, 'Location'] = temp.loc[na_loc, 'Description']
@@ -542,6 +548,14 @@ def get_stanox_section(update=False, save_original_as=None):
             stanox_section.index.name = 'StanoxSectionId'
             stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: int(x) if not pd.np.isnan(x) else '')
 
+            line_data = LineData()
+            # stanox_dat = get_location_codes_dictionary_v2(['STANOX'], update=update)
+            stanox_dat = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
+            # stanme_dict = get_location_codes_dictionary(keyword='STANME')
+            stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(keys='STANME', as_dict=True)
+            # tiploc_dict = get_location_codes_dictionary(keyword='TIPLOC')
+            tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(keys='TIPLOC', as_dict=True)
+
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             def cleanse_upon_stanox(dat, *stanox_col_names):
                 for stanox_col_name in stanox_col_names:
@@ -549,8 +563,6 @@ def get_stanox_section(update=False, save_original_as=None):
                     # Load stanox dictionary 1
                     stanox_dict = get_stanox_location(use_nr_mileage_format=True).Location.to_dict()
                     dat[temp_col] = dat[stanox_col_name].replace(stanox_dict)  # Create a temp column
-                    # Load stanox dictionary 2
-                    stanox_dat = get_location_codes_dictionary_v2(['STANOX'], update=update)
                     temp = dat.join(stanox_dat, on=temp_col).Location
                     temp_idx = temp[temp.notnull()].index
                     dat[temp_col][temp_idx] = temp[temp_idx]
@@ -560,8 +572,6 @@ def get_stanox_section(update=False, save_original_as=None):
             cleanse_upon_stanox(stanox_section, 'EndStanox')
 
             # Secondly, process 'STANME' and 'TIPLOC'
-            stanme_dict = get_location_codes_dictionary(keyword='STANME')
-            tiploc_dict = get_location_codes_dictionary(keyword='TIPLOC')
             loc_name_replacement_dict = location_names_replacement_dict()
             loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict()
             # Processing 'StartStanox_tmp'
@@ -1096,7 +1106,9 @@ def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
                              'StartDate': 'StartDateTime', 'EndDate': 'EndDateTime'}, inplace=True)
 
         # Use 'Station' data from Railway Codes website
-        station_locations = get_station_locations()['Station'][['Station', 'Degrees Longitude', 'Degrees Latitude']]
+        other_assets = OtherAssets()
+        station_locations = other_assets.Stations.fetch_station_locations()['Station']
+        station_locations = station_locations[['Station', 'Degrees Longitude', 'Degrees Latitude']]
         station_locations = station_locations.dropna().drop_duplicates('Station', keep='first')
         station_locations.set_index('Station', inplace=True)
         temp = data[['StartLocation']].join(station_locations, on='StartLocation', how='left')
