@@ -41,5 +41,5 @@ The prototype data model is generic and should also be adaptable to other contex
 
 ##### *Python packages (open for further development)*
 
-- [pydriosm](https://github.com/mikeqfu/pydriosm) - Download, read/parse and import/export OSM data extracts. 
-- [pyrcscraper](https://github.com/mikeqfu/pyrcscraper) - A little web scraping tool for collecting railway codes used in GB. 
+- **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - Download, read/parse and import/export OSM data extracts. 
+- **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A small tool for collecting railway codes used in GB. 
