@@ -1,8 +1,7 @@
-""" Plotting hotspots of weather-related incidents in the context of wind-related delays """
+""" Plotting hotspots of Weather-related Incidents in the context of wind-related delays """
 
 import glob
 import itertools
-import math
 import os
 import re
 import shutil
@@ -10,19 +9,20 @@ import shutil
 import PIL.Image
 import fiona
 import geopandas as gpd
+import math
 import matplotlib.font_manager
 import matplotlib.patches
 import matplotlib.pyplot as plt
+import osm_utils
 import pandas as pd
 import shapely.geometry
 import shapely.ops
+from converters import svg_to_emf
 from mpl_toolkits.basemap import Basemap
 from pysal.esda.mapclassify import Natural_Breaks as NBs
 
-import database_met as dbm
-import database_veg as dbv
-import osm_utils
-from converters import svg_to_emf
+import mssql_metex as dbm
+import mssql_vegetation as dbv
 from utils import cdd, colour_bar_index, confirmed, load_pickle, save, save_pickle
 
 
@@ -60,7 +60,7 @@ def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None,
 
     shape_file_dir, shape_filename = os.path.split(path_to_original_shp)
 
-    new_shp_dir = cdd("Network\\OpenStreetMap", layer)
+    new_shp_dir = cdd("Network\\OSM", layer)
 
     if not os.path.exists(new_shp_dir):
         os.makedirs(new_shp_dir)
@@ -149,7 +149,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     return fig, base_map
 
 
-# Show weather cells on the map ======================================================================================
+# Show Weather cells on the map ======================================================================================
 def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#D5EAFF', legend_loc=(1.05, 0.85)):
     """
     :param base_map: [mpl_toolkits.basemap.Basemap] basemap object
@@ -162,15 +162,15 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
     if base_map is None:
         _, base_map = plot_base_map()
 
-    print("Plotting the weather cells ... ", end="")
+    print("Plotting the Weather cells ... ", end="")
 
-    # Get weather cell data
+    # Get Weather cell data
     data = dbm.get_weather_cell(update=update)
     data = dbm.subset(data, route)
-    # Drop duplicated weather cell data
+    # Drop duplicated Weather cell data
     data.drop_duplicates(list(data.columns)[2:-1], inplace=True)
 
-    # Plot the weather cells one by one
+    # Plot the Weather cells one by one
     for i in data.index:
         ll_x, ll_y = base_map(data.ll_Longitude[i], data.ll_Latitude[i])
         ul_x, ul_y = base_map(data.ul_lon[i], data.ul_lat[i])
@@ -297,11 +297,11 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
     # Plot basemap
     fig, base_map = plot_base_map(projection='tmerc', legend_loc=legend_loc)
 
-    # Show weather cells
+    # Show Weather cells
     if show_metex_weather_cells:
         plot_weather_cells(base_map, route=route, legend_loc=legend_loc)
 
-    # Show vegetation
+    # Show Vegetation
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=add_osm_natural_tree, legend_loc=legend_loc)
 
@@ -323,13 +323,13 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
         filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                               ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        fig.savefig(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Basemap", fig_filename + save_as),
+        fig.savefig(dbm.cdd_metex_fig_pub("01 - Prototype", "Basemap", fig_filename + save_as),
                     dpi=dpi)
         print("Done.")
         if save_as == ".svg":
             svg_to_emf(
-                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + save_as),
-                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + ".emf"))
+                dbm.cdd_metex_fig_pub("01 - Prototype", fig_filename + save_as),
+                dbm.cdd_metex_fig_pub("01 - Prototype", fig_filename + ".emf"))
 
 
 # ====================================================================================================================
@@ -421,7 +421,7 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
         hotspots_data = load_pickle(path_to_file)
     else:
         # Get TRUST (by incident location, i.e. by STANOX section)
-        schedule8_costs_by_location = dbm.get_schedule8_cost_by_location(route=None, weather=None)
+        schedule8_costs_by_location = dbm.view_schedule8_cost_by_location(route_name=None, weather_category=None)
         schedule8_costs_by_location['StartPoint'] = [
             shapely.geometry.Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.StartLongitude, schedule8_costs_by_location.StartLatitude)]
@@ -486,7 +486,7 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
             fsuffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                           ['cell', 'veg', 'haz'])
             filename = '_'.join([keyword] + [v for s, v in fsuffix if s is True])
-            path_to_file = dbm.cdd_metex_db_fig_pub("01 - Prototype",
+            path_to_file = dbm.cdd_metex_fig_pub("01 - Prototype",
                                                     "Hotspots", filename + save_as)
             plt.savefig(path_to_file, dpi=dpi)
             print("Done.")
@@ -506,7 +506,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     try:
         hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
     except FileNotFoundError:
-        schedule8_data = dbm.get_schedule8_cost_by_datetime_location(route, weather, update)
+        schedule8_data = dbm.view_schedule8_cost_by_datetime_location(route, weather, update)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                           'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data = schedule8_data.groupby(group_features).aggregate(
@@ -649,11 +649,11 @@ def hotspots_delays(route='ANGLIA', weather='Wind', update=False,
     cb.ax.text(0., 0 - 0.75, "\n".join(hotspots_data.StanoxSection[:10]),  # highest
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
-    # Show weather cells
+    # Show Weather cells
     if show_metex_weather_cells:
         plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
 
-    # Show vegetation
+    # Show Vegetation
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
@@ -723,7 +723,7 @@ def hotspots_frequency(route='ANGLIA', weather='Wind', update=False,
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0., 1.025, "Count of incidents (2006/07-2014/15)",
+    cb.ax.text(0., 1.025, "Count of Incidents (2006/07-2014/15)",
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest frequency, in descending order

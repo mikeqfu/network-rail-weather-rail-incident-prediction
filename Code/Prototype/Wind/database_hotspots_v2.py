@@ -1,8 +1,7 @@
-""" Plotting hotspots of weather-related incidents in the context of wind-related delays """
+""" Plotting hotspots of Weather-related Incidents in the context of wind-related delays """
 
 import glob
 import itertools
-import math
 import os
 import re
 import shutil
@@ -10,20 +9,23 @@ import shutil
 import PIL.Image
 import fiona
 import geopandas as gpd
+import math
 import matplotlib.font_manager
 import matplotlib.patches
 import matplotlib.pyplot as plt
+import mpl_toolkits.basemap
 import pandas as pd
+import pydriosm as dri
+import pysal.viz.mapclassify.classifiers
 import shapely.geometry
 import shapely.ops
-from mpl_toolkits.basemap import Basemap
-from pysal.esda.mapclassify import Natural_Breaks as NBs
+from pyhelpers.dir import cdd
+from pyhelpers.misc import colour_bar_index, confirmed
+from pyhelpers.store import load_pickle, save, save_pickle
+from pyhelpers.store import save_svg_as_emf
 
-import database_met as dbm
-import database_veg as dbv
-import osm_utils
-from converters import svg_to_emf
-from utils import cdd, colour_bar_index, confirmed, load_pickle, save, save_pickle
+import mssql_metex as dbm
+import mssql_vegetation as dbv
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
@@ -41,16 +43,17 @@ def create_boundary_polygon(bounds):
 
 
 # Get the path to .shp file for basemap loading ======================================================================
-def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None, update=False):
+def get_shp_file_path_for_basemap(subregion_name, layer, feature=None, boundary=None, update=False):
     try:
-        path_to_original_shp = osm_utils.fetch_osm_file(subregion, layer, feature, file_format=".shp")[0]
+        dri.find_osm_shp_file(subregion_name, layer, feature, data_dir="Network\\OSM", file_ext=".shp")
+        path_to_original_shp = osm_utils.fetch_osm_file(subregion_name, layer, feature, file_format=".shp")[0]
     except IndexError:
-        shp_data = osm_utils.read_shp_zip(subregion, layer, feature, update)
+        shp_data = dri.read_shp_zip(subregion_name, layer, feature, update)
         if isinstance(shp_data, list):
             shp_data = [dat for dat in shp_data if len(dat) == max(len(dat) for dat in shp_data)][0]
         shp_data.crs = {'no_defs': True, 'ellps': 'WGS84', 'datum': 'WGS84', 'proj': 'longlat'}
 
-        shp_file_lst = osm_utils.fetch_osm_file(subregion, layer, feature=None)
+        shp_file_lst = osm_utils.fetch_osm_file(subregion_name, layer, feature=None)
         if len(shp_file_lst) > 1:
             shp_file_lst = [f for f in shp_file_lst if not re.match('.*_a_free_.*', f)]
         path_to_original_shp, shp_file = os.path.split(shp_file_lst[0])
@@ -60,19 +63,19 @@ def get_shp_file_path_for_basemap(subregion, layer, feature=None, boundary=None,
 
     shape_file_dir, shape_filename = os.path.split(path_to_original_shp)
 
-    new_shp_dir = cdd("Network\\OpenStreetMap", layer)
+    new_shp_dir = cdd("Network\\OSM", layer)
 
     if not os.path.exists(new_shp_dir):
         os.makedirs(new_shp_dir)
 
     for orig_file in glob.glob1(shape_file_dir, "{}.*".format(shape_filename.rstrip(".shp"))):
-        destination_file = orig_file.replace("gis.osm", subregion)
+        destination_file = orig_file.replace("gis.osm", subregion_name)
         destination = os.path.join(new_shp_dir, destination_file)
         if not os.path.isfile(destination) or update:
             shutil.copyfile(os.path.join(shape_file_dir, orig_file), destination)
             print("'{}' copied, pasted as '{}'.".format(orig_file, destination_file))
 
-    new_filename = shape_filename.replace("gis.osm", subregion).rstrip(".shp")
+    new_filename = shape_filename.replace("gis.osm", subregion_name).rstrip(".shp")
     new_path_to_shp = os.path.join(new_shp_dir, new_filename)
 
     if boundary is not None:
@@ -107,18 +110,18 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     plt.subplots_adjust(left=0.001, bottom=0.000, right=0.6035, top=1.000)
 
     # Plot basemap
-    base_map = Basemap(llcrnrlon=-0.565409,  # ll[0] - 0.06 * width,
-                       llcrnrlat=51.23622,  # ll[1] - 0.06 + 0.002 * height,
-                       urcrnrlon=1.915975,  # ur[0] + extra * width,
-                       urcrnrlat=53.15000,  # ur[1] + extra + 0.01 * height,
-                       ellps='WGS84',
-                       lat_ts=0,
-                       lon_0=-2.,
-                       lat_0=49.,
-                       projection=projection,  # Transverse Mercator Projection
-                       resolution='i',
-                       suppress_ticks=True,
-                       epsg=27700)
+    base_map = mpl_toolkits.basemap.Basemap(llcrnrlon=-0.565409,  # ll[0] - 0.06 * width,
+                                            llcrnrlat=51.23622,  # ll[1] - 0.06 + 0.002 * height,
+                                            urcrnrlon=1.915975,  # ur[0] + extra * width,
+                                            urcrnrlat=53.15000,  # ur[1] + extra + 0.01 * height,
+                                            ellps='WGS84',
+                                            lat_ts=0,
+                                            lon_0=-2.,
+                                            lat_0=49.,
+                                            projection=projection,  # Transverse Mercator Projection
+                                            resolution='i',
+                                            suppress_ticks=True,
+                                            epsg=27700)
 
     # base_map.arcgisimage(service='World_Shaded_Relief', xpixels=1500, dpi=300, verbose=False)
     base_map.drawmapboundary(color='white', fill_color='white')
@@ -149,7 +152,7 @@ def plot_base_map(projection='tmerc', railway_line_color='#3d3d3d', legend_loc=(
     return fig, base_map
 
 
-# Show weather cells on the map ======================================================================================
+# Show Weather cells on the map ======================================================================================
 def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_colour='#D5EAFF', legend_loc=(1.05, 0.85)):
     """
     :param base_map: [mpl_toolkits.basemap.Basemap] basemap object
@@ -162,15 +165,15 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
     if base_map is None:
         _, base_map = plot_base_map()
 
-    print("Plotting the weather cells ... ", end="")
+    print("Plotting the Weather cells ... ", end="")
 
-    # Get weather cell data
+    # Get Weather cell data
     data = dbm.get_weather_cell(update=update)
     data = dbm.subset(data, route)
-    # Drop duplicated weather cell data
+    # Drop duplicated Weather cell data
     data.drop_duplicates(list(data.columns)[2:-1], inplace=True)
 
-    # Plot the weather cells one by one
+    # Plot the Weather cells one by one
     for i in data.index:
         ll_x, ll_y = base_map(data.ll_Longitude[i], data.ll_Latitude[i])
         ul_x, ul_y = base_map(data.ul_lon[i], data.ul_lat[i])
@@ -297,11 +300,11 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
     # Plot basemap
     fig, base_map = plot_base_map(projection='tmerc', legend_loc=legend_loc)
 
-    # Show weather cells
+    # Show Weather cells
     if show_metex_weather_cells:
         plot_weather_cells(base_map, route=route, legend_loc=legend_loc)
 
-    # Show vegetation
+    # Show Vegetation
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=add_osm_natural_tree, legend_loc=legend_loc)
 
@@ -323,12 +326,12 @@ def plot_base_map_plus(route='ANGLIA', show_metex_weather_cells=True, show_osm_l
         filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                               ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        fig.savefig(dbm.cdd_metex_db_fig_pub("1 - Prototype", "Basemap", fig_filename + save_as), dpi=dpi)
+        fig.savefig(dbm.cdd_metex_fig_pub("1 - Prototype", "Basemap", fig_filename + save_as), dpi=dpi)
         print("Done.")
         if save_as == ".svg":
-            svg_to_emf(
-                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + save_as),
-                dbm.cdd_metex_db_fig_pub("01 - Prototype", fig_filename + ".emf"))
+            save_svg_as_emf(
+                dbm.cdd_metex_fig_pub("01 - Prototype", fig_filename + save_as),
+                dbm.cdd_metex_fig_pub("01 - Prototype", fig_filename + ".emf"))
 
 
 # ====================================================================================================================
@@ -377,15 +380,16 @@ def get_midpoint(x_point, y_point, as_geom=True):
 
 
 # Get coordinates of points from a .shp file, by subregion, layer and feature
-def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
+def get_point_coords_from_shp(subregion_name, layer, feature=None, update=False):
     """
-    :param subregion: [str]
+    :param subregion_name: [str]
     :param layer: [str]
     :param feature: [str]
     :param update: [bool]
     :return:
     """
-    _, download_url = osm_utils.get_download_url(subregion, file_format='.shp.zip')
+    dri.get_subregion_download_url(subregion_name, osm_file_format=".shp.zip")
+    _, download_url = osm_utils.get_download_url(subregion_name, file_format='.shp.zip')
     _, file_path = osm_utils.make_file_path(download_url)
     extract_dir = os.path.splitext(file_path)[0]
     path_to_shp_coords_pickle = osm_utils.make_osm_pickle_file_path(extract_dir, layer, feature, suffix='coords')
@@ -394,7 +398,7 @@ def get_point_coords_from_shp(subregion, layer, feature=None, update=False):
         point_coords = load_pickle(path_to_shp_coords_pickle)
     else:
         try:
-            railways_shp_data = osm_utils.read_shp_zip(subregion, layer, feature)
+            railways_shp_data = dri.read_shp_zip(subregion_name, layer, feature)
             list_of_points = list(itertools.chain(*(l.coords for l in railways_shp_data.geometry)))
             point_coords = shapely.geometry.MultiPoint(list_of_points)
         except Exception as e:
@@ -420,7 +424,7 @@ def get_schedule8_incident_hotspots(route_name=None, weather_category=None, sort
         hotspots_data = load_pickle(path_to_file)
     else:
         # Get TRUST (by incident location, i.e. by STANOX section)
-        schedule8_costs_by_location = dbm.get_schedule8_cost_by_location(route=None, weather=None)
+        schedule8_costs_by_location = dbm.view_schedule8_cost_by_location(route_name=None, weather_category=None)
         schedule8_costs_by_location['StartPoint'] = [
             shapely.geometry.Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.StartLongitude, schedule8_costs_by_location.StartLatitude)]
@@ -433,7 +437,7 @@ def get_schedule8_incident_hotspots(route_name=None, weather_category=None, sort
             schedule8_costs_by_location[['StartPoint', 'EndPoint']].apply(lambda x: get_midpoint(x[0], x[1]), axis=1)
 
         # Get reference points (coordinates), given subregion and layer (i.e. 'railways' in this case) of OSM .shp file
-        rail_points = get_point_coords_from_shp(subregion='england', layer='railways', feature='rail')
+        rail_points = get_point_coords_from_shp(subregion_name='england', layer='railways', feature='rail')
 
         subarea_shp = get_shp_file_path_for_basemap('england', 'railways', 'rail', boundary=True)
         subarea_shp_file = fiona.open(subarea_shp + ".shp")
@@ -485,11 +489,11 @@ def save_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, sh
             f_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                            ['cell', 'veg', 'haz'])
             filename = '_'.join([keyword] + [v for s, v in f_suffix if s is True])
-            path_to_file = dbm.cdd_metex_db_fig_pub("1 - Prototype", "Hotspots", filename + save_as)
+            path_to_file = dbm.cdd_metex_fig_pub("1 - Prototype", "Hotspots", filename + save_as)
             plt.savefig(path_to_file, dpi=dpi)
             print("Done.")
             if save_as == ".svg":
-                svg_to_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
+                save_svg_as_emf(path_to_file, path_to_file.replace(save_as, ".emf"))
 
 
 # Plot hotspots of delays for every financial year (2006/07-2014/15) =================================================
@@ -504,7 +508,7 @@ def hotspots_delays_yearly(route_name='ANGLIA', weather_category='Wind', update=
     try:
         hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route_name, weather_category)
     except FileNotFoundError:
-        schedule8_data = dbm.get_schedule8_cost_by_datetime_location(route_name, weather_category, update)
+        schedule8_data = dbm.view_schedule8_cost_by_datetime_location(route_name, weather_category, update)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                           'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data = schedule8_data.groupby(group_features).aggregate(
@@ -592,7 +596,7 @@ def hotspots_delays(route_name='ANGLIA', weather_category='Wind', update=False,
     pd.np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = NBs(y=notnull_data.DelayMinutes.values, k=6, initial=100)
+    breaks = pysal.viz.mapclassify.Natural_Breaks(y=notnull_data.DelayMinutes.values, k=6, initial=100)
     hotspots_data = hotspots_data.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
     # hotspots_data['jenks_bins'].fillna(-1, inplace=True)
     label = "<= %s min.  / %s locations"
@@ -645,11 +649,11 @@ def hotspots_delays(route_name='ANGLIA', weather_category='Wind', update=False,
     cb.ax.text(0.0, -5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # 0.0, -0.75; highest
                ha='left', va='bottom', size=14, color='#555555', fontname='Times New Roman')
 
-    # Show weather cells
+    # Show Weather cells
     if show_metex_weather_cells:
         plot_weather_cells(base_map, route=route_name, legend_loc=(1.05, 0.95))
 
-    # Show vegetation
+    # Show Vegetation
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
@@ -678,7 +682,7 @@ def hotspots_delays_extra(route='ANGLIA', weather='Wind', update=False,
     pd.np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = NBs(y=notnull_data.DelayMinutes.values, k=6, initial=100)
+    breaks = pysal.viz.mapclassify.classifiers.Natural_Breaks(y=notnull_data.DelayMinutes.values, k=6, initial=100)
     hotspots_data = hotspots_data.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
     # hotspots_data['jenks_bins'].fillna(-1, inplace=True)
     label = "<= %s min.  / %s locations"
@@ -721,11 +725,11 @@ def hotspots_delays_extra(route='ANGLIA', weather='Wind', update=False,
     cb.ax.text(0.0, 6.6, "Total delay minutes (2006/07-2014/15)",
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
-    # Show weather cells
+    # Show Weather cells
     if show_metex_weather_cells:
         plot_weather_cells(base_map, route=route, legend_loc=(1.05, 0.95))
 
-    # Show vegetation
+    # Show Vegetation
     if show_osm_landuse_forest:
         plot_osm_forest_and_tree(base_map, add_osm_natural_tree=False, legend_loc=(1.05, 0.96))
 
@@ -761,7 +765,7 @@ def hotspots_frequency(route_name='ANGLIA', weather_category='Wind', update=Fals
     pd.np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = NBs(y=notnull_data.IncidentCount.values, k=6, initial=100)
+    breaks = pysal.viz.mapclassify.classifiers.Natural_Breaks(y=notnull_data.IncidentCount.values, k=6, initial=100)
     hotspots_data = hotspots_data.join(pd.DataFrame(data={'jenks_bins': breaks.yb}, index=notnull_data.index))
 
     jenks_labels = ["<= %d  / %d locations" % (b, c) for b, c in zip(breaks.bins, breaks.counts)]
@@ -802,7 +806,7 @@ def hotspots_frequency(route_name='ANGLIA', weather_category='Wind', update=Fals
     cb.set_alpha(1.0)
     cb.draw_all()
 
-    cb.ax.text(0.0, 6.75, "Count of incidents (2006/07-2014/15)",
+    cb.ax.text(0.0, 6.75, "Count of Incidents (2006/07-2014/15)",
                ha='left', va='bottom', size=14, color='#555555', fontname='Cambria')
 
     # Show highest frequency, in descending order
@@ -841,7 +845,7 @@ def hotspots_cost(route_name='ANGLIA', weather_category='Wind', update=False,
     pd.np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = NBs(y=notnull_data.DelayCost.values, k=5, initial=100)
+    breaks = pysal.viz.mapclassify.classifiers.Natural_Breaks(y=notnull_data.DelayCost.values, k=5, initial=100)
     hotspots_data = hotspots_data.join(pd.DataFrame(data={'jenks_bins': breaks.yb}, index=notnull_data.index))
     # df.drop('jenks_bins', axis=1, inplace=True)
     hotspots_data.jenks_bins.fillna(-1, inplace=True)
@@ -926,7 +930,7 @@ def hotspots_delays_per_incident(route_name='ANGLIA', weather_category='Wind', u
     pd.np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = NBs(y=notnull_data.DelayMinutesPerIncident.values, k=6)
+    breaks = pysal.viz.mapclassify.classifiers.Natural_Breaks(y=notnull_data.DelayMinutesPerIncident.values, k=6)
     hotspots_data = hotspots_data.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
     # data['jenks_bins'].fillna(-1, inplace=True)
     jenks_labels = ["<= %s min.  / %s locations" % (format(int(b), ','), c) for b, c in zip(breaks.bins, breaks.counts)]
@@ -989,7 +993,6 @@ def hotspots_delays_per_incident(route_name='ANGLIA', weather_category='Wind', u
 
 #
 def plotting_hotspots(update=False):
-
     import settings
     settings.mpl_preferences(use_cambria=False, reset=False)
     settings.np_preferences(reset=False)

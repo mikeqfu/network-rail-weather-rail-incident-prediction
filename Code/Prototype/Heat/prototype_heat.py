@@ -1,4 +1,4 @@
-""" A prototype model in the context of heat-related incidents """
+""" A prototype model in the context of heat-related Incidents """
 
 import datetime
 import itertools
@@ -13,13 +13,13 @@ import sklearn.metrics
 import sklearn.utils.extmath
 import statsmodels.discrete.discrete_model as sm
 import statsmodels.tools.tools as sm_tools
+from pyhelpers.dir import cdd
+from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 
-import database_met as dbm
+import mssql_metex as dbm
 import settings
-from Prototype.prototype_wind import calculate_weather_variables_stats, cdd_mod_dat
-from Prototype.prototype_wind import get_data_by_season, get_incident_location_vegetation
-from converters import svg_to_emf
-from utils import cdd, load_pickle, save_fig, save_pickle
+from Prototype.Wind.prototype_wind import calculate_weather_variables_stats, cdd_mod_dat
+from Prototype.Wind.prototype_wind import get_data_by_season, get_incident_location_vegetation
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(reset=False)
@@ -31,9 +31,9 @@ plt.rc('font', family='Times New Roman')
 """ Change directory """
 
 
-# Change directory to "Model\\Heat-Prototype\\Trial_" and sub-directories
+# Change directory to "modelling\\prototype-Heat\\Trial_" and sub-directories
 def cdd_mod_heat_proto(trial_id=0, *directories):
-    path = cdd("Model", "Heat-Prototype", "Trial_{}".format(trial_id))
+    path = cdd("modelling", "prototype-Heat", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -41,7 +41,7 @@ def cdd_mod_heat_proto(trial_id=0, *directories):
 
 
 # ====================================================================================================================
-""" Calculations for weather data """
+""" Calculations for Weather data """
 
 
 # Specify the statistics that need to be computed
@@ -55,7 +55,7 @@ def specify_weather_stats_calculations():
     return weather_stats_computations
 
 
-# Get all weather variable names
+# Get all Weather variable names
 def weather_variable_names():
     # var_names = db.colnames_db_table('NR_METEX', table_name='Weather')[2:]
     agg_colnames = ['Temperature_max', 'Temperature_min', 'Temperature_avg',
@@ -89,13 +89,13 @@ def find_weather_cell_id(longitude, latitude):
     return weather_cell_id
 
 
-# Get TRUST and the relevant weather data for each location
+# Get TRUST and the relevant Weather data for each location
 def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
                                   subset_weather_for_nip=False,
                                   update=False):
     """
     :param route: [str] Route name
-    :param weather: [str] weather category
+    :param weather: [str] Weather category
     :param ip_start_hrs: [int/float]
     :param nip_ip_gap:
     :param nip_start_hrs: [int/float]
@@ -115,8 +115,8 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
             """ Get data """
 
             # Getting incident data for all incident locations
-            sdata = dbm.get_schedule8_cost_by_datetime_location_reason(route, weather, update)
-            # Drop non-weather-related incident records
+            sdata = dbm.view_schedule8_cost_by_datetime_location_reason(route, weather, update)
+            # Drop non-Weather-related incident records
             sdata = sdata[sdata.WeatherCategory != ''] if weather is None else sdata
             # Get data for the specified "Incident Periods"
             sdata['incident_duration'] = sdata.EndDate - sdata.StartDate
@@ -126,7 +126,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
             sdata['critical_period'] = sdata.critical_end - sdata.critical_start
 
             if sdata.WeatherCell.dtype != 'int64':
-                # Rectify the records for which weather cell id is empty
+                # Rectify the records for which Weather cell id is empty
                 weather_cell = dbm.get_weather_cell()
                 ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
                 ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_lon, weather_cell.ul_lat)]
@@ -149,11 +149,11 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
                     else:
                         sdata.loc[i, 'WeatherCell'] = list(id_set)[0]
 
-            # Get weather data
+            # Get Weather data
             weather_data = dbm.get_weather().reset_index()
 
             # ----------------------------------------------------------------------------------------------------
-            """ Processing weather data for IP - Get weather conditions which led to incidents for each record """
+            """ Processing Weather data for IP - Get Weather conditions which led to Incidents for each record """
 
             def get_ip_weather_conditions(weather_cell_id, ip_start, ip_end):
                 """
@@ -162,11 +162,11 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
                 :param ip_end: [Timestamp] end of "incident period"
                 :return:
                 """
-                # Get weather data about where and when the incident occurred
+                # Get Weather data about where and when the incident occurred
                 ip_weather_data = weather_data[(weather_data.WeatherCell == weather_cell_id) &
                                                (weather_data.DateTime >= ip_start) &
                                                (weather_data.DateTime <= ip_end)]
-                # Get the max/min/avg weather parameters for those incident periods
+                # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats_data = calculate_weather_variables_stats(ip_weather_data)
                 return weather_stats_data
 
@@ -180,23 +180,23 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
             ip_data = sdata.join(ip_statistics.dropna(), how='inner')
             ip_data['IncidentReported'] = 1
 
-            # Get weather data that did not ever cause incidents according to records?
+            # Get Weather data that did not ever cause Incidents according to records?
             if subset_weather_for_nip:
                 weather_data = weather_data.loc[
                     weather_data.WeatherCell.isin(ip_data.WeatherCell) &
                     ~weather_data.index.isin(itertools.chain(*ip_data.critical_weather_idx))]
 
-            # Processing weather data for non-IP
+            # Processing Weather data for non-IP
             nip_data = sdata.copy(deep=True)
             nip_data.critical_end = nip_data.critical_start + datetime.timedelta(days=nip_ip_gap)
             nip_data.critical_start = nip_data.critical_end + datetime.timedelta(hours=nip_start_hrs)
             nip_data.critical_period = nip_data.critical_end - nip_data.critical_start
 
             # -----------------------------------------------------------------------
-            """ Get data of weather which did not cause incidents for each record """
+            """ Get data of Weather which did not cause Incidents for each record """
 
             def get_nip_weather_conditions(weather_cell_id, nip_start, nip_end, incident_location):
-                # Get non-IP weather data about where and when the incident occurred
+                # Get non-IP Weather data about where and when the incident occurred
                 nip_weather_data = weather_data[
                     (weather_data.WeatherCell == weather_cell_id) &
                     (weather_data.DateTime >= nip_start) & (weather_data.DateTime <= nip_end)]
@@ -205,12 +205,12 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
                     (ip_data.StanoxSection == incident_location) &
                     (((ip_data.critical_start < nip_start) & (ip_data.critical_end > nip_start)) |
                      ((ip_data.critical_start < nip_end) & (ip_data.critical_end > nip_end)))]
-                # Skip data of weather causing incidents at around the same time; but
+                # Skip data of Weather causing Incidents at around the same time; but
                 if not ip_overlap.empty:
                     nip_weather_data = nip_weather_data[
                         (nip_weather_data.DateTime < np.min(ip_overlap.critical_start)) |
                         (nip_weather_data.DateTime > np.max(ip_overlap.critical_end))]
-                # Get the max/min/avg weather parameters for those incident periods
+                # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats_data = calculate_weather_variables_stats(nip_weather_data)
                 return weather_stats_data
 
@@ -352,10 +352,10 @@ def temperature_deviation(nip_ip_gap=-14, add_errbar=True, save_as=".svg", dpi=6
 
 
 # ====================================================================================================================
-""" Integrate both the weather and vegetation data """
+""" Integrate both the Weather and Vegetation data """
 
 
-# Integrate the weather and vegetation conditions for incident locations
+# Integrate the Weather and Vegetation conditions for incident locations
 def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat',
                                                   ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
@@ -368,10 +368,10 @@ def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat'
         m_data = load_pickle(path_to_file)
     else:
         try:
-            # Get Schedule 8 incident and weather data for locations
+            # Get Schedule 8 incident and Weather data for locations
             iw_data = get_incident_location_weather(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                                     subset_weather_for_nip=False, update=update)
-            # Get vegetation conditions for the locations
+            # Get Vegetation conditions for the locations
             iv_data = get_incident_location_vegetation(route, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
             iv_features = [f for f in iv_data.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
@@ -390,7 +390,7 @@ def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat'
 
 
 # ====================================================================================================================
-""" Model trials """
+""" modelling trials """
 
 
 # Specify the explanatory variables considered in this prototype model
@@ -601,10 +601,10 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
     path_to_file_weather = cdd_mod_heat_proto(0, "Variables" + save_as)
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
-        svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
+        save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
 
 
-# A prototype model in the context of wind-related incidents
+# A prototype model in the context of wind-related Incidents
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Heat',
                               ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
@@ -649,9 +649,9 @@ def logistic_regression_model(trial_id=0,
                                           the Group Standards
     Q1              TKB PUMPS             Takeback Pumps
     X4              BLNK REST             Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER               Severe weather not snow affecting infrastructure the responsibility of
+    XW              WEATHER               Severe Weather not snow affecting infrastructure the responsibility of
                                           Network Rail
-    XX              MISC OBS              Msc items on line (incl trees) due to effects of weather responsibility of RT
+    XX              MISC OBS              Msc items on line (incl trees) due to effects of Weather responsibility of RT
 
     """
     # Get the m_data for modelling

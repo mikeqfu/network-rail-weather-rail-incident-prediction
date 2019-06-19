@@ -1,4 +1,4 @@
-""" A prototype model in the context of wind-related incidents """
+""" A prototype model in the context of wind-related Incidents """
 
 import datetime
 import itertools
@@ -11,17 +11,19 @@ import matplotlib.pyplot as plt
 import measurement.measures
 import numpy as np
 import pandas as pd
+import railwaycodes_utils as rc_utils
 import sklearn.metrics
 import sklearn.utils.extmath
 import statsmodels.discrete.discrete_model as sm
 import statsmodels.tools.tools as sm_tools
+from pyhelpers.dir import cdd
+from pyhelpers.store import load_pickle, save_pickle, save_svg_as_emf
+from pyhelpers.text import find_matched_str
+from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_to_yards, str_to_num_mileage, yards_to_nr_mileage
 
-import database_met as dbm
-import database_veg as dbv
-import railwaycodes_utils as rc_utils
+import mssql_metex as dbm
+import mssql_vegetation as dbv
 import settings
-from converters import mileage_to_str, mileage_to_yards, str_to_num_mileage, svg_to_emf, yards_to_mileage
-from utils import cdd, find_match, load_pickle, save_pickle
 
 # Apply the preferences ==============================================================================================
 settings.mpl_preferences(use_cambria=True, reset=False)
@@ -33,17 +35,17 @@ settings.pd_preferences(reset=False)
 """ Change directory """
 
 
-# Change directory to "Data\\Model" and sub-directories
+# Change directory to "Data\\modelling" and sub-directories
 def cdd_mod_dat(*directories):
-    path = cdd("Model", "dat")
+    path = cdd("modelling", "dat")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Model\\Wind-Prototype\\Trial_" and sub-directories
+# Change directory to "modelling\\prototype-Wind\\Trial_" and sub-directories
 def cdd_mod_wind(trial_id=0, *directories):
-    path = cdd("Model", "Wind-Prototype", "Trial_{}".format(trial_id))
+    path = cdd("modelling", "prototype-Wind", "Trial_{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for directory in directories:
         path = os.path.join(path, directory)
@@ -51,25 +53,25 @@ def cdd_mod_wind(trial_id=0, *directories):
 
 
 # ====================================================================================================================
-""" Calculations for weather data """
+""" Calculations for Weather data """
 
 
 # Specify the statistics that need to be computed
 def specify_weather_stats_calculations():
-    weather_stats_computations = {'Temperature': (np.max, np.min, np.average),
+    weather_stats_calculations = {'Temperature': (np.max, np.min, np.average),
                                   'RelativeHumidity': np.max,
                                   'WindSpeed': np.max,
                                   'WindGust': np.max,
                                   'Snowfall': np.max,
                                   'TotalPrecipitation': np.max}
-    return weather_stats_computations
+    return weather_stats_calculations
 
 
-# Get all weather variable names
+# Get all Weather variable names
 def weather_variable_names():
     # var_names = db.colnames_db_table('NR_METEX', table_name='Weather')[2:]
-    weather_stats_computations = specify_weather_stats_calculations()
-    agg_colnames = [k + '_max' for k in weather_stats_computations.keys()]
+    weather_stats_calculations = specify_weather_stats_calculations()
+    agg_colnames = [k + '_max' for k in weather_stats_calculations.keys()]
     agg_colnames.insert(1, 'Temperature_min')
     agg_colnames.insert(2, 'Temperature_avg')
     wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
@@ -100,18 +102,18 @@ def calculate_wind_averages(wind_speeds, wind_directions):
     return average_wind_speed, average_wind_direction
 
 
-# Compute the statistics for all the weather variables (except wind)
+# Compute the statistics for all the Weather variables (except wind)
 def calculate_weather_variables_stats(weather_data):
     """
     Note: to get the n-th percentile, use percentile(n)
 
-    This function also returns the weather dataframe indices. The corresponding weather conditions in that weather
-    cell might cause wind-related incidents.
+    This function also returns the Weather dataframe indices. The corresponding Weather conditions in that Weather
+    cell might cause wind-related Incidents.
     """
-    # Compute the statistics
-    weather_stats_computations = specify_weather_stats_calculations()
-    weather_stats = weather_data.groupby('WeatherCell').aggregate(weather_stats_computations)
-    # Compute average wind speeds and directions
+    # Calculate the statistics
+    weather_stats_calculations = specify_weather_stats_calculations()
+    weather_stats = weather_data.groupby('WeatherCell').aggregate(weather_stats_calculations)
+    # Calculate average wind speeds and directions
     weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
         calculate_wind_averages(weather_data.WindSpeed, weather_data.WindDirection)
     if not weather_stats.empty:
@@ -121,12 +123,12 @@ def calculate_weather_variables_stats(weather_data):
     return stats_info
 
 
-# Get TRUST and the relevant weather data for each location
+# Get TRUST and the relevant Weather data for each location
 def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                   subset_weather_for_nip=False, update=False):
     """
     :param route: [str] Route name
-    :param weather: [str] weather category
+    :param weather: [str] Weather category
     :param ip_start_hrs: [int/float]
     :param ip_end_hrs: [int/float]
     :param nip_start_hrs: [int/float]
@@ -144,9 +146,9 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
         iwdata = load_pickle(path_to_file)
     else:
         try:
-            # Getting weather data for all incident locations
-            sdata = dbm.get_schedule8_cost_by_datetime_location_reason(route, weather, update)
-            # Drop non-weather-related incident records
+            # Getting Weather data for all incident locations
+            sdata = dbm.view_schedule8_cost_by_datetime_location_reason(route, weather, update)
+            # Drop non-Weather-related incident records
             sdata = sdata[sdata.WeatherCategory != ''] if weather is None else sdata
             # Get data for the specified "Incident Periods"
             sdata['incident_duration'] = sdata.EndDate - sdata.StartDate
@@ -155,12 +157,12 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
             sdata['critical_end'] = sdata.EndDate.apply(
                 datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_end_hrs)
             sdata['critical_period'] = sdata.critical_end - sdata.critical_start
-            # Rectify the records for which weather cell id is empty
+            # Rectify the records for which Weather cell id is empty
             sdata.loc[sdata[sdata.WeatherCell == ''].index, 'WeatherCell'] = 14100
-            # Get weather data
+            # Get Weather data
             weather_data = dbm.get_weather().reset_index()
 
-            # Processing weather data for IP - Get data of weather conditions which led to incidents for each record
+            # Processing Weather data for IP - Get data of Weather conditions which led to Incidents for each record
             def get_ip_weather_conditions(weather_cell_id, ip_start, ip_end):
                 """
                 :param weather_cell_id: [int] Weather Cell ID
@@ -168,11 +170,11 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
                 :param ip_end: [Timestamp] end of "incident period"
                 :return:
                 """
-                # Get weather data about where and when the incident occurred
+                # Get Weather data about where and when the incident occurred
                 ip_weather_data = weather_data[(weather_data.WeatherCell == weather_cell_id) &
                                                (weather_data.DateTime >= ip_start) &
                                                (weather_data.DateTime <= ip_end)]
-                # Get the max/min/avg weather parameters for those incident periods
+                # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats_data = calculate_weather_variables_stats(ip_weather_data)
                 return weather_stats_data
 
@@ -186,21 +188,21 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
             ip_data = sdata.join(ip_statistics.dropna(), how='inner')
             ip_data['IncidentReported'] = 1
 
-            # Get weather data that did not ever cause incidents according to records?
+            # Get Weather data that did not ever cause Incidents according to records?
             if subset_weather_for_nip:
                 weather_data = weather_data.loc[
                     weather_data.WeatherCell.isin(ip_data.WeatherCell) &
                     ~weather_data.index.isin(itertools.chain(*ip_data.critical_weather_idx))]
 
-            # Processing weather data for non-IP
+            # Processing Weather data for non-IP
             nip_data = sdata.copy(deep=True)
             nip_data.critical_end = nip_data.critical_start + datetime.timedelta(hours=0)
             nip_data.critical_start = nip_data.critical_start + datetime.timedelta(hours=nip_start_hrs)
             nip_data.critical_period = nip_data.critical_end - nip_data.critical_start
 
-            # Get data of weather which did not cause incidents for each record
+            # Get data of Weather which did not cause Incidents for each record
             def get_nip_weather_conditions(weather_cell_id, nip_start, nip_end, incident_location):
-                # Get non-IP weather data about where and when the incident occurred
+                # Get non-IP Weather data about where and when the incident occurred
                 nip_weather_data = weather_data[
                     (weather_data.WeatherCell == weather_cell_id) &
                     (weather_data.DateTime >= nip_start) & (weather_data.DateTime <= nip_end)]
@@ -209,12 +211,12 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
                     (ip_data.StanoxSection == incident_location) &
                     (((ip_data.critical_start < nip_start) & (ip_data.critical_end > nip_start)) |
                      ((ip_data.critical_start < nip_end) & (ip_data.critical_end > nip_end)))]
-                # Skip data of weather causing incidents at around the same time but
+                # Skip data of Weather causing Incidents at around the same time but
                 if not ip_overlap.empty:
                     nip_weather_data = nip_weather_data[
                         (nip_weather_data.DateTime < np.min(ip_overlap.critical_start)) |
                         (nip_weather_data.DateTime > np.max(ip_overlap.critical_end))]
-                # Get the max/min/avg weather parameters for those incident periods
+                # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats_data = calculate_weather_variables_stats(nip_weather_data)
                 return weather_stats_data
 
@@ -240,7 +242,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-12, ip
 
 
 # ====================================================================================================================
-""" Calculations for vegetation data """
+""" Calculations for Vegetation data """
 
 
 # Get Schedule 8 costs (minutes & cost) aggregated for each STANOX section
@@ -252,7 +254,7 @@ def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None
     :return:
     """
     # Load Schedule 8 costs data aggregated by financial year and STANOX section
-    s8data = dbm.get_schedule8_cost_by_location(route, weather).loc[:, 'Route':]
+    s8data = dbm.view_schedule8_cost_by_location(route, weather).loc[:, 'Route':]
 
     # Aggregate the data for each STANOX section
     incident_locations = s8data.groupby(list(s8data.columns)[:-3]).agg(np.sum)
@@ -266,7 +268,7 @@ def get_incident_locations_from_metex_db(route=None, weather=None, same_elr=None
     incident_locations = incident_locations[
         ~(incident_locations.StartELR.str.contains('^$')) & ~(incident_locations.EndELR.str.contains('^$'))]
 
-    # # Remove records of 'WTS', as vegetation data is unavailable for this ELR
+    # # Remove records of 'WTS', as Vegetation data is unavailable for this ELR
     # incident_locations = incident_locations[
     #     ~(incident_locations.StartELR.str.contains(re.compile('^$|WTS'))) &
     #     ~(incident_locations.EndELR.str.contains(re.compile('^$|WTS')))]
@@ -361,8 +363,8 @@ def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
     e_indices = pd.Index(elr_furlongs.EndMileage)
 
     def num_mileage_shifting(mileage, y):
-        yards = mileage_to_yards(mileage) + y
-        str_mileage = yards_to_mileage(yards)
+        yards = nr_mileage_to_yards(mileage) + y
+        str_mileage = yards_to_nr_mileage(yards)
         return str_to_num_mileage(str_mileage)
 
     if start_mileage <= end_mileage:
@@ -380,16 +382,16 @@ def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
             adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'bfill')]
         except (ValueError, KeyError):
             adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'nearest')]
-        # Get 'FurlongID's for extracting vegetation data ----------------
+        # Get 'FurlongID's for extracting Vegetation data ----------------
         try:
-            s_idx = s_indices.get_loc(mileage_to_str(adj_start_mileage))
+            s_idx = s_indices.get_loc(nr_mileage_num_to_str(adj_start_mileage))
         except (ValueError, KeyError):
-            s_idx = e_indices.get_loc(mileage_to_str(adj_start_mileage))
+            s_idx = e_indices.get_loc(nr_mileage_num_to_str(adj_start_mileage))
             adj_start_mileage = str_to_num_mileage(elr_furlongs.StartMileage.iloc[s_idx])
         try:
-            e_idx = e_indices.get_loc(mileage_to_str(adj_end_mileage))
+            e_idx = e_indices.get_loc(nr_mileage_num_to_str(adj_end_mileage))
         except (ValueError, KeyError):
-            e_idx = s_indices.get_loc(mileage_to_str(adj_end_mileage))
+            e_idx = s_indices.get_loc(nr_mileage_num_to_str(adj_end_mileage))
             adj_end_mileage = str_to_num_mileage(elr_furlongs.EndMileage.iloc[e_idx])
     else:  # start_mileage > end_mileage:
         # Get adjusted mileages of start and end locations ---------------
@@ -401,16 +403,16 @@ def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
             adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'ffill')]
         except (ValueError, KeyError):
             adj_end_mileage = elr_mileages[m_indices.get_loc(end_mileage, 'nearest')]
-        # Get 'FurlongID's for extracting vegetation data ----------------
+        # Get 'FurlongID's for extracting Vegetation data ----------------
         try:
-            s_idx = e_indices.get_loc(mileage_to_str(adj_start_mileage))
+            s_idx = e_indices.get_loc(nr_mileage_num_to_str(adj_start_mileage))
         except (ValueError, KeyError):
-            s_idx = s_indices.get_loc(mileage_to_str(adj_start_mileage))
+            s_idx = s_indices.get_loc(nr_mileage_num_to_str(adj_start_mileage))
             adj_start_mileage = str_to_num_mileage(elr_furlongs.EndMileage.iloc[s_idx])
         try:
-            e_idx = s_indices.get_loc(mileage_to_str(adj_end_mileage))
+            e_idx = s_indices.get_loc(nr_mileage_num_to_str(adj_end_mileage))
         except (ValueError, KeyError):
-            e_idx = e_indices.get_loc(mileage_to_str(adj_end_mileage))
+            e_idx = e_indices.get_loc(nr_mileage_num_to_str(adj_end_mileage))
             adj_end_mileage = str_to_num_mileage(elr_furlongs.StartMileage.iloc[e_idx])
 
     if s_idx <= e_idx:
@@ -421,8 +423,8 @@ def adjust_start_end(furlongs, elr, start_mileage, end_mileage, shift_yards):
         veg_furlongs = elr_furlongs.iloc[e_idx:s_idx]
 
     return \
-        mileage_to_str(adj_start_mileage), \
-        mileage_to_str(adj_end_mileage), \
+        nr_mileage_num_to_str(adj_start_mileage), \
+        nr_mileage_num_to_str(adj_end_mileage), \
         adj_start_mileage, adj_end_mileage, \
         measurement.measures.Distance(mile=np.abs(adj_end_mileage - adj_start_mileage)).yd, \
         veg_furlongs.index.tolist()
@@ -450,7 +452,7 @@ def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yard
             # Get furlong information
             furlongs = get_furlongs_info_from_veg_db(location_data_only=False, update=update)
 
-            # Get data of each incident's furlong locations for extracting vegetation
+            # Get data of each incident's furlong locations for extracting Vegetation
             adjusted_mileages = incident_locations_same_elr.apply(
                 lambda record: adjust_start_end(
                     furlongs, record.StartELR, record.start_mileage, record.end_mileage, shift_yards_same_elr), axis=1)
@@ -511,14 +513,14 @@ def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_el
 
 # Get information of connecting points for different ELRs
 def get_connecting_nodes(route=None, update=False):
-    filename = dbm.make_filename("connecting_nodes_between_ELRs", route, weather=None)
+    filename = dbm.make_filename("connecting_nodes_between_ELRs", route, weather_category=None)
     path_to_file = cdd_mod_dat(filename)
 
     if os.path.isfile(path_to_file) and not update:
         connecting_nodes = load_pickle(path_to_file)
     else:
         try:
-            # Get data about where incidents occurred
+            # Get data about where Incidents occurred
             incident_locations_diff_elr = get_incident_locations_from_metex_db(route, same_elr=False)
 
             elr_mileage_cols = ['StartELR', 'StartMileage', 'EndELR', 'EndMileage', 'start_mileage', 'end_mileage']
@@ -574,7 +576,7 @@ def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yard
             incident_locations_diff_elr[num_conn_colnames] = \
                 incident_locations_diff_elr[str_conn_colnames].applymap(str_to_num_mileage)
 
-            """ Get data of each incident's furlong locations for extracting vegetation """
+            """ Get data of each incident's furlong locations for extracting Vegetation """
             # Processing Start locations
             adjusted_start_elr_mileages = incident_locations_diff_elr.apply(
                 lambda x: adjust_start_end(
@@ -733,7 +735,7 @@ def get_incident_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff
             # Merge the above two data sets
             furlong_incidents = incid_furlongs_same_elr.append(incid_furlongs_diff_elr)
             furlong_incidents.drop_duplicates(subset='AssetNumber', inplace=True)
-            # Data of furlong vegetation coverage and hazardous trees
+            # Data of furlong Vegetation coverage and hazardous trees
             furlong_vegetation_data = dbv.get_furlong_vegetation_conditions(route)
             incident_furlongs = furlong_vegetation_data.join(
                 furlong_incidents[['IncidentReported']], on='FurlongID', how='inner')
@@ -779,7 +781,7 @@ def specify_vegetation_stats_calculations(features):
     return cover_percents, hazard_rest, veg_stats_calc
 
 
-# Get vegetation conditions for incident locations
+# Get Vegetation conditions for incident locations
 def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220,
                                      hazard_pctl=50, update=False):
     """
@@ -794,7 +796,7 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
         ivdata = load_pickle(path_to_file)
     else:
         try:
-            # Get data of furlong vegetation coverage and hazardous trees
+            # Get data of furlong Vegetation coverage and hazardous trees
             furlong_vegetation_data = dbv.get_furlong_vegetation_conditions(update=update).set_index('FurlongID')
 
             # Get all column names as features
@@ -806,10 +808,10 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
             fill_0 = [x for x in features if re.match('.*height', x)] + ['HazardTreeNumber']
             fill_inf = [x for x in features if re.match('^.*prox|.*diam', x)]
 
-            # Define a function that computes vegetation stats for each incident record
+            # Define a function that computes Vegetation stats for each incident record
             def compute_vegetation_variables_stats(furlong_ids, start_elr, end_elr, total_yards_adjusted):
                 """
-                Note: to get the n-th percentitle may use percentile(n)
+                Note: to get the n-th percentile may use percentile(n)
                 """
                 vegetation_data = furlong_vegetation_data.loc[furlong_ids]
 
@@ -877,7 +879,7 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
             incident_location_furlongs = \
                 get_incident_location_furlongs(route, shift_yards_same_elr, shift_yards_diff_elr, update)
 
-            # Compute vegetation stats for each incident record
+            # Compute Vegetation stats for each incident record
             vegetation_statistics = incident_location_furlongs.apply(
                 lambda x: pd.Series(compute_vegetation_variables_stats(
                     x.critical_FurlongIDs, x.StartELR, x.EndELR, x.total_yards_adjusted)), axis=1)
@@ -903,10 +905,10 @@ def get_incident_location_vegetation(route=None, shift_yards_same_elr=220, shift
 
 
 # ====================================================================================================================
-""" Integrate both the weather and vegetation data """
+""" Integrate both the Weather and Vegetation data """
 
 
-# Integrate the weather and vegetation conditions for incident locations
+# Integrate the Weather and Vegetation conditions for incident locations
 def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
                                                   ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
@@ -919,10 +921,10 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
         m_data = load_pickle(path_to_file)
     else:
         try:
-            # Get Schedule 8 incident and weather data for locations
+            # Get Schedule 8 incident and Weather data for locations
             iwdata = get_incident_location_weather(route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                                    subset_weather_for_nip=False, update=update)
-            # Get vegetation conditions for the locations
+            # Get Vegetation conditions for the locations
             ivdata = get_incident_location_vegetation(route, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
             iv_features = [f for f in ivdata.columns if f not in ['IncidentCount', 'DelayCost', 'DelayMinutes']]
@@ -958,7 +960,7 @@ def get_incident_data_with_weather_and_vegetation(route=None, weather=None,
 
 
 # ====================================================================================================================
-""" Model trials """
+""" modelling trials """
 
 
 # Get data for specified season(s)
@@ -1000,7 +1002,7 @@ def get_data_by_season(m_data, season):
 
         seasons = ['spring', 'summer', 'autumn', 'winter']
         season = [season] if isinstance(season, str) else season
-        season = [find_match(s, seasons) for s in season]
+        season = [find_matched_str(s, seasons) for s in season]
         seasonal_data = eval("pd.concat([%s], ignore_index=True)" % ', '.join(['{}_data'.format(s) for s in season]))
 
         return seasonal_data
@@ -1109,10 +1111,10 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Variables", "Weather" + save_as))
+    path_to_file_weather = cdd(dbm.cdd_metex_fig_pub("01 - Prototype", "Variables", "Weather" + save_as))
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
-        svg_to_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
+        save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
 
     #
     fig_veg = plt.figure(figsize=(12, 5))
@@ -1131,15 +1133,15 @@ def describe_explanatory_variables(mdata, save_as=".pdf", dpi=None):
     ax.yaxis.set_label_coords(0, 1.02)
 
     plt.tight_layout()
-    path_to_file_veg = cdd(dbm.cdd_metex_db_fig_pub("01 - Prototype", "Variables", "Vegetation" + save_as))
+    path_to_file_veg = cdd(dbm.cdd_metex_fig_pub("01 - Prototype", "Variables", "Vegetation" + save_as))
     plt.savefig(path_to_file_veg, dpi=dpi)
     if save_as == ".svg":
-        svg_to_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
+        save_svg_as_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
 
 
 """
 def save_result_to_excel(result, writer):
-    result_file = dbm.make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+    result_file = dbm.make_filename("result", route, Weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                     shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     writer = pd.ExcelWriter(cdd_mod_wind(trial_id, result_file), engine='xlsxwriter')
     info, estimates = pd.read_html(result.summary().as_html().replace(':', ''))
@@ -1147,7 +1149,7 @@ def save_result_to_excel(result, writer):
 """
 
 
-# A prototype model in the context of wind-related incidents
+# A prototype model in the context of wind-related Incidents
 def logistic_regression_model(trial_id=0,
                               route='ANGLIA', weather='Wind',
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -1193,9 +1195,9 @@ def logistic_regression_model(trial_id=0,
                                           the Group Standards
     Q1              TKB PUMPS             Takeback Pumps
     X4              BLNK REST             Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER               Severe weather not snow affecting infrastructure the responsibility of
+    XW              WEATHER               Severe Weather not snow affecting infrastructure the responsibility of
                                           Network Rail
-    XX              MISC OBS              Msc items on line (incl trees) due to effects of weather responsibility of RT
+    XX              MISC OBS              Msc items on line (incl trees) due to effects of Weather responsibility of RT
 
     """
     # Get the mdata for modelling
@@ -1217,7 +1219,7 @@ def logistic_regression_model(trial_id=0,
         # lo, up = get_bounds_extreme_outliers(mdata.DelayMinutes, k=1.5)
         # mdata = mdata[mdata.DelayMinutes.between(lo, up, inclusive=True)]
 
-    # CoverPercet
+    # CoverPercent
     cover_percent_cols = [x for x in mdata.columns if re.match('^CoverPercent', x)]
     mdata[cover_percent_cols] = mdata[cover_percent_cols] / 10.0
     mdata['CoverPercentDiff'] = mdata.CoverPercentVegetation - mdata.CoverPercentOpenSpace - mdata.CoverPercentOther
@@ -1310,10 +1312,10 @@ def logistic_regression_model(trial_id=0,
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
             plt.savefig(cdd_mod_wind(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Prediction", "ROC" + save_as)  # Fig. 6.
+            path_to_file_roc = dbm.cdd_metex_fig_pub("01 - Prototype", "Prediction", "ROC" + save_as)  # Fig. 6.
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
-                svg_to_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
+                save_svg_as_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -1334,10 +1336,10 @@ def logistic_regression_model(trial_id=0,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             plt.savefig(cdd_mod_wind(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = dbm.cdd_metex_db_fig_pub("01 - Prototype", "Prediction", "Likelihood" + save_as)
+            path_to_file_pred = dbm.cdd_metex_fig_pub("01 - Prototype", "Prediction", "Likelihood" + save_as)
             plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
             if save_as == ".svg":
-                svg_to_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
+                save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
 
         # ===================================================================================
         # if dig_deeper:
@@ -1393,7 +1395,7 @@ def logistic_regression_model(trial_id=0,
     # repo = locals()
     # resources = {k: repo[k]
     #              for k in get_variable_names(mdata, train_set, test_set, result, mod_acc, incid_acc, threshold)}
-    # filename = dbm.make_filename("data", route, weather,
+    # filename = dbm.make_filename("data", route, Weather,
     #                              ip_start_hrs, ip_end_hrs, nip_start_hrs,
     #                              shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     # save_pickle(resources, cdd_mod_wind(trial_id, filename))

@@ -1,18 +1,21 @@
-""" Schedule 8 incidents """
+""" Schedule 8 Incidents """
 
 import itertools
 import os
 import re
 
 import pandas as pd
+import shapely.geometry
 from fuzzywuzzy.process import extractOne
-from shapely.geometry import Point
+from pyhelpers.dir import cdd
+from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
+from pyhelpers.store import load_json, load_pickle, save_pickle
+from pyrcs.line_data import LineData
+from pyrcs.other_assets import OtherAssets
 
-import railwaycodes_utils as rc
-from converters import osgb36_to_wgs84, wgs84_to_osgb36
 from delay_attr_glossary import get_incident_reason_metadata
-from loc_code_dict import create_location_names_regexp_replacement_dict, create_location_names_replacement_dict
-from utils import cdd, cdd_rc, load_json, load_pickle, make_filename, save_pickle, subset
+from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
+from utils import cdd_rc, make_filename, subset
 
 
 # Change directory to "Incidents"
@@ -75,14 +78,13 @@ def cleanse_location_metadata_tiploc_sheet(metadata, update_dict=False):
     dat.replace(errata_tiploc, inplace=True)
 
     # Rectify known issues for the location names in the data set
-    location_names_replacement_dict = create_location_names_replacement_dict('LOOKUP_NAME')
-    dat.replace(location_names_replacement_dict, inplace=True)
-    location_names_regexp_replacement_dict = create_location_names_regexp_replacement_dict('LOOKUP_NAME')
-    dat.replace(location_names_regexp_replacement_dict, inplace=True)
+    dat.replace(location_names_replacement_dict('LOOKUP_NAME'), inplace=True)
+    dat.replace(location_names_regexp_replacement_dict('LOOKUP_NAME'), inplace=True)
 
     # Fill in missing location names
     na_name = dat[dat.LOOKUP_NAME.isnull()]
-    ref_dict = rc.get_location_codes_dictionary_v2(ref_cols, update=update_dict)
+    line_data = LineData()
+    ref_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(ref_cols, update=update_dict)
     temp = na_name.join(ref_dict, on=ref_cols)
     temp = temp[['TIPLOC', 'Location']]
     dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
@@ -90,7 +92,7 @@ def cleanse_location_metadata_tiploc_sheet(metadata, update_dict=False):
 
     # Rectify 'LOOKUP_NAME' according to 'TIPLOC'
     na_name = dat[dat.LOOKUP_NAME.isnull()]
-    ref_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update_dict)
+    ref_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC', update=update_dict)
     temp = na_name.join(ref_dict, on='TIPLOC')
     dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.Location.values
 
@@ -109,13 +111,14 @@ def cleanse_location_metadata_tiploc_sheet(metadata, update_dict=False):
     dat.loc[not_na_name.index, 'LOOKUP_NAME'] = temp.apply(lambda x: extract_one(x[3], x[7]), axis=1)
 
     # Rectify 'STANOX'+'STANME'
-    location_codes = rc.get_location_codes()['Locations']
+    location_codes = line_data.LocationIdentifiers.fetch_location_codes()['Location_codes']
     location_codes = location_codes.drop_duplicates(['TIPLOC', 'Location']).set_index(['TIPLOC', 'Location'])
     temp = dat.join(location_codes, on=['TIPLOC', 'LOOKUP_NAME'], rsuffix='_Ref').fillna('')
     dat.loc[temp.index, 'STANOX':'STANME'] = temp[['STANOX_Ref', 'STANME_Ref']].values
 
     # Update coordinates with reference data from RailwayCodes
-    station_data = rc.get_station_locations()['Station']
+    other_assets = OtherAssets()
+    station_data = other_assets.Stations.fetch_station_locations()['Station']
     station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
     station_data = station_data.drop_duplicates(subset=['Station']).set_index('Station')
     temp = dat.join(station_data, on='LOOKUP_NAME')
@@ -233,8 +236,9 @@ def get_metex_db_stanox_location(update=False):
             stanox_location.replace({'Description': errata_tiploc}, inplace=True)
             stanox_location.replace({'Name': errata_stanme}, inplace=True)
 
+            line_data = LineData()
             # Get reference data from the Railway Codes website
-            rc_codes = rc.get_location_codes()['Locations']
+            rc_codes = line_data.LocationIdentifiers.fetch_location_codes()['Location_codes']
             rc_codes = rc_codes[['Location', 'TIPLOC', 'STANME', 'STANOX']].drop_duplicates()
 
             # Fill in NA 'Description's (i.e. Location names)
@@ -245,7 +249,7 @@ def get_metex_db_stanox_location(update=False):
             # Fill in NA 'Name's (i.e. STANME)
             na_name = stanox_location[stanox_location.Name.isnull()]
             # Some 'Description's are recorded by 'TIPLOC's instead
-            rc_tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update)
+            rc_tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC')
             temp = na_name.join(rc_tiploc_dict, on='Description')
             temp = temp.join(rc_codes.set_index(['STANOX', 'TIPLOC', 'Location']),
                              on=['Stanox', 'Description', 'Location'])
@@ -257,13 +261,13 @@ def get_metex_db_stanox_location(update=False):
             stanox_location.loc[temp.index, 'Description':'Name'] = temp[['Location', 'STANME']].values
 
             # Apply manually-created dictionaries
-            loc_name_replacement_dict = create_location_names_replacement_dict('Description')
+            loc_name_replacement_dict = location_names_replacement_dict('Description')
             stanox_location.replace(loc_name_replacement_dict, inplace=True)
-            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('Description')
+            loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict('Description')
             stanox_location.replace(loc_name_regexp_replacement_dict, inplace=True)
 
             # Check if 'Description' has STANOX code instead of location name using STANOX-dictionary
-            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
+            rc_stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
             temp = stanox_location.join(rc_stanox_dict, on='Description')
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -271,7 +275,7 @@ def get_metex_db_stanox_location(update=False):
                     lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
             # Check if 'Description' has TIPLOC code instead of location name using STANOX-TIPLOC-dictionary
-            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'], update=update)
+            rc_stanox_tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(['STANOX', 'TIPLOC'])
             temp = stanox_location.join(rc_stanox_tiploc_dict, on=['Stanox', 'Description'])
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -279,7 +283,8 @@ def get_metex_db_stanox_location(update=False):
                     lambda x: extractOne(x[1], x[2])[0] if isinstance(x[2], list) else x[2], axis=1)
 
             # Check if 'Description' has STANME code instead of location name using STANOX-STANME-dictionary
-            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'], update=update)
+
+            rc_stanox_stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(['STANOX', 'STANME'])
             temp = stanox_location.join(rc_stanox_stanme_dict, on=['Stanox', 'Description'])
             valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
             if not valid_loc.empty:
@@ -368,7 +373,8 @@ def get_metex_db_stanox_section(update=False):
             stanox_sec.loc[temp.index, 'End'] = temp.Description
 
             # Check if 'Start' and 'End' have STANOX codes instead of location names using STANOX-dictionary
-            rc_stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update)
+            line_data = LineData()
+            rc_stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
             temp = stanox_sec.join(rc_stanox_dict, on='Start')
             valid_loc = temp[temp.Location.notnull()]
             if not valid_loc.empty:
@@ -379,7 +385,8 @@ def get_metex_db_stanox_section(update=False):
                 stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.Location
 
             # Check if 'Start' and 'End' have STANOX/TIPLOC codes using STANOX-TIPLOC-dictionary
-            rc_stanox_tiploc_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'TIPLOC'], update=update)
+            line_data = LineData()
+            rc_stanox_tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(['STANOX', 'TIPLOC'])
             temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['StartStanox', 'Start'])
             valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
             if not valid_loc.empty:
@@ -392,7 +399,7 @@ def get_metex_db_stanox_section(update=False):
                     lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
 
             # Check if 'Start' and 'End' have STANOX/STANME codes using STANOX-STANME-dictionary
-            rc_stanox_stanme_dict = rc.get_location_codes_dictionary_v2(['STANOX', 'STANME'], update=update)
+            rc_stanox_stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary(['STANOX', 'STANME'])
             temp = stanox_sec.join(rc_stanox_stanme_dict, on=['StartStanox', 'Start'])
             valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
             if not valid_loc.empty:
@@ -405,13 +412,13 @@ def get_metex_db_stanox_section(update=False):
                     lambda x: extractOne(x[0], x[1])[0] if isinstance(x[1], list) else x[1], axis=1)
 
             # Apply manually-created dictionaries
-            loc_name_replacement_dict = create_location_names_replacement_dict('Start')
+            loc_name_replacement_dict = location_names_replacement_dict('Start')
             stanox_sec.replace(loc_name_replacement_dict, inplace=True)
-            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('Start')
+            loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict('Start')
             stanox_sec.replace(loc_name_regexp_replacement_dict, inplace=True)
-            loc_name_replacement_dict = create_location_names_replacement_dict('End')
+            loc_name_replacement_dict = location_names_replacement_dict('End')
             stanox_sec.replace(loc_name_replacement_dict, inplace=True)
-            loc_name_regexp_replacement_dict = create_location_names_regexp_replacement_dict('End')
+            loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict('End')
             stanox_sec.replace(loc_name_regexp_replacement_dict, inplace=True)
 
             # Finalise cleansing
@@ -491,7 +498,8 @@ def get_location_metadata_plus(update=False):
             metadata.loc[metadata.index.difference(temp.index), 'ApproximateEndLocation'] = True
 
             # Get reference metadata from RailwayCodes
-            station_data = rc.get_station_locations()['Station']
+            other_assets = OtherAssets()
+            station_data = other_assets.Stations.fetch_station_locations()['Station']
             station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
             station_data.drop_duplicates(subset=['Station'], inplace=True)
             station_data.set_index('Station', inplace=True)
@@ -574,21 +582,20 @@ def cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', upd
         raw_loc.loc[tmp.index, 'EndLocation'] = tmp.Location.values
         return raw_loc
 
+    line_data = LineData()
     #
-    stanox_dict = rc.get_location_codes_dictionary_v2(['STANOX'], update=update_dict)
+    stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX', update=update_dict)
     start_end = tidy_alt_codes(stanox_dict, start_end)
     #
-    stanme_dict = rc.get_location_codes_dictionary_v2(['STANME'], update=update_dict)
+    stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANME', update=update_dict)
     start_end = tidy_alt_codes(stanme_dict, start_end)
     #
-    tiploc_dict = rc.get_location_codes_dictionary_v2(['TIPLOC'], update=update_dict)
+    tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC', update=update_dict)
     start_end = tidy_alt_codes(tiploc_dict, start_end)
 
     #
-    location_names_replacement_dict = create_location_names_replacement_dict()
-    start_end.replace(location_names_replacement_dict, inplace=True)
-    location_names_regexp_replacement_dict = create_location_names_regexp_replacement_dict()
-    start_end.replace(location_names_regexp_replacement_dict, regex=True, inplace=True)
+    start_end.replace(location_names_regexp_replacement_dict('Description'), inplace=True)
+    start_end.replace(location_names_regexp_replacement_dict(), regex=True, inplace=True)
 
     # ref = rc.get_location_codes()['Locations']
     # ref.drop_duplicates(subset=['Location'], inplace=True)
@@ -669,7 +676,8 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
         list(wgs84_to_osgb36(x[0], x[1])) for x in temp[['Longitude', 'Latitude']].values]
 
     # ref 2 ----------------------------------------------
-    ref_metadata_2 = rc.get_station_locations()['Station']
+    other_assets = OtherAssets()
+    ref_metadata_2 = other_assets.Stations.fetch_station_locations()['Station']
     ref_metadata_2 = ref_metadata_2[['Station', 'Degrees Longitude', 'Degrees Latitude']]
     ref_metadata_2 = ref_metadata_2.dropna().drop_duplicates('Station')
     ref_metadata_2.columns = [x.replace('Degrees ', '') for x in ref_metadata_2.columns]
@@ -692,9 +700,9 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     #
     def convert_to_point(x, h_col, v_col):
         if pd.np.isnan(x[h_col]) or pd.np.isnan(x[v_col]):
-            p = Point()
+            p = shapely.geometry.Point()
         else:
-            p = Point((x[h_col], x[v_col]))
+            p = shapely.geometry.Point((x[h_col], x[v_col]))
         return p
 
     # Convert coordinates to shapely.geometry.Point
@@ -726,7 +734,7 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     return dat
 
 
-# Schedule 8 weather incidents
+# Schedule 8 Weather Incidents
 def get_schedule8_weather_incidents(route_name=None, weather_category=None, update=False):
 
     pickle_filename = make_filename("Schedule8WeatherIncidents", route_name, weather_category)
@@ -764,13 +772,13 @@ def get_schedule8_weather_incidents(route_name=None, weather_category=None, upda
             # Look up geographical coordinates for each incident location
             data = cleanse_geographical_coordinates(data)
 
-            # Retain data for specific Route and weather category
+            # Retain data for specific Route and Weather category
             data = subset(data, route_name, weather_category)
 
             save_pickle(data, path_to_pickle)
 
         except Exception as e:
-            print("Failed to get \"Schedule 8 weather incidents\". {}".format(e))
+            print("Failed to get \"Schedule 8 Weather Incidents\". {}".format(e))
             data = pd.DataFrame()
 
     return data
@@ -780,10 +788,10 @@ def get_schedule8_weather_incidents(route_name=None, weather_category=None, upda
 def get_schedule8_weather_incidents_02062006_31032014(route_name=None, weather_category=None, update=False):
     """
     Description:
-    "Details of schedule 8 incidents together with weather leading up to the incident. Although this file contains
-    other weather categories, the main focus of this prototype is adhesion."
+    "Details of schedule 8 Incidents together with Weather leading up to the incident. Although this file contains
+    other Weather categories, the main focus of this prototype is adhesion."
 
-    "* WORK IN PROGRESS *  MET-9 - Report of Schedule 8 adhesion incidents vs weather conditions Done."
+    "* WORK IN PROGRESS *  MET-9 - Report of Schedule 8 adhesion Incidents vs Weather conditions Done."
 
     """
     # Path to the file
@@ -828,7 +836,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route_name=None, weather_c
                                  # 'Cost': 'DelayCost',
                                  'CategoryDescription': 'IncidentCategoryDescription'}, inplace=True)
             hazard_cols = [x for x in enumerate(data.columns) if 'Weather Hazard' in x[1]]
-            obs_cols = [(i - 1, re.search('(?<= \()\w+', x).group().upper()) for i, x in hazard_cols]
+            obs_cols = [(i - 1, re.search(r'(?<= \()\w+', x).group().upper()) for i, x in hazard_cols]
             hazard_cols = [(i + 1, x + '_WeatherHazard') for i, x in obs_cols]
             for i, x in obs_cols + hazard_cols:
                 data.rename(columns={data.columns[i]: x}, inplace=True)
@@ -846,7 +854,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route_name=None, weather_c
             # Look up geographical coordinates for each incident location
             data = cleanse_geographical_coordinates(data)
 
-            # Retain data for specific Route and weather category
+            # Retain data for specific Route and Weather category
             data = subset(data, route_name, weather_category)
 
             # Weather'CategoryLookup' -------------------------------------------
