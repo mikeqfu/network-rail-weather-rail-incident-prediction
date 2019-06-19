@@ -3,7 +3,7 @@ Weather-Thresholds_9306121.html
 
 Description:
 
-"The following table defines weather thresholds used to determine the classification of weather as Normal, Alert,
+"The following table defines Weather thresholds used to determine the classification of Weather as Normal, Alert,
 Adverse or Extreme. Note that the 'Alert' interval is inside the 'Normal' range."
 
 "These are national thresholds. Route-specific thresholds may also be defined at some point."
@@ -13,8 +13,8 @@ Adverse or Extreme. Note that the 'Alert' interval is inside the 'Normal' range.
 import os
 
 import pandas as pd
-
-from utils import cdd, load_pickle, save_pickle
+from pyhelpers.dir import cdd
+from pyhelpers.store import load_pickle, save_pickle
 
 
 # Change directory to "Incidents"
@@ -114,7 +114,7 @@ def read_thresholds_from_workbook(update=False):
             thresholds.WeatherHazard = thresholds.WeatherHazard.map(lambda x: x.upper().strip())
             save_pickle(thresholds, path_to_pickle)
         except Exception as e:
-            print("Failed to read \"weather thresholds\" from the workbook. {}.".format(e))
+            print("Failed to read \"Weather thresholds\" from the workbook. {}.".format(e))
             thresholds = None
     return thresholds
 
@@ -131,6 +131,6 @@ def get_weather_thresholds(update=False):
             thresholds = [thr0, thr1]
             save_pickle(thresholds, path_to_pickle)
         except Exception as e:
-            print("Failed to get \"weather thresholds\". {}.".format(e))
+            print("Failed to get \"Weather thresholds\". {}.".format(e))
             thresholds = None
     return thresholds

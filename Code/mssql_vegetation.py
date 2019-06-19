@@ -5,37 +5,37 @@ import os
 import re
 
 import pandas as pd
+from pyhelpers.geom import osgb36_to_wgs84
+from pyhelpers.store import load_pickle, save, save_pickle
 
-from converters import osgb36_to_wgs84
 from mssql_utils import establish_mssql_connection, get_table_primary_keys
-from utils import cdd, find_match, load_pickle, reset_double_indexes, save, save_pickle
+from utils import cdd_vegetation, find_match, reset_double_indexes
 
 # ====================================================================================================================
 """ Change directories """
 
 
-# Change directory to "Data\\vegetation\\Database"
-def cdd_veg_db(*directories):
-    path = cdd("vegetation", "Database")
-    for directory in directories:
-        path = os.path.join(path, directory)
+# Change directory to "Data\\Vegetation\\Database"
+def cdd_veg_db(*sub_dir):
+    path = cdd_vegetation("Database")
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# Change directory to "Data\\vegetation\\Database\\Tables"
-def cdd_veg_db_tables(*directories):
+# Change directory to "Data\\Vegetation\\Database\\Tables"
+def cdd_veg_db_tables(*sub_dir):
     path = cdd_veg_db("Tables")
-    os.makedirs(path, exist_ok=True)
-    for directory in directories:
+    for directory in sub_dir:
         path = os.path.join(path, directory)
     return path
 
 
-# Change directory to "Data\\vegetation\\Database\\Views"
-def cdd_veg_db_views(*directories):
+# Change directory to "Data\\Vegetation\\Database\\Views"
+def cdd_veg_db_views(*sub_dir):
     path = cdd_veg_db("Views")
     os.makedirs(path, exist_ok=True)
-    for directory in directories:
+    for directory in sub_dir:
         path = os.path.join(path, directory)
     return path
 
@@ -68,10 +68,7 @@ def get_route_names_dict(reverse=False):
                    'WESSEX',
                    'WESTERN Thames Valley',
                    'WESTERN West']
-    if not reverse:
-        route_names_dict = dict(zip(title_cases, upper_cases))
-    else:
-        route_names_dict = dict(zip(upper_cases, title_cases))
+    route_names_dict = dict(zip(upper_cases, title_cases)) if reverse else dict(zip(title_cases, upper_cases))
     return route_names_dict
 
 
@@ -837,7 +834,7 @@ def make_filename(base_name, route, *extra_suffixes, save_as=".pickle"):
     return filename
 
 
-# Get vegetation data (75247, 44)
+# Get Vegetation data (75247, 44)
 def get_furlong_vegetation_coverage(route=None, update=False):
     """
     :param route: 
@@ -954,7 +951,7 @@ def get_hazardous_trees(route=None, update=False):
     return hazardous_trees_data
 
 
-# Get vegetation data as well as hazardous trees information (75247, 57)
+# Get Vegetation data as well as hazardous trees information (75247, 57)
 def get_furlong_vegetation_conditions(route=None, update=False):
     """
     :param route: 

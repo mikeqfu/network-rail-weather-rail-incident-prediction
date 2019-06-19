@@ -20,11 +20,10 @@ import os
 import urllib.parse
 
 import pandas as pd
+import pyhelpers.store
 import pyodbc
 import shapely.wkt
 import sqlalchemy
-
-from utils import save
 
 # ====================================================================================================================
 """ Establish a connection to a database server """
@@ -233,7 +232,7 @@ def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=N
 
     if save_as:
         path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
-        save(table_data, path_to_file)
+        pyhelpers.store.save(table_data, path_to_file)
 
     # Return the data frame of the queried table
     return table_data
@@ -307,7 +306,7 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
 
     if save_as:
         path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
-        save(table_data, path_to_file)
+        pyhelpers.store.save(table_data, path_to_file)
 
     return table_data
 
@@ -360,7 +359,7 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
                                  chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
         for tbl_id, tbl_dat in enumerate(table_data):
             path_to_file = os.path.join(dat_dir, table_name + "_{}".format(tbl_id + 1) + save_as)
-            save(tbl_dat, path_to_file, sheet_name="Sheet_{}".format(tbl_id + 1))
+            pyhelpers.store.save(tbl_dat, path_to_file, sheet_name="Sheet_{}".format(tbl_id + 1))
     else:
         # Read the queried table_name into a pandas.DataFrame
         table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
@@ -378,7 +377,7 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
         counter = 0
         for tbl_dat, geom_dat in zip(tbl_chunks, geom_chunks):
             path_to_file = os.path.join(dat_dir, table_name + "_{}".format(counter + 1) + save_as)
-            save(tbl_dat.join(geom_dat), path_to_file, sheet_name="Sheet_{}".format(counter + 1))
+            pyhelpers.store.save(tbl_dat.join(geom_dat), path_to_file, sheet_name="Sheet_{}".format(counter + 1))
             counter += 1
 
     # Disconnect the database

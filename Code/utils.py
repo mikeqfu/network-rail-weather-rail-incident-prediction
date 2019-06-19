@@ -1,244 +1,68 @@
 """ Utilities - Helper functions """
 
-import copy
 import inspect
-import json
 import os
-import pickle
 import re
-import string
-import subprocess
+import shutil
 
-import Levenshtein
+import fuzzywuzzy.fuzz
 import fuzzywuzzy.process
 import matplotlib.cm
 import matplotlib.colors
-import matplotlib.pyplot
+import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-
-
-# Type to confirm whether to proceed or not
-def confirmed(prompt=None, resp=False):
-    """
-    Reference: http://code.activestate.com/recipes/541096-prompt-the-user-for-confirmation/
-
-    :param prompt:
-    :param resp:
-    :return:
-
-    Example: confirm(prompt="Create Directory?", resp=True)
-             Create Directory? Yes|No:
-
-    """
-    if prompt is None:
-        prompt = "Confirmed? "
-
-    if resp is True:  # meaning that default response is True
-        prompt = "{} [{}]|{}: ".format(prompt, "Yes", "No")
-    else:
-        prompt = "{} [{}]|{}: ".format(prompt, "No", "Yes")
-
-    ans = input(prompt)
-    if not ans:
-        return resp
-
-    if re.match('[Yy](es)?', ans):
-        return True
-    if re.match('[Nn](o)?', ans):
-        return False
-
+from pyhelpers.dir import cd, cdd
+from pyhelpers.misc import confirmed
+from pyhelpers.store import load_json
 
 # ====================================================================================================================
-""" Change directories """
+""" Change/remove directories """
 
 
-# Change directory
-def cd(*directories):
-    # Current working directory
-    path = os.getcwd()
-    for directory in directories:
-        path = os.path.join(path, directory)
+# Change directory to ".\\Data\\METEX"
+def cdd_metex(*sub_dir):
+    path = cdd("METEX")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# Change directory to "Data"
-def cdd(*directories):
-    path = cd("Data")
-    for directory in directories:
-        path = os.path.join(path, directory)
+# Change directory to ".\\Data\\Vegetation"
+def cdd_vegetation(*sub_dir):
+    path = cdd("Vegetation")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# Change directory to "RailwayCode"
-def cdd_rc(*directories):
+# Change directory to ".\\Data\\RailwayCode"
+def cdd_rc(*sub_dir):
     path = cdd("Network", "Railway Codes")
-    for directory in directories:
-        path = os.path.join(path, directory)
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
-# ====================================================================================================================
-""" Save and Load files """
+# Change directory to "Publications\\...\\Figures" and sub-directories
+def cdd_metex_fig_pub(pid, subject, *sub_dir):
+    path = cd("Publications", "{} - {}".format(pid, subject), "Figures")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
 
 
-# Save pickles
-def save_pickle(pickle_data, path_to_pickle):
-    """
-    :param pickle_data: any object that could be dumped by the 'pickle' package
-    :param path_to_pickle: [str] local file path
-    :return: whether the data has been successfully saved
-    """
-    pickle_filename = os.path.basename(path_to_pickle)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_pickle) else "Saving", pickle_filename), end="")
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(path_to_pickle)), exist_ok=True)
-        pickle_out = open(path_to_pickle, 'wb')
-        pickle.dump(pickle_data, pickle_out)
-        pickle_out.close()
-        print("Successfully.")
-    except Exception as e:
-        print("Failed. {}.".format(e))
-
-
-# Load pickles
-def load_pickle(path_to_pickle, verbose=False):
-    """
-    :param path_to_pickle: [str] local file path
-    :param verbose: [bool] Whether to print note
-    :return: the object retrieved from the pickle
-    """
-    print("Loading \"{}\" ... ".format(os.path.basename(path_to_pickle)), end="") if verbose else None
-    try:
-        pickle_in = open(path_to_pickle, 'rb')
-        pickle_data = pickle.load(pickle_in)
-        pickle_in.close()
-        print("Successfully.") if verbose else None
-    except Exception as e:
-        print("Failed. {}.".format(e)) if verbose else None
-        pickle_data = None
-    return pickle_data
-
-
-# Save json file
-def save_json(json_data, path_to_json):
-    """
-    :param json_data: any object that could be dumped by the 'json' package
-    :param path_to_json: [str] local file path
-    :return: whether the data has been successfully saved
-    """
-    json_filename = os.path.basename(path_to_json)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_json) else "Saving", json_filename), end="")
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(path_to_json)), exist_ok=True)
-        json_out = open(path_to_json, 'w')
-        json.dump(json_data, json_out)
-        json_out.close()
-        print("Successfully.")
-    except Exception as e:
-        print("Failed. {}.".format(e))
-
-
-# Load json file
-def load_json(path_to_json, verbose=False):
-    """
-    :param path_to_json: [str] local file path
-    :param verbose: [bool] Whether to print note
-    :return: the json data retrieved
-    """
-    print("Loading \"{}\" ... ".format(os.path.basename(path_to_json)), end="") if verbose else None
-    try:
-        json_in = open(path_to_json, 'r')
-        json_data = json.load(json_in)
-        json_in.close()
-        print("Successfully.") if verbose else None
-    except Exception as e:
-        print("Failed. {}.".format(e)) if verbose else None
-        json_data = None
-    return json_data
-
-
-# Save Excel workbook
-def save_excel(excel_data, path_to_excel, sep, index, sheet_name, engine='xlsxwriter'):
-    """
-    :param excel_data: any [DataFrame] that could be dumped saved as a Excel workbook, e.g. '.csv', '.xlsx'
-    :param path_to_excel: [str] local file path
-    :param sep: [str] separator for saving excel_data to a '.csv' file
-    :param index: [bool]
-    :param sheet_name: [str] name of worksheet for saving the excel_data to a e.g. '.xlsx' file
-    :param engine: [str] ExcelWriter engine; pandas writes Excel files using the 'xlwt' module for '.xls' files and the
-                        'openpyxl' or 'xlsxWriter' modules for '.xlsx' files.
-    :return: whether the data has been successfully saved or updated
-    """
-    excel_filename = os.path.basename(path_to_excel)
-    _, save_as = os.path.splitext(excel_filename)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_excel) else "Saving", excel_filename), end="")
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(path_to_excel)), exist_ok=True)
-        if excel_filename.endswith(".csv"):  # Save the data to a .csv file
-            excel_data.to_csv(path_to_excel, index=index, sep=sep, na_rep='', float_format=None, columns=None,
-                              header=True, index_label=None, mode='w', encoding=None, compression='infer',
-                              quoting=None, quotechar='"', line_terminator=None, chunksize=None,
-                              tupleize_cols=None, date_format=None, doublequote=True, escapechar=None,
-                              decimal='.')
-        else:  # Save the data to a .xlsx or .xls file, e.g. excel_filename.endswith(".xlsx")
-            xlsx_writer = pd.ExcelWriter(path_to_excel, engine)
-            excel_data.to_excel(xlsx_writer, sheet_name, index=index, na_rep='', float_format=None,
-                                columns=None, header=True, index_label=None, startrow=0, startcol=0,
-                                engine=None, merge_cells=True, encoding=None, inf_rep='inf', verbose=True,
-                                freeze_panes=None)
-            xlsx_writer.save()
-            xlsx_writer.close()
-        print("Successfully.")
-    except Exception as e:
-        print("Failed. {}.".format(e))
-
-
-# Save data locally (.pickle, .csv or .xlsx)
-def save(data, path_to_file, sep=',', index=False, sheet_name='Sheet1', engine='xlsxwriter', deep_copy=True):
-    """
-    :param data: any object that could be dumped
-    :param path_to_file: [str] local file path
-    :param sep: [str] separator for '.csv'
-    :param index:
-    :param engine: [str] 'xlwt' for .xls; 'xlsxwriter' or 'openpyxl' for .xlsx
-    :param sheet_name: [str] name of worksheet
-    :param deep_copy: [bool] whether make a deep copy of the data before saving it
-    :return: whether the data has been successfully saved or updated
-    """
-    # Make a copy the original data
-    dat = copy.deepcopy(data) if deep_copy else copy.copy(data)
-
-    # The specified path exists?
-    os.makedirs(os.path.dirname(os.path.abspath(path_to_file)), exist_ok=True)
-
-    if isinstance(dat, pd.DataFrame) and dat.index.nlevels > 1:
-        dat.reset_index(inplace=True)
-
-    # Save the data according to the file extension
-    if path_to_file.endswith((".csv", ".xlsx", ".xls")):
-        save_excel(dat, path_to_file, sep, index, sheet_name, engine)
-    elif path_to_file.endswith(".json"):
-        save_json(dat, path_to_file)
+# Remove a directory
+def rm_dir(path, confirmation_required=True):
+    if os.listdir(path):
+        if confirmed("\"{}\" is not empty. Confirmed to continue removing the directory?".format(path),
+                     confirmation_required=confirmation_required):
+            shutil.rmtree(path)
     else:
-        save_pickle(dat, path_to_file)
-        if not path_to_file.endswith(".pickle"):
-            print("Note that the file extension is not among the recognisable formats of this 'save()' function.")
-
-
-# Save a figure using plt.savefig()
-def save_fig(path_to_fig_file, dpi):
-    fig_filename = os.path.basename(path_to_fig_file)
-    print("{} \"{}\" ... ".format("Updating" if os.path.isfile(path_to_fig_file) else "Saving", fig_filename), end="")
-    try:
-        matplotlib.pyplot.savefig(path_to_fig_file, dpi=dpi)
-        _, save_as = os.path.splitext(path_to_fig_file)
-        if save_as == ".svg":
-            path_to_emf = path_to_fig_file.replace(save_as, ".emf")
-            subprocess.call(["C:\\Program Files\\Inkscape\\inkscape.exe", '-z', path_to_fig_file, '-M', path_to_emf])
-        print("Successfully.")
-    except Exception as e:
-        print("Failed. {}.".format(e))
+        os.rmdir(path)
 
 
 # ====================================================================================================================
@@ -280,26 +104,6 @@ def find_match(x, lookup):
                 return y
 
 
-#
-def find_closest_text(x, lookup):
-    ratios = [Levenshtein.ratio(x, y) for y in lookup]
-    return lookup[np.argmax(ratios)]
-
-
-#
-def find_nearest(vector, target):
-    my_array = np.array(vector)
-    diff = my_array - target
-    mask = np.ma.less_equal(diff, 0)
-    # We need to mask the negative differences and zero since we are looking for values above
-    if all(mask):
-        return None
-    else:
-        # returns None if target is greater than any value
-        masked_diff = np.ma.masked_array(diff, mask)
-        return masked_diff.argmin()
-
-
 # Check whether a string contains digits
 def contains_digits(text):
     x = re.compile('\\d').search(text)
@@ -307,7 +111,7 @@ def contains_digits(text):
 
 
 # Find the closest date of the given 'data' from a list of dates
-def find_closest_date(dates_list, date):
+def find_closest_date(date, dates_list):
     return min(dates_list, key=lambda x: abs(x - date))
 
 
@@ -320,7 +124,7 @@ def percentile(n):
     return np_percentile
 
 
-# Calculate interquartile range
+# Calculate interquartile range (IQR)
 def interquartile_range(x):
     """
     Alternative way: using scipy.stats.iqr(x)
@@ -404,57 +208,28 @@ def get_bounds_extreme_outliers(data_set, k=1.5):
     return lower_bound, upper_bound
 
 
-# Convert compressed sparse matrix to dictionary
-def csr_matrix_to_dict(csr_matrix, vectorizer):
-    features = vectorizer.get_feature_names()
-    dict_data = []
-    for i in range(len(csr_matrix.indptr) - 1):
-        sid, eid = csr_matrix.indptr[i: i + 2]
-        row_feat = [features[x] for x in csr_matrix.indices[sid:eid]]
-        row_data = csr_matrix.data[sid:eid]
-        dict_data.append(dict(zip(row_feat, row_data)))
-
-    return pd.Series(dict_data).to_frame('word_count')
-
-
-# Split a dataframe by initial letter (in the alphabetic order) of a string column
-def split_dataframe_by_initials(dataframe, by_column_name):
-    dataframe[by_column_name].fillna('', inplace=True)
-    dataframe['temp'] = dataframe[by_column_name].map(lambda x: x[0].capitalize() if len(x) > 0 else x)
-
-    data_slices = []
-    for initial in string.ascii_uppercase:
-        data_slice = dataframe[dataframe.temp == initial]
-        data_slice.drop('temp', axis=1, inplace=True)
-        data_slices.append(data_slice)
-
-    dataframe.drop('temp', axis=1, inplace=True)
-    keys = ['_'.join([by_column_name, initial]) for initial in list(string.ascii_uppercase)]
-
-    return dict(zip(keys, data_slices))
-
-
-# Form a file name in terms of specific 'Route' and 'weather' category
-def make_filename(base_name, route, weather, *extra_suffixes, save_as=".pickle"):
-    if route is not None:
+# Form a file name in terms of specific 'Route' and 'Weather' category
+def make_filename(base_name, route_name, weather_category, *extra_suffixes, save_as=".pickle"):
+    if route_name is not None:
         route_lookup = load_json(cdd("Network\\Routes", "route-names.json"))
-        route = find_match(route, route_lookup['Route'])
-    if weather is not None:
-        weather_category_lookup = load_json(cdd("Weather", "weather-categories.json"))
-        weather = find_match(weather, weather_category_lookup['WeatherCategory'])
-    filename_suffix = [s for s in (route, weather) if s is not None]  # "s" stands for "suffix"
-    filename = "-".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes]) + save_as
+        route_name = fuzzywuzzy.process.extractOne(route_name, route_lookup['Route'], scorer=fuzzywuzzy.fuzz.ratio)[0]
+    if weather_category is not None:
+        weather_category_lookup = load_json(cdd("Weather", "Weather-categories.json"))
+        weather_category = fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup['WeatherCategory'],
+                                                         scorer=fuzzywuzzy.fuzz.ratio)
+    filename_suffix = [s for s in (route_name, weather_category) if s]  # "s" stands for "suffix"
+    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes if s]) + save_as
     return filename
 
 
-# Subset the required data given 'route' and 'weather'
+# Subset the required data given 'route' and 'Weather'
 def subset(data, route=None, weather_category=None, reset_index=False):
     if data is None:
         data_subset = None
     else:
         route_lookup = list(set(data.Route))
         weather_category_lookup = list(set(data.WeatherCategory))
-        # Select data for a specific route and weather category
+        # Select data for a specific route and Weather category
         if not route and not weather_category:
             data_subset = data.copy()
         elif route and not weather_category:
@@ -472,13 +247,3 @@ def subset(data, route=None, weather_category=None, reset_index=False):
         if reset_index:
             data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
     return data_subset
-
-
-# Get Angle of Line between Two Points
-def get_angle_of_line_between(p1, p2, in_degrees=False):
-    x_diff = p2.x - p1.x
-    y_diff = p2.y - p1.y
-    angle = np.arctan2(y_diff, x_diff)  # in radians
-    if in_degrees:
-        angle = np.degrees(angle)
-    return angle

@@ -3,8 +3,7 @@
 from collections import OrderedDict
 
 import pandas as pd
-
-from utils import cdd
+from pyhelpers.dir import cdd
 
 
 # Remove duplicates in a list
@@ -275,12 +274,12 @@ def dic_r(rp_id_seq):
     return new_dict
 
 
-# Get all edges on the network of the Anglia
+# Get all edges on the Network of the Anglia
 def edges_of_route(direct=False):
     """
     :param direct: If True, return all the edges for a Directed graph
                    If False, return all the edges for an Undirected graph
-    :return: All the edges for an Undirected/Directed Anglia network
+    :return: All the edges for an Undirected/Directed Anglia Network
     """
     # Adjacency 'matrix' (DataFrame)
     adj_mat = pd.read_excel(cdd('Network\\Routes\\Anglia', 'Anglia.xlsx'), sheet_name='AdjacencyMatrix')
@@ -309,14 +308,14 @@ def edges_of_route(direct=False):
         print('InputErrors: input of "direct" must be a Boolean variable.')
 
 
-# Get all edges of specified SRS's on the network of the Anglia
+# Get all edges of specified SRS's on the Network of the Anglia
 def edges_of_srs_seq(srs_id_seq, direct=False):
     """
     :param srs_id_seq: A sequence of SRS ID's
     :param direct: If True, return all the edges for a Directed graph
                    If False, return all the edges for an Undirected graph
     :return: All the edges for specified SRS's of an Undirected/Directed
-             Anglia network
+             Anglia Network
     """
     route_edges = edges_of_route(direct)
 
@@ -400,5 +399,5 @@ def edges_of_route_plan(rp_id_seq, direct=False):
 #     # Get a dictionary of the nodes, including the information for each node
 #     # nodes.dic(*rp_id_seq)
 #
-#     # Draw a graph for the network
+#     # Draw a graph for the Network
 #     return nx.draw(g)
