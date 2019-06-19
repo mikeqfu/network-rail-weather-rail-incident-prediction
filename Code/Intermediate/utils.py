@@ -3,8 +3,7 @@ import os
 import fuzzywuzzy.process
 import numpy as np
 import pandas as pd
-
-from utils import cdd
+from pyhelpers.dir import cdd
 
 # ====================================================================================================================
 """ Change directories """
@@ -106,7 +105,7 @@ def get_angle_of_line_between(p1, p2, in_degrees=False):
 # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
 def categorise_track_orientations(attr_dat):
     # Angles in radians, [-pi, pi]
-    angles = attr_dat.apply(lambda x: get_angle_of_line_between(x.StartEN, x.EndEN), axis=1)
+    angles = attr_dat.apply(lambda x: get_angle_of_line_between(x.StartLonLat, x.EndLonLat), axis=1)
     track_orientation = pd.DataFrame({'Track_Orientation': None}, index=angles.index)
 
     # N-S / S-N: [-np.pi*2/3, -np.pi/3] & [np.pi/3, np.pi*2/3]
