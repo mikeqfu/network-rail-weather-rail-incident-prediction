@@ -7,9 +7,10 @@ import re
 import pandas as pd
 from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.store import load_pickle, save, save_pickle
+from pyhelpers.text import find_matched_str
 
 from mssql_utils import establish_mssql_connection, get_table_primary_keys
-from utils import cdd_vegetation, find_match, reset_double_indexes
+from utils import cdd_vegetation, reset_double_indexes
 
 # ====================================================================================================================
 """ Change directories """
@@ -827,7 +828,7 @@ def make_filename(base_name, route, *extra_suffixes, save_as=".pickle"):
     """
     if route is not None:
         route_lookup = get_du_route()
-        route = find_match(route, route_lookup.Route)
+        route = find_matched_str(route, route_lookup.Route)
     # route_suffix = [route] if route is not None else [None]
     filename_base = [base_name] + [route] + [str(s) for s in extra_suffixes]
     filename = "_".join([item for item in filename_base if item]) + save_as
@@ -864,7 +865,7 @@ def get_furlong_vegetation_coverage(route=None, update=False):
                 join(adverse_wind,  # (75247, 49)
                      on='Route', how='inner')
 
-            rte = find_match(route, list(get_route_names_dict().values()))
+            rte = find_matched_str(route, list(get_route_names_dict().values()))
             if rte is not None:
                 furlong_vegetation_coverage = furlong_vegetation_coverage[furlong_vegetation_coverage.Route == rte]
 
@@ -925,7 +926,7 @@ def get_hazardous_trees(route=None, update=False):
                      on='Route', how='inner'). \
                 drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
 
-            rte = find_match(route, list(get_route_names_dict().values()))
+            rte = find_matched_str(route, list(get_route_names_dict().values()))
             if rte is not None:
                 hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == rte]
 
@@ -990,7 +991,7 @@ def get_furlong_vegetation_conditions(route=None, update=False):
                 furlong_hazardous_trees, on=['ELR', 'DU', 'Route', 'StartMileage', 'EndMileage'], how='left')
             furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 53)
 
-            rte = find_match(route, list(get_route_names_dict().values()))
+            rte = find_matched_str(route, list(get_route_names_dict().values()))
             if rte is not None:
                 furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == rte]
                 furlong_vegetation_data.index = range(len(furlong_vegetation_data))

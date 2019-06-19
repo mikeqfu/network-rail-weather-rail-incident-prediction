@@ -1,15 +1,11 @@
 """ Utilities - Helper functions """
 
-import inspect
 import os
 import re
 import shutil
 
 import fuzzywuzzy.fuzz
 import fuzzywuzzy.process
-import matplotlib.cm
-import matplotlib.colors
-import matplotlib.pyplot as plt
 import numpy as np
 from pyhelpers.dir import cd, cdd
 from pyhelpers.misc import confirmed
@@ -130,82 +126,6 @@ def interquartile_range(x):
     Alternative way: using scipy.stats.iqr(x)
     """
     return np.subtract(*np.percentile(x, [75, 25]))
-
-
-# Get the given variable's name
-def get_variable_names(*var):
-    local_variables = inspect.currentframe().f_back.f_locals.items()
-    variable_list = []
-    for v in var:
-        var_str = [var_name for var_name, var_val in local_variables if var_val is v]
-        if len(var_str) > 1:
-            var_str = [x for x in var_str if '_' not in x][0]
-        else:
-            var_str = var_str[0]
-        variable_list.append(var_str)
-    return variable_list
-
-
-# A function for working with colour ramps
-def cmap_discretisation(cmap_param, no_of_colours):
-    """
-    :param cmap_param: colormap instance, e.g. cm.jet
-    :param no_of_colours: number of colours
-    :return: a discrete colormap from the continuous colormap cmap.
-
-    Reference: http://sensitivecities.com/so-youd-like-to-make-a-map-using-python-EN.html#.WbpP0T6GNQB
-
-    Example:
-        x = np.resize(np.arange(100), (5, 100))
-        d_jet = cmap_discretize(cm.jet, 5)
-        plt.imshow(x, cmap=d_jet)
-
-    """
-    if isinstance(cmap_param, str):
-        cmap_param = matplotlib.cm.get_cmap(cmap_param)
-    colors_i = np.concatenate((np.linspace(0, 1., no_of_colours), (0., 0., 0., 0.)))
-    colors_rgba = cmap_param(colors_i)
-    indices = np.linspace(0, 1., no_of_colours + 1)
-    c_dict = {}
-    for ki, key in enumerate(('red', 'green', 'blue')):
-        c_dict[key] = [(indices[x], colors_rgba[x - 1, ki], colors_rgba[x, ki]) for x in range(no_of_colours + 1)]
-    return matplotlib.colors.LinearSegmentedColormap(cmap_param.name + '_%d' % no_of_colours, c_dict, 1024)
-
-
-# A function for working with colour color bars
-def colour_bar_index(no_of_colours, cmap_param, labels=None, **kwargs):
-    """
-    :param no_of_colours: number of colors
-    :param cmap_param: colormap instance, eg. cm.jet
-    :param labels:
-    :param kwargs:
-    :return:
-
-    Reference: http://sensitivecities.com/so-youd-like-to-make-a-map-using-python-EN.html#.WbpP0T6GNQB
-
-    This is a convenience function to stop making off-by-one errors
-    Takes a standard colour ramp, and discretizes it, then draws a colour bar with correctly aligned labels
-
-    """
-    cmap_param = cmap_discretisation(cmap_param, no_of_colours)
-    mappable = matplotlib.cm.ScalarMappable(cmap=cmap_param)
-    mappable.set_array(np.array([]))
-    mappable.set_clim(-0.5, no_of_colours + 0.5)
-    color_bar = matplotlib.pyplot.colorbar(mappable, **kwargs)
-    color_bar.set_ticks(np.linspace(0, no_of_colours, no_of_colours))
-    color_bar.set_ticklabels(range(no_of_colours))
-    if labels:
-        color_bar.set_ticklabels(labels)
-    return color_bar
-
-
-# Get upper and lower bounds for removing extreme outliers
-def get_bounds_extreme_outliers(data_set, k=1.5):
-    q1, q3 = np.percentile(data_set, 25), np.percentile(data_set, 75)
-    iqr = q3 - q1
-    lower_bound = np.max([0, q1 - k * iqr])
-    upper_bound = q3 + k * iqr
-    return lower_bound, upper_bound
 
 
 # Form a file name in terms of specific 'Route' and 'Weather' category

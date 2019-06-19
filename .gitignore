@@ -105,9 +105,7 @@ venv.bak/
 
 # Misc
 .idea/
+*.ipynb
 Code/test/
-Misc/
-Presentations/
-Progress/
-Publications/
-Report/
+Data/
+Paperwork/

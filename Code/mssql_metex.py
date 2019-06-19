@@ -13,6 +13,7 @@ import pandas as pd
 import shapely.geometry
 from pyhelpers.dir import cd, cdd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
+from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
 from pyrcs.line_data import LineData
 from pyrcs.other_assets import OtherAssets
@@ -22,6 +23,8 @@ from delay_attr_glossary import get_incident_reason_metadata, get_performance_ev
 from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
 from mssql_utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
 from utils import cdd_metex, cdd_rc
+
+pd_preferences()
 
 # ====================================================================================================================
 """ Change directories """

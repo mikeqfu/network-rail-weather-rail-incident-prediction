@@ -7,9 +7,11 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.basemap
 import numpy as np
 import pandas as pd
+from pyhelpers.dir import cdd
+from pyhelpers.store import load_pickle, save_pickle
 
-import database_met as dbm
-from utils import cdd, load_pickle, reset_double_indexes, save_pickle
+import mssql_metex as dbm
+from utils import reset_double_indexes
 
 
 # Change directory to "Incidents"
@@ -31,7 +33,7 @@ def get_top10hotspots_details(route=None, weather=None, update=False):
     These are for 2006/07 – 2013/14, so don’t include the latest 2014/2015 data
 
     """
-    # filename = dbm.make_filename("Top10Hotspots_Details", route, weather)
+    # filename = dbm.make_filename("Top10Hotspots_Details", route, Weather)
     pickle_filename = "Top10Hotspots-details.pickle"
     path_to_pickle = cdd_incidents("Top 10 hotspot", pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
@@ -55,7 +57,7 @@ def get_top10hotspots_details(route=None, weather=None, update=False):
 
 # Top10Hotspots details by incident location stanox section (location)
 def get_top10hotspots_details_by_location(route=None, weather=None, update=False):
-    # filename = dbm.make_filename("Top10Hotspots_Details_by_section", route, weather)
+    # filename = dbm.make_filename("Top10Hotspots_Details_by_section", route, Weather)
     pickle_filename = "Top10Hotspots-details-by-location.pickle"
     path_to_pickle = cdd_incidents("Top 10 hotspot", pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
@@ -148,7 +150,7 @@ def top10_pie(add_title=False):
     data.sort_values('TotalCost', ascending=False)
     data = data.iloc[0:10]
     # Create labels for pie chart
-    incidents_no = ['No. of incidents: {}'.format(int(i)) for i in data.IncidentCount]
+    incidents_no = ['No. of Incidents: {}'.format(int(i)) for i in data.IncidentCount]
     # costs = ['Cost: £%s' % format(int(i), ',') % i for i in data['Cost']]
     minutes = ['Delay (minutes): {}'.format(int(i), ',') for i in data.TotalDelays]
 

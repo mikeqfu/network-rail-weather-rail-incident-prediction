@@ -9,11 +9,12 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
 import pandas as pd
+from pyhelpers.dir import cdd
+from pyhelpers.store import load_pickle, save, save_fig
+from pyrcs.line_data import LineData
 
-import database_met as dbm
-import database_veg as dbv
-import railwaycodes_utils as rc
-from utils import cdd, load_pickle, save, save_fig
+import mssql_metex as dbm
+import mssql_vegetation as dbv
 
 
 # Change directory to "Incidents"
@@ -39,7 +40,7 @@ def cdd_spreadsheet(*directories):
 #
 def get_schedule8_weather_cost_report(route=None, weather=None, update=False):
     """
-    Summary report for Schedule 8 weather costs covering the UK.
+    Summary report for Schedule 8 Weather costs covering the UK.
     """
     pickle_filename = "Schedule8WeatherCostReport.pickle"
     path_to_pickle = cdd_spreadsheet(pickle_filename)
@@ -81,7 +82,7 @@ def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, s
     colours = matplotlib.cm.get_cmap('Set2')(np.flip(np.linspace(0.0, 1.0, 9), 0))
     colour = colours[list(set(report_data.WeatherCategory)).index(weather)] if weather else '#c0bc7c'
     report_data = dbm.subset(report_data, route, weather)
-    # Total delay minutes and costs for all weather-related incidents
+    # Total delay minutes and costs for all Weather-related Incidents
     data = report_data.groupby('Year').agg({'DelayCost': np.sum, 'DelayMinutes': np.sum})
     data.reset_index(inplace=True)
 
@@ -124,7 +125,7 @@ def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, s
     plt.legend(fig1 + fig2, label1 + label2, numpoints=1, loc=2, frameon=False, prop={'size': 15}, labelspacing=0.8)
 
     if show_title:
-        title = 'Total delays/cost attributed to {}-related incidents{}'.format(
+        title = 'Total delays/cost attributed to {}-related Incidents{}'.format(
             weather.lower() if weather else 'Weather', ' on the %s Route' % route if route else '')
         plt.suptitle(title, fontsize=16, fontweight='bold')
         plt.subplots_adjust(left=.13, bottom=.1, right=0.89, top=.89)
@@ -140,12 +141,12 @@ def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, s
 def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show_title=False, save_as=".png"):
     # Get data
     report_data = get_schedule8_weather_cost_report(route, weather=None, update=update)
-    # Total delay minutes and costs for all weather-related incidents
+    # Total delay minutes and costs for all Weather-related Incidents
     data = report_data.groupby(['Year', 'WeatherCategory']).aggregate({'DelayCost': np.sum, 'DelayMinutes': np.sum})
     data.reset_index(inplace=True)
     data.set_index('Year', inplace=True)
 
-    # A bar chart of total delays/cost by year and weather category
+    # A bar chart of total delays/cost by year and Weather category
     plt.figure(figsize=(10, 6))
     ax = plt.subplot2grid((1, 1), (0, 0))
     ax.grid(False)
@@ -179,7 +180,7 @@ def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show
     ax.legend(handles[::-1], labels[::-1], loc=2, frameon=False, prop={'size': 11})
 
     if show_title:
-        title = 'Total delays/cost attributed to weather-related incidents{}'.format(
+        title = 'Total delays/cost attributed to Weather-related Incidents{}'.format(
             ' on the %s Route' % route if route else '')
         plt.suptitle(title, fontsize=16, fontweight='bold')
         plt.subplots_adjust(left=.12, bottom=.10, right=.98, top=.90)
@@ -187,7 +188,7 @@ def plot_schedule8_weather_cost_report_by_weather(route=None, update=False, show
         plt.tight_layout()
 
     if save_as:
-        filename = "-".join(["Schedule8WeatherCostReport-by-weather"] + [s for s in [route] if route is not None])
+        filename = "-".join(["Schedule8WeatherCostReport-by-Weather"] + [s for s in [route] if route is not None])
         save_fig(cdd_incidents("Exploratory analysis", filename + save_as), dpi=600)
 
 
@@ -201,7 +202,7 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
 
     Description:
     "Schedule 8 delay minutes partitioned by DU / Day / Weather Category"
-    "The report includes summaries of incident counts and delay minutes per day for each weather category together
+    "The report includes summaries of incident counts and delay minutes per day for each Weather category together
     with detailed data for each incident." (Retrieved directly from the Database)
 
     """
@@ -327,7 +328,7 @@ def plot_schedule8_weather_delays_by_season(route=None, weather=None, update=Fal
               loc='best', frameon=False, prop={'size': 13})
 
     if show_title:
-        title = 'Total delays/cost attributed to {}-related incidents{}'.format(
+        title = 'Total delays/cost attributed to {}-related Incidents{}'.format(
             weather.lower() if weather else 'Weather', ' on the %s Route' % route if route else '')
         plt.suptitle(title, fontsize=15, fontweight='bold')
         plt.subplots_adjust(left=0.12, bottom=0.10, right=0.98, top=0.92)
@@ -347,10 +348,10 @@ def plot_schedule8_weather_delays_by_season(route=None, weather=None, update=Fal
 def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, update=False):
     """
     Description:
-    "Details of schedule 8 incidents together with weather leading up to the incident. Although this file contains
-    other weather categories, the main focus of this prototype is adhesion.
+    "Details of schedule 8 Incidents together with Weather leading up to the incident. Although this file contains
+    other Weather categories, the main focus of this prototype is adhesion.
 
-    * WORK IN PROGRESS *  MET-9 - Report of Schedule 8 adhesion incidents vs weather conditions Done."
+    * WORK IN PROGRESS *  MET-9 - Report of Schedule 8 adhesion Incidents vs Weather conditions Done."
 
     """
     # Path to the file
@@ -399,15 +400,17 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             stanox_section.EndLocation.fillna(stanox_section.StartLocation, inplace=True)
 
             stanox_dict_1 = dbm.get_stanox_location().Location.to_dict()
-            stanox_dict_2 = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=False)
+
+            line_data = LineData()
+            stanox_dict_2 = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
 
             stanox_section.StartLocation = stanox_section.StartLocation.replace(stanox_dict_1).replace(stanox_dict_2)
             stanox_section.EndLocation = stanox_section.EndLocation.replace(stanox_dict_1).replace(stanox_dict_2)
 
-            stanme_dict = rc.get_location_codes_dictionary(keyword='STANME')
-            tiploc_dict = rc.get_location_codes_dictionary(keyword='TIPLOC')
-            loc_name_replacement_dict = dbm.create_location_names_replacement_dict()
-            loc_name_regexp_replacement_dict = dbm.create_location_names_regexp_replacement_dict()
+            stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANME')
+            tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC')
+            loc_name_replacement_dict = dbm.location_names_replacement_dict()
+            loc_name_regexp_replacement_dict = dbm.location_names_regexp_replacement_dict()
             # Processing 'StartStanox'
             stanox_section.StartLocation = stanox_section.StartLocation. \
                 replace(stanme_dict).replace(tiploc_dict). \
@@ -447,7 +450,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             print("Failed to get \"{}\". {}.".format(os.path.basename(pickle_filename), e))
             workbook_data = None
 
-        # Retain data for specific Route and weather category
+        # Retain data for specific Route and Weather category
         workbook_data['Data'] = dbm.subset(workbook_data['Data'], route, weather)
 
     return workbook_data
@@ -497,7 +500,7 @@ def get_trust_schedule8_incidents_details(update=False):
     (from 01-Apr-2006 to 31-Mar-2015, i.e. financial year 2006-2014)
 
     """
-    pickle_filename = "Schedule-8-incidents-details.pickle"
+    pickle_filename = "Schedule-8-Incidents-details.pickle"
     path_to_pickle = cdd_incidents("TRUST", pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         schedule8_incidents_details = load_pickle(path_to_pickle)
@@ -508,7 +511,8 @@ def get_trust_schedule8_incidents_details(update=False):
             # Get information of Performance Event Code
             prfm_event_code = dbm.get_performance_event_code()
 
-            loc_dict = rc.get_location_codes_dictionary(keyword='STANOX', drop_duplicates=True)
+            line_data = LineData()
+            loc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX', drop_duplicates=True)
             # Get location data
             location = dbm.get_location()
             stanox_location = dbm.get_stanox_location()
