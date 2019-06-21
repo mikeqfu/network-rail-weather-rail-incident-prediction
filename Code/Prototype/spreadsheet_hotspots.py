@@ -51,7 +51,7 @@ def get_top10hotspots_details(route=None, weather=None, update=False):
         except Exception as e:
             print("Failed to get \"Top10Hotspots\" details. {}.".format(e))
             details_sheet = pd.DataFrame()
-    details_data = dbm.subset(details_sheet, route, weather)
+    details_data = dbm.get_subset(details_sheet, route, weather)
     return details_data
 
 
@@ -89,7 +89,7 @@ def get_top10hotspots_details_by_location(route=None, weather=None, update=False
         except Exception as e:
             print("Failed to get \"Top10Hotspots\" details (by incident location). {}.".format(e))
             dat = pd.DataFrame()
-    data = dbm.subset(dat, route, weather)
+    data = dbm.get_subset(dat, route, weather)
     return data
 
 

@@ -69,7 +69,7 @@ def get_schedule8_weather_cost_report(route=None, weather=None, update=False):
             print("Failed to get \"{}\". {}.".format(os.path.splitext(pickle_filename)[0], e))
             all_data = pd.DataFrame()
 
-    s8_cost_report_all_data = dbm.subset(all_data, route, weather)
+    s8_cost_report_all_data = dbm.get_subset(all_data, route, weather)
     s8_cost_report_all_data.index = range(len(s8_cost_report_all_data))
 
     return s8_cost_report_all_data
@@ -81,7 +81,7 @@ def plot_schedule8_weather_cost_report(route=None, weather=None, update=False, s
     report_data = get_schedule8_weather_cost_report(update=update)
     colours = matplotlib.cm.get_cmap('Set2')(np.flip(np.linspace(0.0, 1.0, 9), 0))
     colour = colours[list(set(report_data.WeatherCategory)).index(weather)] if weather else '#c0bc7c'
-    report_data = dbm.subset(report_data, route, weather)
+    report_data = dbm.get_subset(report_data, route, weather)
     # Total delay minutes and costs for all Weather-related Incidents
     data = report_data.groupby('Year').agg({'DelayCost': np.sum, 'DelayMinutes': np.sum})
     data.reset_index(inplace=True)
@@ -227,8 +227,8 @@ def get_schedule8_weather_incidents_by_day(route=None, weather=None, update=Fals
             print("Failed to get \"{}\". {}.".format(os.path.basename(pickle_filename), e))
             workbook_data = pd.DataFrame()
 
-    workbook_data['Summary'] = dbm.subset(workbook_data['Summary'], route, weather)
-    workbook_data['Details'] = dbm.subset(workbook_data['Details'], route, weather)
+    workbook_data['Summary'] = dbm.get_subset(workbook_data['Summary'], route, weather)
+    workbook_data['Details'] = dbm.get_subset(workbook_data['Details'], route, weather)
 
     return workbook_data
 
@@ -451,7 +451,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route=None, weather=None, 
             workbook_data = None
 
         # Retain data for specific Route and Weather category
-        workbook_data['Data'] = dbm.subset(workbook_data['Data'], route, weather)
+        workbook_data['Data'] = dbm.get_subset(workbook_data['Data'], route, weather)
 
     return workbook_data
 

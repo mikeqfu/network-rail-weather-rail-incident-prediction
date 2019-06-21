@@ -166,7 +166,7 @@ def plot_weather_cells(base_map=None, update=False, route=None, weather_cell_col
 
     # Get Weather cell data
     data = dbm.get_weather_cell(update=update)
-    data = dbm.subset(data, route)
+    data = dbm.get_subset(data, route)
     # Drop duplicated Weather cell data
     data.drop_duplicates(list(data.columns)[2:-1], inplace=True)
 
@@ -458,7 +458,7 @@ def get_schedule8_incident_hotspots(route=None, weather=None, sort_by=None, upda
     if sort_by:
         hotspots_data.sort_values(sort_by, ascending=False, inplace=True)
 
-    hotspots_data = dbm.subset(hotspots_data, route, weather)
+    hotspots_data = dbm.get_subset(hotspots_data, route, weather)
     hotspots_data.index = range(len(hotspots_data))
 
     return hotspots_data
@@ -504,7 +504,7 @@ def hotspots_delays_yearly(route='ANGLIA', weather='Wind', update=False,
     # Get data
     data_filename = "Hotspots_by_DelayMinutes_yearly.pickle"
     try:
-        hotspots_data = dbm.subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
+        hotspots_data = dbm.get_subset(load_pickle(dbm.cdd_metex_db_views(data_filename)), route, weather)
     except FileNotFoundError:
         schedule8_data = dbm.view_schedule8_cost_by_datetime_location(route, weather, update)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
