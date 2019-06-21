@@ -940,7 +940,7 @@ def make_filename(base_name, route_name, weather_category, *extra_suffixes, sep=
 
 
 # Subset the required data given 'route' and 'Weather'
-def subset(data, route_name=None, weather_category=None, reset_index=False):
+def get_subset(data, route_name=None, weather_category=None, reset_index=False):
     if data is not None:
         assert 'Route' in data.columns and 'WeatherCategory' in data.columns
         route_name = fuzzywuzzy.process.extractOne(route_name, list(set(data.Route)), scorer=fuzzywuzzy.fuzz.ratio)[0] \
@@ -965,7 +965,7 @@ def subset(data, route_name=None, weather_category=None, reset_index=False):
 
 
 # Calculate the DelayMinutes and DelayCosts for grouped data
-def pfpi_stats(dat, selected_features, sort_by=None):
+def calculate_pfpi_stats(dat, selected_features, sort_by=None):
     data = dat.groupby(selected_features[1:-2]).aggregate({
         # 'IncidentId_and_CreateDate': {'IncidentCount': np.count_nonzero},
         'PfPIId': pd.np.count_nonzero,
@@ -1052,20 +1052,20 @@ def view_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, pos
 
 
 # Retrieve the TRUST
-def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
+def merge_schedule8_data(weather_attributed=False, pickle_it=False):
     """
     :param weather_attributed: [bool]
-    :param save_as: [str]
+    :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
     try:
-        pfpi = get_pfpi(plus=True)  # Get PfPI # (260645, 6)  # (5165562, 6)
+        pfpi = get_pfpi()  # Get PfPI # (260645, 6)  # (5165562, 6)
         incident_record = get_incident_record()  # (233452, 4)  # (4661505, 5)
-        trust_incident = get_trust_incident(start_year=2006)  # (192054, 11)  # (3988006, 11)
+        trust_incident = get_trust_incident()  # (192054, 11)  # (3988006, 11)
         location = get_location()  # (228851, 6)  # (653882, 7)
-        imdm = get_imdm(as_dict=False)  # (42, 1)  # (42, 2)
-        incident_reason_info = get_incident_reason_info(plus=True)  # (393, 7)  # (174, 9)
-        stanox_location = get_stanox_location(use_nr_mileage_format=True)  # (7560, 5)  # (7560, 6)
+        imdm = get_imdm()  # (42, 1)  # (42, 2)
+        incident_reason_info = get_incident_reason_info()  # (393, 7)  # (174, 9)
+        stanox_location = get_stanox_location()  # (7560, 5)  # (7560, 6)
         stanox_section = get_stanox_section()  # (9440, 7)  # (10601, 7)
 
         # Merge the acquired data sets
@@ -1116,8 +1116,8 @@ def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
         #                   'StanoxSection_Start', 'StanoxSection_End',
         #                   'IMDM', 'IMDM_Location'], axis=1, inplace=True)
 
-        i = data[~data.StartLocation.eq(data.Location_Start)].index
-        for i in i:
+        idx = data[~data.StartLocation.eq(data.Location_Start)].index
+        for i in idx:
             data.loc[i, 'StartLocation'] = data.loc[i, 'Location_Start']
             data.loc[i, 'EndLocation'] = data.loc[i, 'Location_End']
             if data.loc[i, 'StartLocation'] == data.loc[i, 'EndLocation']:
@@ -1161,7 +1161,7 @@ def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
         data.loc[i, ['EndLongitude', 'EndLatitude']] = [-0.0751, 51.5461]
 
         # # Sort the merged data frame by index 'PfPIId'
-        # data = data.set_index('PfPIId').sort_index()  # (260140, 49)
+        # data = data.set_index('PfPIId').sort_index()
         #
         # # Further cleaning the 'IMDM' and 'Route'
         # for section in data.StanoxSection.unique():
@@ -1175,11 +1175,12 @@ def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
         #         route_temp = data.loc[temp.index].Route.value_counts()
         #         data.loc[temp.index, 'Route'] = route_temp[route_temp == route_temp.max()].index[0]
 
-        save_pickle(data, cdd_metex_db_views(filename + save_as))
+        if pickle_it:
+            save_pickle(data, cdd_metex_db_views(filename + ".pickle"))
 
     except Exception as e:
         print("Failed to merge Schedule 8 details. {}".format(e))
-        data = None
+        data = pd.DataFrame()
 
     return data
 
@@ -1207,10 +1208,10 @@ def view_schedule8_details(route_name=None, weather_category=None, reset_index=F
         try:
             path_to_merged = cdd_metex_db_views("{}.pickle".format(filename))
             if not os.path.isfile(path_to_merged) or update:
-                schedule8_details = merge_schedule8_data(weather_attributed, save_as=".pickle")
+                schedule8_details = merge_schedule8_data(weather_attributed, pickle_it=pickle_it)
             else:
                 schedule8_details = load_pickle(path_to_merged)
-            schedule8_details = subset(schedule8_details, route_name, weather_category, reset_index)
+            schedule8_details = get_subset(schedule8_details, route_name, weather_category, reset_index)
             if pickle_it:
                 if path_to_pickle != path_to_merged:
                     save_pickle(schedule8_details, path_to_pickle)
@@ -1279,7 +1280,7 @@ def view_schedule8_cost_by_location(route_name=None, weather_category=None, upda
     filename = make_filename("Schedule8_costs_by_location", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
     if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
+        extracted_data = load_pickle(path_to_pickle)
     else:
         try:
             schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
@@ -1287,21 +1288,18 @@ def view_schedule8_cost_by_location(route_name=None, weather_category=None, upda
                 'PfPIId',
                 # 'TrustIncidentId', 'IncidentRecordCreateDate',
                 'WeatherCategory',
-                'Route', 'IMDM',
-                'StanoxSection',
-                'StartLocation', 'EndLocation',
-                'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
-                'StartStanox', 'EndStanox',
-                'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
+                'Route', 'IMDM', 'StanoxSection',
+                'StartLocation', 'EndLocation', 'StartELR', 'StartMileage', 'EndELR', 'EndMileage',
+                'StartStanox', 'EndStanox', 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
                 'PfPIMinutes', 'PfPICosts']
-            schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features)
+            selected_data = schedule8_details[selected_features]
+            extracted_data = calculate_pfpi_stats(selected_data, selected_features)
             if pickle_it:
-                save_pickle(data, path_to_pickle)
+                save_pickle(extracted_data, path_to_pickle)
         except Exception as e:
             print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-    return data
+            extracted_data = pd.DataFrame()
+    return extracted_data
 
 
 # Get Schedule 8 data by datetime and location
@@ -1316,7 +1314,7 @@ def view_schedule8_cost_by_datetime_location(route_name=None, weather_category=N
     filename = make_filename("Schedule8_costs_by_datetime_location", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
     if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
+        extracted_data = load_pickle(path_to_pickle)
     else:
         try:
             schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
@@ -1334,14 +1332,15 @@ def view_schedule8_cost_by_datetime_location(route_name=None, weather_category=N
                 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude',
                 'WeatherCell',
                 'PfPICosts', 'PfPIMinutes']
-            schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
+            selected_data = schedule8_details[selected_features]
+            extracted_data = calculate_pfpi_stats(selected_data, selected_features,
+                                                  sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
-                save_pickle(data, path_to_pickle)
+                save_pickle(extracted_data, path_to_pickle)
         except Exception as e:
             print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-    return data
+            extracted_data = pd.DataFrame()
+    return extracted_data
 
 
 # Get Schedule 8 cost by datetime, location and incident reason
@@ -1357,11 +1356,10 @@ def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_cat
     filename = make_filename("Schedule8_costs_by_datetime_location_reason", route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(filename)
     if os.path.isfile(path_to_pickle) and not update:
-        data = load_pickle(path_to_pickle)
+        extracted_data = load_pickle(path_to_pickle)
     else:
         try:
-            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True,
-                                                       weather_attributed=False)
+            schedule8_details = view_schedule8_details(route_name, weather_category, reset_index=True)
             selected_features = ['PfPIId',
                                  'FinancialYear',
                                  'StartDateTime', 'EndDateTime',
@@ -1383,14 +1381,15 @@ def view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_cat
                                  'IncidentReasonDescription',
                                  'IncidentJPIPCategory',
                                  'PfPIMinutes', 'PfPICosts']
-            schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
+            selected_data = schedule8_details[selected_features]
+            extracted_data = calculate_pfpi_stats(selected_data, selected_features,
+                                                  sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
-                save_pickle(data, path_to_pickle)
+                save_pickle(extracted_data, path_to_pickle)
         except Exception as e:
             print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
-            data = None
-    return data
+            extracted_data = pd.DataFrame()
+    return extracted_data
 
 
 # Get Schedule 8 data by datetime and Weather category
@@ -1419,7 +1418,7 @@ def view_schedule8_cost_by_datetime(route_name=None, weather_category=None, upda
                 'WeatherCell',
                 'PfPICosts', 'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
+            data = calculate_pfpi_stats(schedule8_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
@@ -1460,7 +1459,7 @@ def view_schedule8_cost_by_reason(route_name=None, weather_category=None, update
                                  'IncidentJPIPCategory',
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features)
+            data = calculate_pfpi_stats(schedule8_data, selected_features)
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
@@ -1498,7 +1497,7 @@ def view_schedule8_cost_by_location_reason(route_name=None, weather_category=Non
                                  'IncidentJPIPCategory',
                                  'PfPIMinutes', 'PfPICosts']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features)
+            data = calculate_pfpi_stats(schedule8_data, selected_features)
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
@@ -1531,7 +1530,7 @@ def view_schedule8_cost_by_weather_category(route_name=None, weather_category=No
                                  'PfPICosts',
                                  'PfPIMinutes']
             schedule8_data = schedule8_details[selected_features]
-            data = pfpi_stats(schedule8_data, selected_features)
+            data = calculate_pfpi_stats(schedule8_data, selected_features)
             if pickle_it:
                 save_pickle(data, path_to_pickle)
         except Exception as e:
