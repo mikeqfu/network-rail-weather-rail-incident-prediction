@@ -33,7 +33,7 @@ def cdd_vegetation(*sub_dir):
     return path
 
 
-# Change directory to ".\\Data\\RailwayCode"
+# Change directory to ".\\Data\\RailwayCodes"
 def cdd_rc(*sub_dir):
     path = cdd("Network", "Railway Codes")
     os.makedirs(path, exist_ok=True)
