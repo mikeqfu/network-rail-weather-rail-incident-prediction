@@ -3,6 +3,7 @@
 import copy
 import os
 import string
+import zipfile
 
 import fuzzywuzzy.fuzz
 import fuzzywuzzy.process
@@ -39,7 +40,7 @@ def cdd_metex_db(*sub_dir):
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Tables" and sub-directories
+# Change directory to "Data\\METEX\\Database\\Tables"
 def cdd_metex_db_tables(*sub_dir):
     path = cdd_metex_db("Tables")
     os.makedirs(path, exist_ok=True)
@@ -48,7 +49,7 @@ def cdd_metex_db_tables(*sub_dir):
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Views" and sub-directories
+# Change directory to "Data\\METEX\\Database\\Views"
 def cdd_metex_db_views(*sub_dir):
     path = cdd_metex_db("Views")
     os.makedirs(path, exist_ok=True)
@@ -57,8 +58,8 @@ def cdd_metex_db_views(*sub_dir):
     return path
 
 
-# Change directory to "METEX\\Figures" and sub-directories
-def cdd_metex_fig_db(*sub_dir):
+# Change directory to "METEX\\Figures"
+def cdd_metex_db_fig(*sub_dir):
     path = cdd_metex_db("Figures")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
@@ -66,8 +67,8 @@ def cdd_metex_fig_db(*sub_dir):
     return path
 
 
-# Change directory to "Publications\\...\\Figures" and sub-directories
-def cdd_metex_fig_pub(pid, *sub_dir):
+# Change directory to "Publications\\...\\Figures"
+def cdd_metex_pub_fig(pid, *sub_dir):
     path = cd("Publications", "{} - ".format(pid), "Figures")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
@@ -289,10 +290,11 @@ def get_weather_codes(as_dict=False, update=False, save_original_as=None):
 
 
 # Get IncidentRecord and fill 'None' value with NaN
-def get_incident_record(update=False, save_original_as=None):
+def get_incident_record(update=False, save_original_as=None, use_corrected_csv=True):
     """
     :param update: [bool]
     :param save_original_as: [str; None]
+    :param use_corrected_csv: [bool]
     :return: [pandas.DataFrame; None]
     """
     table_name = 'IncidentRecord'
@@ -303,6 +305,15 @@ def get_incident_record(update=False, save_original_as=None):
         try:
             incident_record = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                                save_as=save_original_as, update=update)
+
+            if use_corrected_csv:
+                corrected_csv = pd.read_csv(cdd_metex_db("corrected", table_name + ".zip"), index_col='Id',
+                                            parse_dates=['CreateDate'], dayfirst=True)
+                corrected_csv.columns = incident_record.columns
+                corrected_csv.loc[corrected_csv[corrected_csv.WeatherCategory.isna()].index, 'WeatherCategory'] = None
+                incident_record.drop(incident_record[incident_record.CreateDate >= '2018-01-01'].index, inplace=True)
+                incident_record = incident_record.append(corrected_csv)
+
             incident_record.index.rename('IncidentRecordId', inplace=True)  # Rename index name
             incident_record.rename(columns={'CreateDate': 'IncidentRecordCreateDate', 'Reason': 'IncidentReasonCode'},
                                    inplace=True)  # Rename column names
@@ -346,11 +357,12 @@ def get_location(update=False, save_original_as=None):
 
 
 # Get PfPI (Process for Performance Improvement)
-def get_pfpi(plus=True, update=False, save_original_as=None):
+def get_pfpi(plus=True, update=False, save_original_as=None, use_corrected_csv=True):
     """
     :param plus: [bool]
     :param update: [bool]
     :param save_original_as: [str; None]
+    :param use_corrected_csv: [bool]
     :return: [pandas.DataFrame; None]
     """
     table_name = 'PfPI'
@@ -362,6 +374,12 @@ def get_pfpi(plus=True, update=False, save_original_as=None):
             # Read the 'PfPI' table
             pfpi = read_metex_table(table_name, index_col=get_metex_table_pk(table_name), save_as=save_original_as,
                                     update=update)
+            if use_corrected_csv:
+                corrected_csv = pd.read_csv(cdd_metex_db("corrected", table_name + ".zip"), index_col='Id')
+                # incident_record = get_incident_record()
+                # min_id = incident_record[incident_record.IncidentRecordCreateDate >= '2018-01-01'].index.min()
+                pfpi = pfpi.append(corrected_csv)
+
             pfpi.index.rename('PfPIId', inplace=True)
             if plus:  # To include more information for 'PerformanceEventCode'
                 performance_event_code = get_performance_event_code()
@@ -608,19 +626,20 @@ def get_stanox_section(update=False, save_original_as=None):
 
 
 # Get TrustIncident
-def get_trust_incident(start_year=2006, end_year=None, update=False, save_original_as=None):
+def get_trust_incident(start_year=2006, end_year=None, update=False, save_original_as=None, use_corrected_csv=True):
     """
     :param start_year: [int; None]
     :param end_year: [int; None]
     :param update: [bool]
     :param save_original_as: [str; None]
+    :param use_corrected_csv: [bool]
     :return: [pandas.DataFrame; None]
     """
     table_name = 'TrustIncident'
-    path_to_pickle = cdd_metex_db_tables(
-        table_name + "{}.pickle".format(
+    suffix_ext = "{}.pickle".format(
             "{}".format("_y{}".format(start_year) if start_year else "_up_to") +
-            "{}".format("_y{}".format(2018 if not end_year or end_year >= 2019 else end_year))))
+            "{}".format("_y{}".format(2018 if not end_year or end_year >= 2019 else end_year)))
+    path_to_pickle = cdd_metex_db_tables(table_name + suffix_ext)
     if os.path.isfile(path_to_pickle) and not update:
         trust_incident = load_pickle(path_to_pickle)
     else:
@@ -628,6 +647,15 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
             # Read 'TrustIncident' table
             trust_incident = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                               save_as=save_original_as, update=update)
+            if use_corrected_csv:
+                zip_file = zipfile.ZipFile(cdd_metex_db("corrected", table_name + ".zip"))
+                corrected_csv = pd.concat([pd.read_csv(zip_file.open(f), index_col='Id') for f in zip_file.infolist()])
+                zip_file.close()
+                # Remove raw data >= '2018-01-01', pd.to_datetime('2018-01-01')
+                trust_incident.drop(trust_incident[trust_incident.StartDate >= '2018-01-01'].index, inplace=True)
+                # Append corrected data
+                trust_incident = trust_incident.append(corrected_csv)
+
             trust_incident.index.name = 'TrustIncidentId'
             trust_incident.rename(columns={'Imdm': 'IMDM', 'Year': 'FinancialYear'}, inplace=True)
             # Extract a subset of data, in which the StartDateTime is between 'start_year' and 'end_year'?
@@ -792,7 +820,7 @@ def get_weather_cell(update=False, save_original_as=None,
         print("Done.")
 
         if save_map_as:
-            save_fig(cdd_metex_fig_db(table_name + save_map_as), dpi=dpi)
+            save_fig(cdd_metex_db_fig(table_name + save_map_as), dpi=dpi)
 
     return weather_cell_map
 
@@ -1158,7 +1186,7 @@ def merge_schedule8_data(weather_attributed=False, save_as=".pickle"):
 
 # Get the TRUST data
 def view_schedule8_details(route_name=None, weather_category=None, reset_index=False, weather_attributed=False,
-                           update=False, pickle_it=True):
+                           update=False, pickle_it=False):
     """
     :param route_name: [str; None]
     :param weather_category: [str; None]
