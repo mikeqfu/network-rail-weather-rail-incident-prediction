@@ -23,7 +23,7 @@ from pyrcs.utils import nr_mileage_num_to_str, yards_to_nr_mileage
 from delay_attr_glossary import get_incident_reason_metadata, get_performance_event_code
 from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
 from mssql_utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
-from utils import cdd_metex, cdd_rc
+from uni_utils import cdd_metex, cdd_rc
 
 pd_preferences()
 
@@ -61,15 +61,6 @@ def cdd_metex_db_views(*sub_dir):
 # Change directory to "METEX\\Figures"
 def cdd_metex_db_fig(*sub_dir):
     path = cdd_metex_db("Figures")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-# Change directory to "Publications\\...\\Figures"
-def cdd_metex_pub_fig(pid, *sub_dir):
-    path = cd("Publications", "{} - ".format(pid), "Figures")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -719,8 +710,8 @@ def get_weather_cell(update=False, save_original_as=None,
 
             # Get IMDM Weather cell map
             imdm_weather_cell_map = get_imdm_weather_cell_map().reset_index()[['WeatherCellId', 'IMDM', 'Route']]
-            imdm_weather_cell_map = imdm_weather_cell_map.groupby('WeatherCellId').agg(
-                lambda x: x if len(list(set(x))) == 1 else list(set(x)))
+            imdm_weather_cell_map = imdm_weather_cell_map.groupby('WeatherCellId').agg(list)
+            imdm_weather_cell_map = imdm_weather_cell_map.applymap(lambda x: x[0] if len(x) == 1 else x)
 
             # Merge the acquired data set
             weather_cell_map = weather_cell_map.join(imdm_weather_cell_map)
@@ -942,19 +933,23 @@ def make_filename(base_name, route_name, weather_category, *extra_suffixes, sep=
 # Subset the required data given 'route' and 'Weather'
 def get_subset(data, route_name=None, weather_category=None, reset_index=False):
     if data is not None:
-        assert 'Route' in data.columns and 'WeatherCategory' in data.columns
-        route_name = fuzzywuzzy.process.extractOne(route_name, list(set(data.Route)), scorer=fuzzywuzzy.fuzz.ratio)[0] \
-            if route_name else None
-        weather_category = fuzzywuzzy.process.extractOne(weather_category, list(set(data.WeatherCategory)),
-                                                         scorer=fuzzywuzzy.fuzz.ratio)[0] \
-            if weather_category else None
+        dat = data.copy(deep=True)
+        dat.Route = data.Route.astype(str)
+        if 'Route' in data.columns:
+            route_name = fuzzywuzzy.process.extractOne(
+                route_name, list(get_route().Route) + list(get_route().RouteAlias), scorer=fuzzywuzzy.fuzz.ratio)[0] \
+                if route_name else None
+        if 'WeatherCategory' in data.columns:
+            weather_category = fuzzywuzzy.process.extractOne(
+                weather_category, list(set(dat.WeatherCategory)), scorer=fuzzywuzzy.fuzz.ratio)[0] \
+                if weather_category else None
         # Select data for a specific route and Weather category
         if route_name and weather_category:
-            data_subset = data[(data.Route == route_name) & (data.WeatherCategory == weather_category)]
+            data_subset = data[dat.Route.str.contains(route_name) & (dat.WeatherCategory == weather_category)]
         elif route_name and not weather_category:
-            data_subset = data[data.Route == route_name]
+            data_subset = data[dat.Route.str.contains(route_name)]
         elif not route_name and weather_category:
-            data_subset = data[data.WeatherCategory == weather_category]
+            data_subset = data[dat.WeatherCategory == weather_category]
         else:
             data_subset = data
         if reset_index:
@@ -1537,3 +1532,25 @@ def view_schedule8_cost_by_weather_category(route_name=None, weather_category=No
             print("Failed to retrieve \"{}\". {}.".format(os.path.splitext(filename)[0], e))
             data = None
     return data
+
+# get_imdm(as_dict=False, update=True, save_original_as=None)
+# get_imdm_alias(as_dict=False, update=True, save_original_as=None)
+# get_imdm_weather_cell_map(route_info=True, grouped=False, update=True, save_original_as=None)
+# get_incident_reason_info(plus=True, update=True, save_original_as=None)
+# get_weather_codes(as_dict=False, update=True, save_original_as=None)
+# get_incident_record(update=True, save_original_as=None, use_corrected_csv=True)
+# get_location(update=True, save_original_as=None)
+# get_pfpi(plus=True, update=True, save_original_as=None, use_corrected_csv=True)
+# get_route(as_dict=False, update=True, save_original_as=None)
+# get_stanox_location(use_nr_mileage_format=True, update=True, save_original_as=None)
+# get_stanox_section(update=True, save_original_as=None)
+# get_trust_incident(start_year=2006, end_year=None, update=True, save_original_as=None, use_corrected_csv=True)
+# get_weather()
+# get_weather_cell(update=True, save_original_as=None, show_map=False, projection='tmerc', save_map_as=".png", dpi=600)
+# get_weather_cell_map_boundary(route=None, adjustment=(0.285, 0.255))
+# get_track(update=True, save_original_as=None)
+# get_track_summary(update=True, save_original_as=None)
+
+# view_schedule8_cost_by_location(route_name=None, weather_category=None, update=True, pickle_it=True)
+# view_schedule8_cost_by_datetime_location(route_name=None, weather_category=None, update=True, pickle_it=True)
+# view_schedule8_cost_by_datetime_location_reason(route_name=None, weather_category=None, update=True, pickle_it=True)
