@@ -37,16 +37,16 @@ def read_thresholds_from_html():
     thr.columns = hdr
     # Drop the first row, which has been used as the column names
     thr.drop(0, inplace=True)
-    # clas: classification
+    # cls: classification
     assert isinstance(thr, pd.DataFrame)
-    clas = thr[pd.isnull(thr).any(axis=1)]['Classification']
-    clas_list = []
-    for i in range(len(clas)):
+    cls = thr[pd.isnull(thr).any(axis=1)]['Classification']
+    cls_list = []
+    for i in range(len(cls)):
         # rpt: repeat
-        to_rpt = (clas.index[i + 1] - clas.index[i] - 1) if i + 1 < len(clas) else (thr.index[-1] - clas.index[i])
-        clas_list += [clas.iloc[i]] * to_rpt
-    thr.drop(clas.index, inplace=True)
-    thr.index = clas_list
+        to_rpt = (cls.index[i + 1] - cls.index[i] - 1) if i + 1 < len(cls) else (thr.index[-1] - cls.index[i])
+        cls_list += [cls.iloc[i]] * to_rpt
+    thr.drop(cls.index, inplace=True)
+    thr.index = cls_list
     thr.index.names = ['Classification']
     thr.rename(columns={'Classification': 'Description'}, inplace=True)
 
@@ -54,9 +54,9 @@ def read_thresholds_from_html():
     variables = ['T', 'x', 'r', 'w']
     units = ['celsius degree', 'cm', 'mm', 'mph']
     variables_list, units_list = [], []
-    for i in range(len(clas)):
-        variables_temp = [variables[i]] * thr.index.tolist().count(clas.iloc[i])
-        units_temp = [units[i]] * thr.index.tolist().count(clas.iloc[i])
+    for i in range(len(cls)):
+        variables_temp = [variables[i]] * thr.index.tolist().count(cls.iloc[i])
+        units_temp = [units[i]] * thr.index.tolist().count(cls.iloc[i])
         variables_list += variables_temp
         units_list += units_temp
     thr.insert(1, 'VariableName', variables_list)
