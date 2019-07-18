@@ -254,7 +254,7 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
     :param data_dir: [str or None(default)]
     :return: [pandas.DataFrame] the queried data as a DataFrame
     """
-    if col_names:
+    if col_names is not None:
         assert isinstance(col_names, collections.abc.Iterable) and all(isinstance(x, str) for x in col_names)
     if save_as:
         assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
@@ -327,7 +327,7 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     :param data_dir: [NoneType] or [str]
     """
     assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
-    if col_names:
+    if col_names is not None:
         assert isinstance(col_names, collections.abc.Iterable) and all(isinstance(x, str) for x in col_names)
     if data_dir:
         assert isinstance(save_as, str)
