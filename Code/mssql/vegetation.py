@@ -9,8 +9,8 @@ from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.store import load_pickle, save, save_pickle
 from pyhelpers.text import find_matched_str
 
-from mssql_utils import establish_mssql_connection, get_table_primary_keys
-from uni_utils import cdd_vegetation, reset_double_indexes
+from mssql.utils import establish_mssql_connection, get_table_primary_keys
+from utils import cdd_vegetation, reset_double_indexes
 
 # ====================================================================================================================
 """ Change directories """
