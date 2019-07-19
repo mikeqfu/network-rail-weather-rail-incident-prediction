@@ -27,6 +27,35 @@ settings.np_preferences()
 settings.pd_preferences()
 
 # ====================================================================================================================
+""" Change directory """
+
+
+def cd_prototype_heat(*sub_dir):
+    path = intermediate.utils.cdd_intermediate("heat")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+def cdd_prototype_heat(*sub_dir):
+    path = cd_prototype_heat("data")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# Change directory to "Models\\intermediate\\heat\\x" and sub-directories
+def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
+    path = cd_prototype_heat("{}".format(trial_id))
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# ====================================================================================================================
 """ Integrate data of Incidents and Weather """
 
 
@@ -39,7 +68,7 @@ def get_incidents_with_weather(route_name=None, weather_category='Heat', season=
     pickle_filename = spreadsheet.incidents.make_filename(
         filename, route_name, weather_category, "-".join([season] if isinstance(season, str) else season),
         "trial" if trial else "full")
-    path_to_pickle = intermediate.utils.cd_intermediate_dat(pickle_filename)
+    path_to_pickle = cdd_prototype_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         iw_data = load_pickle(path_to_pickle)
@@ -535,10 +564,10 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
 
     plt.tight_layout()
 
-    path_to_file_weather = intermediate.utils.cd_intermediate_dat(0, "Variables" + save_as)
-    plt.savefig(path_to_file_weather, dpi=dpi)
+    path_to_fig = cd_prototype_heat("figures", "Variables" + save_as)
+    plt.savefig(path_to_fig, dpi=dpi)
     if save_as == ".svg":
-        save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
+        save_svg_as_emf(path_to_fig, path_to_fig.replace(save_as, ".emf"))
 
 
 #
@@ -669,7 +698,7 @@ def logistic_regression_model(trial_id=0,
             plt.legend(loc='lower right', fontsize=14)
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
-            save_fig(intermediate.utils.cd_intermediate_dat(trial_id, "ROC" + save_as), dpi=dpi)
+            save_fig(cdd_prototype_heat_mod(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -690,8 +719,7 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            path_to_fig = intermediate.utils.cd_intermediate_dat(trial_id, "Predicted-likelihood" + save_as)
-            save_fig(path_to_fig, dpi=dpi)
+            save_fig(cdd_prototype_heat_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)

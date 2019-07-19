@@ -14,7 +14,7 @@ import pandas as pd
 import pyproj
 import shapely.geometry
 import shapely.ops
-from pyhelpers.dir import cdd
+from pyhelpers.dir import cd, cdd
 from pyhelpers.geom import wgs84_to_osgb36
 
 import mssqlserver.metex
@@ -25,7 +25,7 @@ import mssqlserver.metex
 
 # Change directory to "Modelling\\intermediate\\..." and sub-directories
 def cdd_intermediate(*sub_dir):
-    path = cdd("Modelling\\intermediate")
+    path = cdd("Models\\intermediate")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -35,6 +35,15 @@ def cdd_intermediate(*sub_dir):
 # Change directory to "Modelling\\intermediate\\dat\\..." and sub-directories
 def cd_intermediate_dat(*sub_dir):
     path = cdd_intermediate("dat")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# Change directory to "5 - Publications\\...\\Figures"
+def cd_prototype_fig_pub(*sub_dir):
+    path = cd("Paperwork\\5 - Publications\\2 - Intermediate\\0 - Ingredients", "1 - Figures")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)

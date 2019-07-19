@@ -8,11 +8,18 @@ from utils import cd, cdd
 """ Change directories """
 
 
-# Change directory to "Data\\modelling" and sub-directories
-def cd_prototype_dat(*directories):
-    path = cdd("Modelling", "dat")
-    for directory in directories:
-        path = os.path.join(path, directory)
+def cdd_prototype(*sub_dir):
+    path = cdd("Models\\prototype")
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# Change directory to "Data\\Model" and sub-directories
+def cd_prototype_dat(*sub_dir):
+    path = cdd_prototype("dat")
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 

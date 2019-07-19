@@ -20,9 +20,25 @@ import settings
 settings.pd_preferences()
 
 
-# Change directory to "Modelling\\intermediate\\heat\\x" and sub-directories
-def cd_intermediate_heat(trial_id=0, *sub_dir):
-    path = intermediate.utils.cdd_intermediate("heat\\{}".format(trial_id))
+def cd_prototype_heat(*sub_dir):
+    path = intermediate.utils.cdd_intermediate("heat")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+def cdd_prototype_heat(*sub_dir):
+    path = cd_prototype_heat("data")
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# Change directory to "Models\\intermediate\\heat\\x" and sub-directories
+def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
+    path = cd_prototype_heat("{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -302,7 +318,7 @@ def fetch_incidents_with_weather(trial_id=0, route_name=None, weather_category='
     pickle_filename = mssqlserver.metex.make_filename(
         "data", route_name, weather_category, "regional" if on_region else "",
         "-".join([on_season] if isinstance(on_season, str) else on_season), "trial" if test_only else "", sep="-")
-    path_to_pickle = intermediate.utils.cdd_intermediate("heat", "{}".format(trial_id), pickle_filename)
+    path_to_pickle = cdd_prototype_heat_mod(trial_id, pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         incidents_and_weather = load_pickle(path_to_pickle)
     else:
@@ -431,9 +447,8 @@ def describe_explanatory_variables(trial_id, regional, train_set, save_as=".tif"
     plt.tight_layout()
 
     if save_as:
-        path_to_file_weather = intermediate.utils.cdd_intermediate("Heat", "{}".format(trial_id),
-                                                                   "Variables" + (
-                                                                       "-regional" if regional else "") + save_as)
+        path_to_file_weather = cdd_prototype_heat_mod("{}".format(trial_id),
+                                                      "Variables" + ("-regional" if regional else "") + save_as)
         save_fig(path_to_file_weather, dpi=dpi)
         if save_as == ".svg":
             save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -528,9 +543,8 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
                 plt.tight_layout()
                 if save_plot:
-                    save_fig(intermediate.utils.cdd_intermediate("Heat", "{}".format(trial_id),
-                                                                 "ROC" + ("-regional" if regional else "") + save_as),
-                             dpi=dpi)
+                    save_fig(cdd_prototype_heat_mod("{}".format(trial_id),
+                                                    "ROC" + ("-regional" if regional else "") + save_as), dpi=dpi)
             return optimal_thr
 
         optimal_threshold = compute_roc(show=plot_roc, save_plot=save_as)
@@ -591,9 +605,8 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 plt.yticks(fontsize=13)
                 plt.tight_layout()
                 if save_plot:
-                    path_to_fig = intermediate.utils.cdd_intermediate(
-                        "Heat", "{}".format(trial_id),
-                        "Predicted-likelihood" + ("-regional" if regional else "") + save_as)
+                    path_to_fig = cdd_prototype_heat_mod(
+                        "{}".format(trial_id), "Predicted-likelihood" + ("-regional" if regional else "") + save_as)
                     save_fig(path_to_fig, dpi=dpi)
 
             return accuracy, precision, recall
@@ -635,7 +648,7 @@ data_11, train_set_11, test_set_11, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 # Country-wide
 data_12, train_12, test_set_12, _, _, _, _, _ = \
     logistic_regression_model(trial_id=1, update=False, regional=False, reason=['IR'],
@@ -643,7 +656,7 @@ data_12, train_12, test_set_12, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 """ 'XH' - Severe heat affecting infrastructure the responsibility of Network Rail (excl. Heat related speed 
 restrictions) ==================================================================================================== """
@@ -655,7 +668,7 @@ data_21, train_21, test_set_21, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 # Country-wide
 data_22, train_22, test_set_22, _, _, _, _, _ = \
     logistic_regression_model(trial_id=2, update=False, regional=False, reason=['XH'],
@@ -663,7 +676,7 @@ data_22, train_22, test_set_22, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 """ 'IB' - Points failure ======================================================================================== """
 # Regional
@@ -674,7 +687,7 @@ data_31, train_31, test_set_31, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 # Country-wide
 data_32, train_32, test_set_32, _, _, _, _, _ = \
     logistic_regression_model(trial_id=3, update=False, regional=False,
@@ -683,7 +696,7 @@ data_32, train_32, test_set_32, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 """ 'IR', 'XH', 'IB' ============================================================================================= """
 # Regional
@@ -693,7 +706,7 @@ data_41, train_41, test_set_41, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 # Country-wide
 data_42, train_42, test_set_42, _, _, _, _, _ = \
@@ -702,7 +715,7 @@ data_42, train_42, test_set_42, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 """ 'JH' - Critical Rail Temperature speeds, (other than buckled rails) ========================================== """
 # Regional
@@ -713,7 +726,7 @@ data_51, train_51, test_set_51, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as="", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 # Country-wide
 data_52, train_52, test_set_52, _, _, _, _, _ = \
     logistic_regression_model(trial_id=5, update=False, regional=False, reason=['JH'],
@@ -721,7 +734,7 @@ data_52, train_52, test_set_52, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as="", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 
 """ 'IR', 'XH', 'IB', 'JH' ======================================================================================= """
 # Regional
@@ -731,7 +744,7 @@ data_61, train_61, test_set_61, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)
 # Country-wide
 data_62, train_62, test_set_62, _, _, _, _, _ = \
     logistic_regression_model(trial_id=6, update=False, regional=False,
@@ -740,4 +753,4 @@ data_62, train_62, test_set_62, _, _, _, _, _ = \
                               describe_var=True,
                               add_const=True, seed=0, model='logit',
                               plot_roc=True, plot_pred_likelihood=True,
-                              save_as=".png", dpi=1200, verbose=True)
+                              save_as=".tif", dpi=None, verbose=True)

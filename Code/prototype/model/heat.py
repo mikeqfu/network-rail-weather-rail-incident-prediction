@@ -30,12 +30,20 @@ plt.rc('font', family='Times New Roman')
 """ Change directory """
 
 
-# Change directory to "modelling\\prototype-Heat\\Trial_" and sub-directories
-def cdd_mod_heat_proto(trial_id=0, *directories):
-    path = cdd("modelling", "prototype-Heat", "Trial_{}".format(trial_id))
+def cdd_prototype_heat(*sub_dir):
+    path = cdd("Models\\prototype\\heat", "data")
     os.makedirs(path, exist_ok=True)
-    for directory in directories:
-        path = os.path.join(path, directory)
+    for x in sub_dir:
+        path = os.path.join(path, x)
+    return path
+
+
+# Change directory to "Model\\prototype-Heat\\Trial_" and sub-directories
+def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
+    path = cdd("Models\\prototype\\heat", "{}".format(trial_id))
+    os.makedirs(path, exist_ok=True)
+    for x in sub_dir:
+        path = os.path.join(path, x)
     return path
 
 
@@ -150,7 +158,7 @@ def get_incident_location_weather(route=None, weather=None, ip_start_hrs=-24, ni
 
     filename = mssqlserver.metex.make_filename("incident_location_weather", route, weather, ip_start_hrs, nip_ip_gap,
                                                nip_start_hrs)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_heat(filename)
 
     if os.path.isfile(path_to_file) and not update:
         iw_data = load_pickle(path_to_file)
@@ -393,7 +401,7 @@ def temperature_deviation(nip_ip_gap=-14, add_err_bar=True, save_as=".svg", dpi=
     plt.ylabel('Temperature deviation (°C)', fontsize=14)
     plt.tight_layout()
 
-    plt.savefig(cdd_mod_heat_proto(0, "Temp deviation" + save_as), dpi=dpi)
+    plt.savefig(cdd_prototype_heat_mod(0, "Temp deviation" + save_as), dpi=dpi)
 
 
 # ====================================================================================================================
@@ -407,7 +415,7 @@ def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat'
                                                   update=False):
     filename = mssqlserver.metex.make_filename("mod_data", route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                                shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_heat(filename)
 
     if os.path.isfile(path_to_file) and not update:
         m_data = load_pickle(path_to_file)
@@ -436,7 +444,7 @@ def get_incident_data_with_weather_and_vegetation(route='ANGLIA', weather='Heat'
 
 
 # ====================================================================================================================
-""" modelling trials """
+""" Model trials """
 
 
 # Specify the explanatory variables considered in this prototype model
@@ -644,7 +652,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
 
     plt.tight_layout()
 
-    path_to_file_weather = cdd_mod_heat_proto(0, "Variables" + save_as)
+    path_to_file_weather = cdd_prototype_heat_mod(0, "Variables" + save_as)
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -700,7 +708,7 @@ def logistic_regression_model(trial_id=0,
     XX              MISC OBS              Msc items on line (incl trees) due to effects of Weather responsibility of RT
 
     """
-    # Get the m_data for modelling
+    # Get the m_data for Model
     m_data = get_incident_data_with_weather_and_vegetation(route, weather, ip_start_hrs, nip_ip_gap, nip_start_hrs,
                                                            shift_yards_same_elr, shift_yards_diff_elr,
                                                            hazard_pctl)
@@ -781,7 +789,7 @@ def logistic_regression_model(trial_id=0,
             plt.legend(loc='lower right', fontsize=14)
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
-            save_fig(cdd_mod_heat_proto(trial_id, "ROC" + save_as), dpi=dpi)
+            save_fig(cdd_prototype_heat_mod(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -802,7 +810,7 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            save_fig(cdd_mod_heat_proto(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            save_fig(cdd_prototype_heat_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)

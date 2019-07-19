@@ -33,18 +33,18 @@ settings.pd_preferences(reset=False)
 """ Change directory """
 
 
-# Change directory to "Modelling\\prototype\\wind\\" and sub-directories
-def cd_prototype_wind(trial_id=0, *sub_dir):
-    assert isinstance(trial_id, int)
-    path = cdd("Modelling\\prototype\\wind", "{}".format(trial_id))
+def cdd_prototype_wind(*sub_dir):
+    path = cdd("Models\\prototype\\wind", "data")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
     return path
 
 
-def cd_prototype_wind_dat(*sub_dir):
-    path = cd_prototype_wind("dat")
+# Change directory to "Model\\prototype\\wind\\" and sub-directories
+def cdd_prototype_wind_mod(trial_id=0, *sub_dir):
+    assert isinstance(trial_id, int)
+    path = cdd("Models\\prototype\\wind", "{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -132,7 +132,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 
     pickle_filename = mssqlserver.metex.make_filename("incident_location_weather", route_name, weather_category,
                                                       ip_start_hrs, ip_end_hrs, nip_start_hrs, save_as=".pickle")
-    path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_prototype_wind(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         incident_location_weather = load_pickle(path_to_pickle)
@@ -291,7 +291,7 @@ def get_furlongs_info_from_veg_db(location_data_only=False, update=False):
     :return:
     """
     filename = "furlongs_veg_db"
-    path_to_file = prototype.utils.cd_prototype_dat(filename + ".pickle")
+    path_to_file = cdd_prototype_wind(filename + ".pickle")
 
     if location_data_only:
         path_to_file = path_to_file.replace(filename, filename + "_loc_only")
@@ -436,7 +436,7 @@ def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yard
     """
     filename = mssqlserver.metex.make_filename("incident_location_furlongs_same_ELRs", route, weather,
                                                shift_yards_same_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incident_location_furlongs_same_elr = load_pickle(path_to_file)
@@ -463,7 +463,7 @@ def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yard
             adjusted_mileages_data = pd.DataFrame(list(adjusted_mileages), incident_locations_same_elr.index, colnames)
 
             save_pickle(adjusted_mileages_data,
-                        prototype.utils.cd_prototype_dat("adjusted_mileages_same_ELRs_{}.pickle".format(route)))
+                        cdd_prototype_wind("adjusted_mileages_same_ELRs_{}.pickle".format(route)))
 
             incident_locations_same_elr.drop(['start_mileage', 'end_mileage'], axis=1, inplace=True)
             incident_location_furlongs_same_elr = incident_locations_same_elr.join(
@@ -481,7 +481,7 @@ def get_incident_location_furlongs_same_elr(route=None, weather=None, shift_yard
 # Get furlongs data by the same ELRs
 def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_elr=220, update=False):
     filename = mssqlserver.metex.make_filename("incident_furlongs_same_elr", route, weather, shift_yards_same_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incident_furlongs_same_elr = load_pickle(path_to_file)
@@ -511,7 +511,7 @@ def get_incident_furlongs_same_elr(route=None, weather=None, shift_yards_same_el
 # Get information of connecting points for different ELRs
 def get_connecting_nodes(route=None, update=False):
     filename = mssqlserver.metex.make_filename("connecting_nodes_between_ELRs", route, weather_category=None)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         connecting_nodes = load_pickle(path_to_file)
@@ -554,7 +554,7 @@ def get_connecting_nodes(route=None, update=False):
 def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
     filename = mssqlserver.metex.make_filename("incident_location_furlongs_diff_ELRs", route, weather,
                                                shift_yards_diff_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incident_location_furlongs_diff_elr = load_pickle(path_to_file)
@@ -633,7 +633,7 @@ def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yard
                 adjusted_mileages_data.StartELR_FurlongIDs + adjusted_mileages_data.EndELR_FurlongIDs
 
             # Save the adjusted_mileages_data
-            save_pickle(adjusted_mileages_data, prototype.utils.cd_prototype_dat("adjusted_mileages_diff_ELRs.pickle"))
+            save_pickle(adjusted_mileages_data, cdd_prototype_wind("adjusted_mileages_diff_ELRs.pickle"))
 
             incident_locations_diff_elr.drop(
                 str_conn_colnames + num_conn_colnames + ['start_mileage', 'end_mileage'], axis=1, inplace=True)
@@ -661,7 +661,7 @@ def get_incident_location_furlongs_diff_elr(route=None, weather=None, shift_yard
 # Get furlongs data by different ELRS
 def get_incident_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_elr=220, update=False):
     filename = mssqlserver.metex.make_filename("incident_furlongs_diff_ELRs", route, weather, shift_yards_diff_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incid_furlongs_diff_elr = load_pickle(path_to_file)
@@ -695,7 +695,7 @@ def get_incident_furlongs_diff_elr(route=None, weather=None, shift_yards_diff_el
 def get_incident_location_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
     filename = mssqlserver.metex.make_filename("incident_location_furlongs", route, None, shift_yards_same_elr,
                                                shift_yards_diff_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incident_location_furlongs = load_pickle(path_to_file)
@@ -724,7 +724,7 @@ def get_incident_location_furlongs(route=None, shift_yards_same_elr=220, shift_y
 def get_incident_furlongs(route=None, shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False):
     filename = mssqlserver.metex.make_filename("incident_furlongs", route, None, shift_yards_same_elr,
                                                shift_yards_diff_elr)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         incident_furlongs = load_pickle(path_to_file)
@@ -790,10 +790,10 @@ def get_incident_location_vegetation(route_name='Anglia', shift_yards_same_elr=2
     Note that the "CoverPercent..." in furlong_vegetation_data has been
     amended when furlong_data was read. Check the function get_furlong_data().
     """
-    filename = mssqlserver.metex.make_filename("incident_location_vegetation", route_name, None,
-                                               shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl,
-                                               save_as=".pickle")
-    path_to_pickle = prototype.utils.cd_prototype_dat(filename)
+    pickle_filename = mssqlserver.metex.make_filename("incident_location_vegetation", route_name, None,
+                                                      shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl,
+                                                      save_as=".pickle")
+    path_to_pickle = cdd_prototype_wind(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         ivdata = load_pickle(path_to_pickle)
@@ -902,7 +902,7 @@ def get_incident_location_vegetation(route_name='Anglia', shift_yards_same_elr=2
             save_pickle(ivdata, path_to_pickle)
 
         except Exception as e:
-            print("Getting '{}' ... failed due to {}.".format(filename, e))
+            print("Getting '{}' ... failed due to {}.".format(pickle_filename, e))
             ivdata = None
 
     return ivdata
@@ -920,7 +920,7 @@ def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_
     filename = mssqlserver.metex.make_filename("mod_data", route_name, weather_category, ip_start_hrs, ip_end_hrs,
                                                nip_start_hrs,
                                                shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_file = prototype.utils.cd_prototype_dat(filename)
+    path_to_file = cdd_prototype_wind(filename)
 
     if os.path.isfile(path_to_file) and not update:
         m_data = load_pickle(path_to_file)
@@ -1319,7 +1319,7 @@ def logistic_regression_model(trial_id=1,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            plt.savefig(cd_prototype_wind(trial_id, "ROC" + save_as), dpi=dpi)
+            plt.savefig(cdd_prototype_wind_mod(trial_id, "ROC" + save_as), dpi=dpi)
             path_to_file_roc = prototype.utils.cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
@@ -1343,7 +1343,7 @@ def logistic_regression_model(trial_id=1,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            plt.savefig(cd_prototype_wind(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            plt.savefig(cdd_prototype_wind_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
             path_to_file_pred = prototype.utils.cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
             plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
             if save_as == ".svg":
@@ -1494,8 +1494,8 @@ def evaluate_prototype_model(season=None):
     trial_summary.sort_values(['PredAcc_Incid', 'PredAcc', 'AIC', 'BIC'], ascending=[False, False, True, True],
                               inplace=True)
 
-    save_pickle(results, prototype.utils.cd_prototype_dat("trial_results.pickle"))
-    save_pickle(trial_summary, prototype.utils.cd_prototype_dat("trial_summary.pickle"))
+    save_pickle(results, cdd_prototype_wind("trial_results.pickle"))
+    save_pickle(trial_summary, cdd_prototype_wind("trial_summary.pickle"))
 
     print("Total elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))
 
@@ -1503,12 +1503,12 @@ def evaluate_prototype_model(season=None):
 
 
 # View data
-def view_trial_data(trial_id=10, route='ANGLIA', weather='Wind',
+def view_trial_data(trial_id=10, route='Anglia', weather='Wind',
                     ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                     shift_yards_same_elr=440, shift_yards_diff_elr=220, hazard_pctl=50):
     filename = mssqlserver.metex.make_filename("data", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                                shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_file = cd_prototype_wind(trial_id, filename)
+    path_to_file = cdd_prototype_wind_mod(trial_id, filename)
     try:
         load_pickle(path_to_file)
     except Exception as e:
@@ -1522,5 +1522,5 @@ def view_trial_data(trial_id=10, route='ANGLIA', weather='Wind',
 
 # View results
 def view_trial_result(trial_id=1):
-    trial_result = load_pickle(prototype.utils.cd_prototype_dat("trial_results.pickle"))
+    trial_result = load_pickle(cdd_prototype_wind_mod(trial_id, "trial_results.pickle"))
     return trial_result[trial_id].summary()
