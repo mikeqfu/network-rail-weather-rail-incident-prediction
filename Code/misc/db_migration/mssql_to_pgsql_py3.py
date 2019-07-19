@@ -4,7 +4,7 @@ import sqlalchemy
 import sqlalchemy.engine.url
 import sqlalchemy_utils
 
-from mssql_utils import read_table_by_name
+from mssql.utils import read_table_by_name
 
 
 #
