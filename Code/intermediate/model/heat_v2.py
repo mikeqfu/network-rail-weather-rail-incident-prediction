@@ -20,7 +20,7 @@ import settings
 settings.pd_preferences()
 
 
-# Change directory to "Modelling\\intermediate\\heat\\trial_" and sub-directories
+# Change directory to "Modelling\\intermediate\\heat\\x" and sub-directories
 def cd_intermediate_heat(trial_id=0, *sub_dir):
     path = intermediate.utils.cdd_intermediate("heat\\{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
