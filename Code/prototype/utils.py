@@ -2,7 +2,7 @@ import os
 
 from pyhelpers.store import save_fig
 
-from uni_utils import cd, cdd
+from utils import cd, cdd
 
 # ====================================================================================================================
 """ Change directories """
