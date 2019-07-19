@@ -13,8 +13,8 @@ from pyhelpers.store import load_json, load_pickle, save_pickle
 from pyrcs.line_data import LineData
 from pyrcs.other_assets import OtherAssets
 
-from delay_attr_glossary import get_incident_reason_metadata
-from loc_code_dict import location_names_regexp_replacement_dict, location_names_replacement_dict
+from misc.delay_attribution_glossary import get_incident_reason_metadata
+from misc.location_name_errata import location_names_regexp_replacement_dict, location_names_replacement_dict
 from utils import cdd_rc, make_filename, subset
 
 
