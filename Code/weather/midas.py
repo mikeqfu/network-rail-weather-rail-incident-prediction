@@ -132,7 +132,7 @@ def make_radtob_pickle_path(data_filename: str, daily: bool, met_stn: bool):
     :return: [str]
     """
     filename_suffix = "-agg" if daily else "", "-met_stn" if met_stn else ""
-    path_to_radtob_pickle = cdd_weather("Radiation", "{}{}.pickle".format(data_filename, *filename_suffix))
+    path_to_radtob_pickle = cdd_weather("MIDAS", "{}{}.pickle".format(data_filename, *filename_suffix))
     return path_to_radtob_pickle
 
 
@@ -145,11 +145,11 @@ def prep_midas_radtob(data_filename, daily=False, met_stn=False):
     try:
         # Headers of the midas_radtob data set
         header_filename = "RO-column-headers.xlsx"
-        path_to_header_file = cdd_weather("Radiation", header_filename)
+        path_to_header_file = cdd_weather("MIDAS", header_filename)
         headers_raw = pd.read_excel(path_to_header_file, header=None)
         headers = [x.strip() for x in headers_raw.iloc[0, :].values]
 
-        path_to_zip = cdd_weather("Radiation", data_filename + ".zip")
+        path_to_zip = cdd_weather("MIDAS", data_filename + ".zip")
         with zipfile.ZipFile(path_to_zip, 'r') as zf:
             filename_list = natsort.natsorted(zf.namelist())
             temp_dat = [parse_midas_radtob(zf.open(f), headers, daily, met_stn=False) for f in filename_list]
