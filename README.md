@@ -13,8 +13,6 @@ The prototype data model is generic and should also be adaptable to other contex
 ---
 
 
-### Relevant outputs
-
 ##### *Journal article*
 
 - **Fu, Q**. and [Easton, J. M.](https://www.birmingham.ac.uk/staff/profiles/eese/easton-john.aspx) (2018), Prediction of weather-related incidents on the rail network: prototype data model for wind-related delays in Great Britain. ASCE-ASME Journal of Risk and Uncertainty in Engineering Systems, Part A: Civil Engineering 4(3): 04018027. [doi:10.1061/AJRUA6.0000975](https://doi.org/10.1061/AJRUA6.0000975). 
@@ -43,3 +41,4 @@ The prototype data model is generic and should also be adaptable to other contex
 
 - **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - Download, read/parse and import/export OSM data extracts. 
 - **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A small tool for collecting railway codes used in GB. 
+- **pyhelpers** [[source code](https://github.com/mikeqfu/pyrcs)] - A small toolkit of some helper functions to facilitate writing Python code.
