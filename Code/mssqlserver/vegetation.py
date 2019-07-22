@@ -818,15 +818,20 @@ get_hazard_tree(set_index=False, update=update)
 """ Get views based on the NR_VEG data """
 
 
-def make_filename(base_name, route_name, *extra_suffixes, save_as=".pickle"):
+def make_filename(base_name, route_name, *extra_suffixes, sep="_", save_as=".pickle"):
     base_name_ = "data" if base_name is None else base_name
-    route_name = "" if route_name is None else "_" + find_matched_str(route_name, get_du_route().Route)
-    filename = base_name_ + route_name + "_".join([str(s) for s in extra_suffixes if s]) + save_as
+    route_name_ = "" if route_name is None else "_" + find_matched_str(route_name, get_du_route().Route)
+    if extra_suffixes:
+        suffix = [str(s) for s in extra_suffixes if s]
+        suffix = sep.join(suffix) if len(suffix) > 1 else sep + suffix[0]
+        filename = base_name_ + route_name_ + suffix + save_as
+    else:
+        filename = base_name_ + route_name_ + save_as
     return filename
 
 
 # View Vegetation data (75247, 45)
-def prep_furlong_vegetation_coverage(route_name=None):
+def prep_vegetation_coverage_per_furlong(route_name=None):
     furlong_data = get_furlong_data()  # (75247, 39)
     furlong_location = get_furlong_location()  # Set 'FurlongID' to be its index (77017, 7)
     cutting_angle_class = get_cutting_angle_class()  # (5, 1)
@@ -841,7 +846,7 @@ def prep_furlong_vegetation_coverage(route_name=None):
              on='CuttingDepth', how='inner', lsuffix='_CuttingAngle', rsuffix='_CuttingDepth')
 
     if route_name is not None:
-        route_name = find_matched_str(route_name, list(make_case_sensitive_route_names_dict().values()))
+        route_name = find_matched_str(route_name, get_du_route().Route)
         furlong_vegetation_coverage = furlong_vegetation_coverage[
             furlong_vegetation_coverage.Route == route_name]
 
@@ -858,19 +863,19 @@ def prep_furlong_vegetation_coverage(route_name=None):
     furlong_vegetation_coverage.sort_values(by='StructuredPlantNumber', inplace=True)
     furlong_vegetation_coverage.index = range(len(furlong_vegetation_coverage))
 
-    path_to_pickle = cdd_veg_db_views(make_filename("furlong_vegetation_coverage", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_coverage_per_furlong", route_name))
     save_pickle(furlong_vegetation_coverage, path_to_pickle)
 
 
-def view_furlong_vegetation_coverage(route_name=None, update=False):
+def view_vegetation_coverage_per_furlong(route_name=None, update=False):
     """
     :param route_name: 
     :param update: 
     :return: 
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("furlong_vegetation_coverage", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_coverage_per_furlong", route_name))
     if not os.path.isfile(path_to_pickle) or update:
-        prep_furlong_vegetation_coverage(route_name)
+        prep_vegetation_coverage_per_furlong(route_name)
     try:
         return load_pickle(path_to_pickle)
     except Exception as e:
@@ -894,7 +899,7 @@ def prep_hazardous_trees(route_name=None):
         drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
 
     if route_name is not None:
-        route_name = find_matched_str(route_name, list(make_case_sensitive_route_names_dict().values()))
+        route_name = find_matched_str(route_name, get_du_route().Route)
         hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == route_name]
 
     # Edit the merged data
@@ -907,7 +912,7 @@ def prep_hazardous_trees(route_name=None):
                                          'Electrified': 'Furlong_Electrified',
                                          'HazardOnly': 'Furlong_HazardOnly'}, inplace=True)
 
-    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees_data", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees", route_name))
     save_pickle(hazardous_trees_data, path_to_pickle)
 
 
@@ -917,7 +922,7 @@ def view_hazardous_trees(route_name=None, update=False):
     :param update: 
     :return: 
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees_data", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees", route_name))
     if not os.path.isfile(path_to_pickle) or update:
         prep_hazardous_trees(route_name)
     try:
@@ -927,7 +932,7 @@ def view_hazardous_trees(route_name=None, update=False):
 
 
 # View Vegetation data as well as hazardous trees information (75247, 58)
-def prep_furlong_vegetation_conditions(route_name=None):
+def prep_vegetation_condition_per_furlong(route_name=None):
     hazardous_trees_data = view_hazardous_trees()  # (22180, 66)
 
     group_cols = ['ELR', 'DU', 'Route', 'Furlong_StartMileage', 'Furlong_EndMileage']
@@ -944,7 +949,7 @@ def prep_furlong_vegetation_conditions(route_name=None):
     furlong_hazardous_trees.columns = ['Hazard' + x.strip('_<lambda_0>') for x in furlong_hazardous_trees.columns]
 
     #
-    furlong_vegetation_coverage = view_furlong_vegetation_coverage()  # (75247, 45)
+    furlong_vegetation_coverage = view_vegetation_coverage_per_furlong()  # (75247, 45)
 
     # Processing ...
     furlong_vegetation_data = furlong_vegetation_coverage.join(
@@ -952,23 +957,23 @@ def prep_furlong_vegetation_conditions(route_name=None):
     furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 58)
 
     if route_name is not None:
-        route_name = find_matched_str(route_name, list(make_case_sensitive_route_names_dict().values()))
+        route_name = find_matched_str(route_name, get_du_route().Route)
         furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == route_name]
         furlong_vegetation_data.index = range(len(furlong_vegetation_data))
 
-    path_to_pickle = cdd_veg_db_views(make_filename("furlong_vegetation_data", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_condition_per_furlong", route_name))
     save_pickle(furlong_vegetation_data, path_to_pickle)
 
 
-def view_furlong_vegetation_conditions(route_name=None, update=False):
+def view_vegetation_condition_per_furlong(route_name=None, update=False):
     """
     :param route_name:
     :param update: 
     :return: 
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("furlong_vegetation_data", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_condition_per_furlong", route_name))
     if not os.path.isfile(path_to_pickle) or update:
-        prep_furlong_vegetation_conditions(route_name)
+        prep_vegetation_condition_per_furlong(route_name)
     try:
         return load_pickle(path_to_pickle)
     except Exception as e:
@@ -976,10 +981,10 @@ def view_furlong_vegetation_conditions(route_name=None, update=False):
 
 
 """
-route = None
+route_name = None
 update = True
 
-view_furlong_vegetation_coverage(route=None, update=update)
-view_hazardous_trees(route=None, update=update)
-view_furlong_vegetation_conditions(route=None, update=update)
+view_vegetation_coverage_per_furlong(route_name, update=update)
+view_hazardous_trees(route_name, update=update)
+view_vegetation_condition_per_furlong(route_name, update=update)
 """
