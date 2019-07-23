@@ -41,4 +41,4 @@ The prototype data model is generic and should also be adaptable to other contex
 
 - **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - Download, read/parse and import/export OSM data extracts. 
 - **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A small tool for collecting railway codes used in GB. 
-- **pyhelpers** [[source code](https://github.com/mikeqfu/pyrcs)] - A small toolkit of some helper functions to facilitate writing Python code.
+- **pyhelpers** [[source code](https://github.com/mikeqfu/pyhelpers)] - A small toolkit of some helper functions to facilitate writing Python code.
