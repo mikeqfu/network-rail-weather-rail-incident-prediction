@@ -1269,7 +1269,8 @@ def view_schedule8_details_pfpi(route_name=None, weather_category=None, update=F
                 save_pickle(data, path_to_pickle)
             return data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by incident location and Weather category
@@ -1308,7 +1309,8 @@ def view_schedule8_costs_by_location(route_name=None, weather_category=None, upd
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by datetime and location
@@ -1354,7 +1356,8 @@ def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by datetime, location and incident reason
@@ -1407,7 +1410,8 @@ def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_ca
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by datetime and Weather category
@@ -1447,7 +1451,8 @@ def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, upd
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by incident reason
@@ -1492,7 +1497,8 @@ def view_schedule8_costs_by_reason(route_name=None, weather_category=None, updat
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename, e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by location and incident reason
@@ -1534,7 +1540,8 @@ def view_schedule8_costs_by_location_reason(route_name=None, weather_category=No
                 save_pickle(extracted_data, path_to_pickle)
             return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename, e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by Weather category
@@ -1571,7 +1578,8 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
                 save_pickle(extracted_data, path_to_pickle)
                 return extracted_data
         except Exception as e:
-            print("Failed to retrieve \"{}.\" {}.".format(filename, e))
+            print("Failed to retrieve \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # ====================================================================================================================
@@ -1626,7 +1634,8 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
             return incident_locations
 
         except Exception as e:
-            print("Failed to fetch \"{}.\" {}.".format(filename.replace("_", " "), e))
+            print("Failed to fetch \"{}.\" {}.".format(
+                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # get_imdm(as_dict=False, update=True, save_original_as=None)
