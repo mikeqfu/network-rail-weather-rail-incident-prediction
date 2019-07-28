@@ -19,7 +19,7 @@ import spreadsheet.incidents
 # Get training and test data sets for Task 1
 def get_task_1_train_test_data(random_state=0, test_size=0.2):
 
-    dat = mssqlserver.metex.view_schedule8_cost_by_datetime_location_reason()
+    dat = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason()
     dat['weather_related'] = dat.WeatherCategory.map(lambda x: 0 if x == '' else 1)
 
     features = ['FinancialYear', 'IncidentDescription', 'IncidentCategoryDescription',
@@ -86,7 +86,7 @@ def get_task_2_train_test_data():
     schedule8_weather_incidents = spreadsheet.incidents.get_schedule8_weather_incidents_02062006_31032014()['Data']
     schedule8_weather_incidents.rename(columns={'Year': 'FinancialYear'}, inplace=True)
 
-    dat = mssqlserver.metex.view_schedule8_cost_by_datetime_location_reason()
+    dat = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason()
     dat.WeatherCategory.fillna('', inplace=True)
 
     features = ['FinancialYear', 'IncidentDescription', 'IncidentCategoryDescription',
