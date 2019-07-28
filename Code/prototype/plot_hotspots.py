@@ -20,8 +20,9 @@ from pyhelpers.geom import get_geometric_midpoint
 from pyhelpers.misc import colour_bar_index, confirmed
 from pyhelpers.store import load_pickle, save, save_pickle, save_svg_as_emf
 
+import mssqlserver.metex
+import mssqlserver.vegetation
 import prototype.utils as proto_utils
-from mssqlserver import metex, vegetation as mssql_veg
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
@@ -215,18 +216,18 @@ def plot_weather_cells(base_map=None, update=False, route_name=None, weather_cel
     print("Plotting the Weather cells ... ", end="")
 
     # Get Weather cell data
-    data = metex.get_weather_cell(update=update)
-    data = metex.get_subset(data, route_name)
+    data = mssqlserver.metex.get_weather_cell(update=update)
+    data = mssqlserver.metex.get_subset(data, route_name)
     # Drop duplicated Weather cell data
     unhashable_cols = ('Polygon_WGS84', 'Polygon_OSGB36', 'IMDM', 'Route')
     data.drop_duplicates(subset=[x for x in list(data.columns) if x not in unhashable_cols], inplace=True)
 
     # Plot the Weather cells one by one
     for i in data.index:
-        ll_x, ll_y = base_map(data.ll_Longitude[i], data.ll_Latitude[i])
-        ul_x, ul_y = base_map(data.ul_Longitude[i], data.ul_Latitude[i])
-        ur_x, ur_y = base_map(data.ur_Longitude[i], data.ur_Latitude[i])
-        lr_x, lr_y = base_map(data.lr_Longitude[i], data.lr_Latitude[i])
+        ll_x, ll_y = base_map(data['ll_Longitude'][i], data['ll_Latitude'][i])
+        ul_x, ul_y = base_map(data['ul_Longitude'][i], data['ul_Latitude'][i])
+        ur_x, ur_y = base_map(data['ur_Longitude'][i], data['ur_Latitude'][i])
+        lr_x, lr_y = base_map(data['lr_Longitude'][i], data['lr_Latitude'][i])
         xy = zip([ll_x, ul_x, ur_x, lr_x], [ll_y, ul_y, ur_y, lr_y])
         p = matplotlib.patches.Polygon(list(xy), fc=weather_cell_colour, ec='#4b4747', zorder=2)
         plt.gca().add_patch(p)
@@ -327,7 +328,7 @@ def plot_hazardous_trees(base_map=None, route_name=None, hazardous_tree_colour='
 
     print("Plotting the hazardous trees ... ", end="")
 
-    hazardous_trees = mssql_veg.get_hazardous_trees(route_name)
+    hazardous_trees = mssqlserver.vegetation.view_hazardous_trees(route_name)
 
     map_points = [shapely.geometry.Point(base_map(long, lat))
                   for long, lat in zip(hazardous_trees.Longitude, hazardous_trees.Latitude)]
@@ -431,13 +432,13 @@ def get_schedule8_incident_hotspots(route_name=None, weather_category=None, sort
     :param update: [bool]
     :return:
     """
-    path_to_file = metex.cdd_metex_db_views("Schedule8_incidents_hotspots.pickle")
+    path_to_file = mssqlserver.metex.cdd_metex_db_views("Schedule8_incidents_hotspots.pickle")
 
     if os.path.isfile(path_to_file) and not update:
         hotspots_data = load_pickle(path_to_file)
     else:
         # Get TRUST (by incident location, i.e. by STANOX section)
-        schedule8_costs_by_location = metex.view_schedule8_cost_by_location()
+        schedule8_costs_by_location = mssqlserver.metex.view_schedule8_costs_by_location()
         schedule8_costs_by_location['StartPoint'] = [
             shapely.geometry.Point(long, lat) for long, lat in
             zip(schedule8_costs_by_location.StartLongitude, schedule8_costs_by_location.StartLatitude)]
@@ -473,7 +474,7 @@ def get_schedule8_incident_hotspots(route_name=None, weather_category=None, sort
     if sort_by:
         hotspots_data.sort_values(sort_by, ascending=False, inplace=True)
 
-    hotspots_data = metex.get_subset(hotspots_data, route_name, weather_category)
+    hotspots_data = mssqlserver.metex.get_subset(hotspots_data, route_name, weather_category)
     hotspots_data.index = range(len(hotspots_data))
 
     return hotspots_data
@@ -489,13 +490,13 @@ def hotspots_annual_delays(route_name='Anglia', weather_category='Wind', update=
                            show_metex_weather_cells=False, show_osm_landuse_forest=False, show_nr_hazardous_trees=False,
                            save_as=".tif", dpi=None):
     # Get data
-    path_to_pickle = metex.cdd_metex_db_views("hotspots_annual_delays.pickle")
+    path_to_pickle = mssqlserver.metex.cdd_metex_db_views("hotspots_annual_delays.pickle")
     try:
         hotspots_data = load_pickle(path_to_pickle)
-        hotspots_data = metex.get_subset(hotspots_data, route_name, weather_category)
+        hotspots_data = mssqlserver.metex.get_subset(hotspots_data, route_name, weather_category)
     except FileNotFoundError:
-        schedule8_data = metex.view_schedule8_cost_by_datetime_location(update=update)
-        schedule8_data = metex.get_subset(schedule8_data, route_name, weather_category)
+        schedule8_data = mssqlserver.metex.view_schedule8_costs_by_datetime_location(update=update)
+        schedule8_data = mssqlserver.metex.get_subset(schedule8_data, route_name, weather_category)
         group_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                           'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data = schedule8_data.groupby(group_features). \
