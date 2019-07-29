@@ -3,7 +3,6 @@
 import functools
 import os
 
-import fuzzywuzzy.process
 import geopandas as gpd
 import geopy.distance
 import matplotlib.font_manager
@@ -16,6 +15,7 @@ import shapely.geometry
 import shapely.ops
 from pyhelpers.dir import cd, cdd
 from pyhelpers.geom import wgs84_to_osgb36
+from pyhelpers.text import find_similar_str
 
 import mssqlserver.metex
 
@@ -51,14 +51,7 @@ def cd_prototype_fig_pub(*sub_dir):
 
 
 # ====================================================================================================================
-
-
-def find_tracks(incidents_data):
-    # data = incidents_data.copy()
-    # start_elr, end_elr = data.StartELR.iloc[0], data.EndELR.iloc[0]
-    # start_mileage, end_mileage = data.StartMileage.iloc[0], data.EndMileage.iloc[0]
-    track_data = mssqlserver.metex.get_track()
-    return track_data
+""" """
 
 
 # Create shapely.points for StartLocations and EndLocations
@@ -154,8 +147,10 @@ def illustrate_buffer_circle(midpoint, incident_start, incident_end, whisker_km=
         polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#D5EAFF', ec='#4b4747', alpha=0.5)
         plt.gca().add_patch(polygons)
     ax.plot([], 's', label="Weather cell", ms=16, color='#D5EAFF', markeredgecolor='#4b4747')
-    x, y = buffer_circle.exterior.xy
-    ax.plot(x, y)
+
+    x_, y_ = buffer_circle.exterior.xy
+    ax.plot(x_, y_)
+
     sx, sy, ex, ey = incident_start.xy + incident_end.xy
     if incident_start == incident_end:
         ax.plot(sx, sy, 'b', marker='o', markersize=10, linestyle='None', label='Incident location')
@@ -174,56 +169,35 @@ def illustrate_buffer_circle(midpoint, incident_start, incident_end, whisker_km=
 # ====================================================================================================================
 
 
-# Get data for specified season(s)
-def get_data_by_season(incident_data, season='summer'):
+def get_data_by_season(mod_data, in_seasons, incident_datetime_col: str) -> pd.DataFrame:
     """
-    :param incident_data: [pandas.DataFrame]
-    :param season: [str] 'spring', 'summer', 'autumn', 'winter'; if None, returns data of all seasons
+    :param mod_data: [pd.DataFrame]
+    :param in_seasons: [str] 'spring', 'summer', 'autumn', 'winter'; if None, returns data of all seasons
+    :param incident_datetime_col: [str]
     :return:
     """
-    assert season is None or season in ('spring', 'summer', 'autumn', 'winter')
-    if season:
-        spring_data, summer_data, autumn_data, winter_data = [pd.DataFrame()] * 4
-        for y in pd.unique(incident_data.FinancialYear):
-            y_dat = incident_data[incident_data.FinancialYear == y]
-            # Get data for spring -----------------------------------
-            spring_start1 = pd.datetime(year=y, month=4, day=1)
-            spring_end1 = spring_start1 + pd.DateOffset(months=2)
-            spring_start2 = pd.datetime(year=y + 1, month=3, day=1)
-            spring_end2 = spring_start2 + pd.DateOffset(months=1)
-            spring_dates1 = pd.date_range(spring_start1, spring_start1 + pd.DateOffset(months=2))
-            spring_dates2 = pd.date_range(spring_start2, spring_start2 + pd.DateOffset(months=2))
-            spring_data = pd.concat(
-                [spring_data, y_dat[y_dat.StartDateTime.isin(spring_dates1) | y_dat.StartDateTime.isin(spring_dates2)]])
-
-            spring_time = ((y_dat.StartDateTime >= spring_start1) & (y_dat.StartDateTime < spring_end1)) | \
-                          ((y_dat.StartDateTime >= spring_start2) & (y_dat.StartDateTime < spring_end2))
-            spring_data = pd.concat([spring_data, y_dat.loc[spring_time]])
-            # Get data for summer ----------------------------------
-            summer_start = pd.datetime(year=y, month=6, day=1)
-            summer_end = summer_start + pd.DateOffset(months=3)
-            summer = (y_dat.StartDateTime >= summer_start) & (y_dat.StartDateTime < summer_end)
-            summer_data = pd.concat([summer_data, y_dat.loc[summer]])
-            # Get data for autumn ----------------------------------
-            autumn_start = pd.datetime(year=y, month=9, day=1)
-            autumn_end = autumn_start + pd.DateOffset(months=3)
-            autumn = (y_dat.StartDateTime >= autumn_start) & (y_dat.StartDateTime < autumn_end)
-            autumn_data = pd.concat([autumn_data, y_dat.loc[autumn]])
-            # Get data for winter -----------------------------------
-            winter_start = pd.datetime(year=y, month=12, day=1)
-            winter_end = winter_start + pd.DateOffset(months=3)
-            winter = (y_dat.StartDateTime >= winter_start) & (y_dat.StartDateTime < winter_end)
-            winter_data = pd.concat([winter_data, y_dat.loc[winter]])
-
-        seasons = ['spring', 'summer', 'autumn', 'winter']
-        season = [season] if isinstance(season, str) else season
-        season = [fuzzywuzzy.process.extractOne(s, seasons)[0] for s in season]
-        seasonal_data = eval("pd.concat([%s], ignore_index=True)" % ', '.join(['{}_data'.format(s) for s in season]))
-
-        return seasonal_data
-
+    if in_seasons is None:
+        return mod_data
     else:
-        return incident_data
+        seasons = [in_seasons] if isinstance(in_seasons, str) else in_seasons
+        selected_seasons = [find_similar_str(s, ('Spring', 'Summer', 'Autumn', 'Winter'))[0] for s in seasons]
+
+        def identify_season(incident_dt):
+            """
+            # (incident_datetime.dt.month % 12 + 3) // 3
+            """
+            y = incident_dt.year
+            seasons_dt = [('Winter', (pd.datetime(y, 1, 1), pd.datetime(y, 3, 20) + pd.DateOffset(days=1))),
+                          ('Spring', (pd.datetime(y, 3, 21), pd.datetime(y, 6, 20) + pd.DateOffset(days=1))),
+                          ('Summer', (pd.datetime(y, 6, 21), pd.datetime(y, 9, 22) + pd.DateOffset(days=1))),
+                          ('Autumn', (pd.datetime(y, 9, 23), pd.datetime(y, 12, 20) + pd.DateOffset(days=1))),
+                          ('Winter', (pd.datetime(y, 12, 21), pd.datetime(y, 12, 31) + pd.DateOffset(days=1)))]
+            return next(season for season, (start, end) in seasons_dt if start <= incident_dt < end)
+
+        mod_data_seasons = mod_data[incident_datetime_col].map(identify_season)
+        season_data = mod_data[mod_data_seasons.isin(selected_seasons)]
+
+        return season_data
 
 
 # Get Angle of Line between Two Points
@@ -237,7 +211,7 @@ def get_angle_of_line_between(p1, p2, in_degrees=False):
 
 
 # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
-def categorise_track_orientations(attr_dat):
+def categorise_track_orientations(attr_dat) -> pd.DataFrame:
     # Angles in radians, [-pi, pi]
     angles = attr_dat.apply(lambda x: get_angle_of_line_between(x.StartLonLat, x.EndLonLat), axis=1)
     track_orientation = pd.DataFrame({'Track_Orientation': None}, index=angles.index)
@@ -275,7 +249,7 @@ def categorise_track_orientations(attr_dat):
 
 
 # Categorise temperature: <24, 24, 25, 26, 27, 28, 29, >=30
-def categorise_temperatures(attr_dat, column_name='Temperature_max'):
+def categorise_temperatures(attr_dat, column_name='Temperature_max') -> pd.DataFrame:
     temp_category = pd.cut(attr_dat[column_name], [-np.inf] + list(np.arange(24, 31)) + [np.inf],
                            right=False, include_lowest=False)
     temperature_category = pd.DataFrame({'Temperature_Category': temp_category})
