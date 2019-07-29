@@ -1591,51 +1591,46 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
                                            update=False) -> pd.DataFrame:
     filename = "incident_locations"
     path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
-    if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
-    else:
-        try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
-            if os.path.isfile(path_to_pickle_temp) and not update:
-                all_incident_locations = load_pickle(path_to_pickle_temp)
-                incident_locations = get_subset(all_incident_locations, route_name, weather_category)
-            else:
-                # All incident locations
-                incident_data = view_schedule8_costs_by_location(route_name, weather_category, update=update)
-                incident_data = incident_data.loc[:, 'Route':'EndLatitude']
-                incident_locations = incident_data.drop_duplicates()
+    try:
+        if os.path.isfile(path_to_pickle) and not update:
+            incident_locations = load_pickle(path_to_pickle)
+        else:
+            # All incident locations
+            incident_data = view_schedule8_costs_by_location(route_name, weather_category, update=update)
+            incident_data = incident_data.loc[:, 'Route':'EndLatitude']
+            incident_locations = incident_data.drop_duplicates()
 
-                # Create two additional columns about data of mileages (convert str to num)
-                incident_locations[['StartMileage_num', 'EndMileage_num']] = \
-                    incident_locations[['StartMileage', 'EndMileage']].applymap(str_to_num_mileage)
+            # Create two additional columns about data of mileages (convert str to num)
+            incident_locations[['StartMileage_num', 'EndMileage_num']] = \
+                incident_locations[['StartMileage', 'EndMileage']].applymap(str_to_num_mileage)
 
-                # Remove records for which ELR information was missing
-                incident_locations = incident_locations[
-                    ~(incident_locations.StartELR.str.contains('^$')) &
-                    ~(incident_locations.EndELR.str.contains('^$'))]
+            # Remove records for which ELR information was missing
+            incident_locations = incident_locations[
+                ~(incident_locations.StartELR.str.contains('^$')) &
+                ~(incident_locations.EndELR.str.contains('^$'))]
 
-                # # Remove records of 'WTS', as vegetation data is unavailable for this ELR
-                # incident_locations = incident_locations[
-                #     ~(incident_locations.StartELR.str.contains(re.compile('^$|WTS'))) &
-                #     ~(incident_locations.EndELR.str.contains(re.compile('^$|WTS')))]
+            # # Remove records of 'WTS', as vegetation data is unavailable for this ELR
+            # incident_locations = incident_locations[
+            #     ~(incident_locations.StartELR.str.contains(re.compile('^$|WTS'))) &
+            #     ~(incident_locations.EndELR.str.contains(re.compile('^$|WTS')))]
 
             save_pickle(incident_locations, path_to_pickle)
 
-            if start_and_end_elr is not None:
-                if start_and_end_elr == 'same':
-                    # Subset the data for which the 'StartELR' and 'EndELR' are THE SAME
-                    incident_locations = incident_locations[
-                        incident_locations.StartELR == incident_locations.EndELR]
-                elif start_and_end_elr == 'diff':
-                    # Subset the data for which the 'StartELR' and 'EndELR' are DIFFERENT
-                    incident_locations = incident_locations[
-                        incident_locations.StartELR != incident_locations.EndELR]
+        if start_and_end_elr is not None:
+            if start_and_end_elr == 'same':
+                # Subset the data for which the 'StartELR' and 'EndELR' are THE SAME
+                incident_locations = incident_locations[
+                    incident_locations.StartELR == incident_locations.EndELR]
+            elif start_and_end_elr == 'diff':
+                # Subset the data for which the 'StartELR' and 'EndELR' are DIFFERENT
+                incident_locations = incident_locations[
+                    incident_locations.StartELR != incident_locations.EndELR]
 
-            return incident_locations
+        return incident_locations
 
-        except Exception as e:
-            print("Failed to fetch \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+    except Exception as e:
+        print("Failed to fetch \"{}.\" {}.".format(
+            os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
 
 
 # get_imdm(as_dict=False, update=True, save_original_as=None)
