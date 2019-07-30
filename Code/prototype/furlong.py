@@ -17,8 +17,10 @@ import prototype.utils
 
 # ELR & mileage data of furlong locations
 def fetch_nr_vegetation_furlong_data(update=False) -> pd.DataFrame:
+
     pickle_filename = "vegetation_furlong_data"
     path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename + ".pickle")
+
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
@@ -54,12 +56,25 @@ def fetch_nr_vegetation_furlong_data(update=False) -> pd.DataFrame:
 # Get adjusted Start and End mileages
 def adjust_incident_mileages(nr_furlong_data, elr, start_mileage_num, end_mileage_num, shift_yards) -> pd.DataFrame:
     """
-    :param nr_furlong_data:
-    :param elr: e.g. elr=incident_locations_same_elr.StartELR.iloc[0]
-    :param start_mileage_num: e.g. start_mileage_num=incident_locations_same_elr.StartMileage_num.iloc[0]
-    :param end_mileage_num: e.g. end_mileage_num=incident_locations_same_elr.EndMileage_num.iloc[0]
-    :param shift_yards:
-    :return:
+    :param nr_furlong_data: [pd.DataFrame]
+    :param elr: [str]
+    :param start_mileage_num: [float]
+    :param end_mileage_num: [float]
+    :param shift_yards: [numeric]
+    :return: [pd.DataFrame]
+
+    e.g.
+
+    elr=incident_locations_same_elr.StartELR.iloc[0]
+    start_mileage_num=incident_locations_same_elr.StartMileage_num.iloc[0]
+    end_mileage_num=incident_locations_same_elr.EndMileage_num.iloc[0]
+    shift_yards=shift_yards_same_elr
+
+    elr=locations_conn.EndELR[483]
+    start_mileage_num=locations_conn.EndELR_StartMileage_num[483]
+    end_mileage_num=locations_conn.EndMileage_num[483]
+    shift_yards=shift_yards_diff_elr
+
     """
     nr_elr_furlongs = nr_furlong_data[nr_furlong_data.ELR == elr]
 
@@ -151,8 +166,9 @@ def adjust_incident_mileages(nr_furlong_data, elr, start_mileage_num, end_mileag
     adjusted_end_mileage = nr_mileage_num_to_str(adjusted_end_mileage_num)
     distance = measurement.measures.Distance(mile=np.abs(adjusted_end_mileage_num - adjusted_start_mileage_num)).yd
 
-    return adjusted_start_mileage, adjusted_end_mileage, \
-        adjusted_start_mileage_num, adjusted_end_mileage_num, distance, critical_furlong_id
+    return \
+        adjusted_start_mileage, adjusted_end_mileage, adjusted_start_mileage_num, adjusted_end_mileage_num, \
+        distance, critical_furlong_id
 
 
 # Get information of connecting points for different ELRs
@@ -192,13 +208,10 @@ def get_connecting_nodes(route_name=None, update=False) -> pd.DataFrame:
             print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get furlongs data of incident locations each identified by the same ELRs (StartELR == EndELR)
-def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=None, shift_yards_same_elr=220,
-                                              update=False) -> pd.DataFrame:
-
-    pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_same_start_end_ELRs",
-                                                      route_name, weather_category, shift_yards_same_elr,
-                                                      save_as=".pickle")
+# Get adjusted mileages for each incident location (where StartELR == EndELR)
+def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shift_yards_same_elr, update=False):
+    pickle_filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_same_start_end_ELRs", route_name,
+                                                      weather_category, shift_yards_same_elr)
     path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -225,12 +238,34 @@ def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=
                                                                'Section_Length_Adj',  # yards
                                                                'Critical_FurlongIDs'])
 
-            filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_same_start_end_ELRs", route_name)
-            save_pickle(adjusted_incident_mileages, prototype.utils.cd_prototype_dat(filename))
+            save_pickle(adjusted_incident_mileages, path_to_pickle)
 
+            return adjusted_incident_mileages
+
+        except Exception as e:
+            print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename)[0], e))
+
+
+# Get furlongs data of incident locations each identified by the same ELRs (StartELR == EndELR)
+def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=None, shift_yards_same_elr=220,
+                                              update=False) -> pd.DataFrame:
+
+    pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_same_start_end_ELRs",
+                                                      route_name, weather_category, shift_yards_same_elr,
+                                                      save_as=".pickle")
+    path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+    else:
+        try:
+            adjusted_incident_mileages = get_adjusted_mileages_same_start_end_elrs(
+                route_name, weather_category, shift_yards_same_elr)
+
+            # Get furlong information
+            nr_furlong_data = fetch_nr_vegetation_furlong_data()
             # Form a list containing all the furlong IDs
             veg_furlongs_idx = list(set(itertools.chain(*adjusted_incident_mileages.Critical_FurlongIDs)))
-
             # Select critical (i.e. incident) furlongs
             incident_furlongs_same_start_end_elr = nr_furlong_data.loc[veg_furlongs_idx]
 
@@ -246,13 +281,10 @@ def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=
             print(e)
 
 
-# Get furlongs data of incident locations each identified by the same ELRs (StartELR != EndELR)
-def get_incident_furlongs_diff_start_end_elrs(route_name=None, weather_category=None, shift_yards_diff_elr=220,
-                                              update=False) -> pd.DataFrame:
-
-    pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_diff_start_end_ELRs",
-                                                      route_name, weather_category, shift_yards_diff_elr,
-                                                      save_as=".pickle")
+# Get adjusted mileages for each incident location (where StartELR != EndELR)
+def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shift_yards_diff_elr, update=False):
+    pickle_filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_diff_start_end_ELRs", route_name,
+                                                      weather_category, shift_yards_diff_elr)
     path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -324,9 +356,11 @@ def get_incident_furlongs_diff_start_end_elrs(route_name=None, weather_category=
             adjusted_incident_mileages = \
                 adjusted_start_mileages.join(adjusted_conn_mileages).join(adjusted_end_mileages)
 
-            adjusted_incident_mileages['Section_Length_Adj'] = \
-                adjusted_incident_mileages.StartELR_Length_Adj + adjusted_incident_mileages.ConnELR_Length_Adj + \
-                adjusted_incident_mileages.EndELR_Length_Adj
+            adjusted_incident_mileages.dropna(subset=['StartMileage_num_Adj', 'EndMileage_num_Adj'], inplace=True)
+
+            adjusted_incident_mileages['Section_Length_Adj'] = list(zip(
+                adjusted_incident_mileages.StartELR_Length_Adj, adjusted_incident_mileages.ConnELR_Length_Adj,
+                adjusted_incident_mileages.EndELR_Length_Adj))
 
             adjusted_incident_mileages['Critical_FurlongIDs'] = \
                 adjusted_incident_mileages.StartELR_Critical_FurlongIDs + \
@@ -336,12 +370,35 @@ def get_incident_furlongs_diff_start_end_elrs(route_name=None, weather_category=
                 lambda x: list(set(x)))
 
             # Save the combined 'adjusted_incident_mileages'
-            pickle_filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_diff_start_end_ELRs",
-                                                              route_name)
-            save_pickle(adjusted_incident_mileages, prototype.utils.cd_prototype_dat(pickle_filename))
+            save_pickle(adjusted_incident_mileages, path_to_pickle)
 
+            return adjusted_incident_mileages
+
+        except Exception as e:
+            print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename)[0], e))
+
+
+# Get furlongs data of incident locations each identified by the same ELRs (StartELR != EndELR)
+def get_incident_furlongs_diff_start_end_elrs(route_name=None, weather_category=None, shift_yards_diff_elr=220,
+                                              update=False) -> pd.DataFrame:
+
+    pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_diff_start_end_ELRs",
+                                                      route_name, weather_category, shift_yards_diff_elr,
+                                                      save_as=".pickle")
+    path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+    else:
+        try:
+            adjusted_incident_mileages = get_adjusted_mileages_diff_start_end_elrs(
+                route_name, weather_category, shift_yards_diff_elr)
+
+            # Get furlong information
+            nr_furlong_data = fetch_nr_vegetation_furlong_data()
             # Form a list containing all the furlong IDs
             veg_furlongs_idx = list(set(itertools.chain(*adjusted_incident_mileages.Critical_FurlongIDs)))
+
             # Select critical (i.e. incident) furlongs
             incident_furlongs_diff_start_end_elr = nr_furlong_data.loc[veg_furlongs_idx]
 
@@ -375,10 +432,46 @@ def get_incident_furlongs(route_name=None, weather_category=None,
             incident_furlongs_diff_elr = get_incident_furlongs_diff_start_end_elrs(route_name, weather_category,
                                                                                    shift_yards_diff_elr)
             # Merge the above two data sets
-            incident_location_furlongs = incident_furlongs_same_elr.append(incident_furlongs_diff_elr)
-            incident_location_furlongs.drop_duplicates(['AssetNumber', 'StructuredPlantNumber'], inplace=True)
-            incident_location_furlongs.sort_index(inplace=True)
+            incident_furlongs = incident_furlongs_same_elr.append(incident_furlongs_diff_elr)
+            incident_furlongs.drop_duplicates(['AssetNumber', 'StructuredPlantNumber'], inplace=True)
+            incident_furlongs.sort_index(inplace=True)
+            save_pickle(incident_furlongs, path_to_pickle)
+            return incident_furlongs
+        except Exception as e:
+            print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename)[0], e))
+
+
+def get_incident_location_furlongs(route_name=None, weather_category=None,
+                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, update=False) -> pd.DataFrame:
+
+    pickle_filename = mssqlserver.metex.make_filename("incident_location_furlongs", route_name, weather_category,
+                                                      shift_yards_same_elr, shift_yards_diff_elr)
+    path_to_pickle = prototype.utils.cd_prototype_dat(pickle_filename)
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+    else:
+        try:
+            #
+            adjusted_mileages_same_start_end_elrs = get_adjusted_mileages_same_start_end_elrs(
+                route_name, weather_category, shift_yards_same_elr)
+            ilf_same = adjusted_mileages_same_start_end_elrs[['Section_Length_Adj', 'Critical_FurlongIDs']]
+
+            #
+            adjusted_mileages_diff_start_end_elrs = get_adjusted_mileages_diff_start_end_elrs(
+                route_name, weather_category, shift_yards_diff_elr)
+            ilf_diff = adjusted_mileages_diff_start_end_elrs[['Section_Length_Adj', 'Critical_FurlongIDs']]
+
+            #
+            incident_locations = mssqlserver.metex.fetch_incident_locations_from_nr_metex(route_name, weather_category)
+
+            # Merge the above data sets
+            incident_location_furlongs = incident_locations.join(pd.concat([ilf_same, ilf_diff]), how='right')
+            incident_location_furlongs.drop(['StartMileage_num', 'EndMileage_num'], axis=1, inplace=True)
+            incident_location_furlongs.index = range(len(incident_location_furlongs))
+
             save_pickle(incident_location_furlongs, path_to_pickle)
+
             return incident_location_furlongs
+
         except Exception as e:
             print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename)[0], e))
