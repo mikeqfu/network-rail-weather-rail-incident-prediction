@@ -64,54 +64,6 @@ def specify_weather_stats_calculations():
     return weather_stats_calculations
 
 
-# Get all Weather variable names
-def get_weather_variable_names():
-    weather_stats_calculations = specify_weather_stats_calculations()
-    agg_colnames = [k + '_max' for k in weather_stats_calculations.keys()]
-    agg_colnames.insert(1, 'Temperature_min')
-    agg_colnames.insert(2, 'Temperature_avg')
-    wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
-    variable_names = agg_colnames + wind_speed_variables
-    return variable_names
-
-
-# Compute the statistics for all the Weather variables (except wind)
-def calculate_weather_variables_stats(weather_obs):
-    """
-    Note: to get the n-th percentile, use percentile(n)
-
-    This function also returns the Weather dataframe indices. The corresponding Weather conditions in that Weather
-    cell might cause wind-related Incidents.
-    """
-    if not weather_obs.empty:
-        # Calculate the statistics
-        weather_stats_calculations = specify_weather_stats_calculations()
-        weather_stats = weather_obs.groupby('WeatherCell').aggregate(weather_stats_calculations)
-
-        # Calculate average wind speed and direction
-        def calculate_wind_averages(wind_speeds, wind_directions):
-            u = - wind_speeds * np.sin(np.radians(wind_directions))  # component u, the zonal velocity
-            v = - wind_speeds * np.cos(np.radians(wind_directions))  # component v, the meridional velocity
-            uav, vav = np.nanmean(u), np.nanmean(v)  # sum up all u and v values and average it
-            average_wind_speed = np.sqrt(uav ** 2 + vav ** 2)  # Calculate average wind speed
-            # Calculate average wind direction
-            if uav == 0:
-                average_wind_direction = 0 if vav == 0 else (360 if vav > 0 else 180)
-            else:
-                average_wind_direction = (270 if uav > 0 else 90) - 180 / np.pi * np.arctan(vav / uav)
-            return average_wind_speed, average_wind_direction
-
-        weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
-            calculate_wind_averages(weather_obs.WindSpeed, weather_obs.WindDirection)
-
-        weather_stats = weather_stats.values[0].tolist()  # + [weather_data.index.tolist()]
-
-    else:
-        weather_stats = [np.nan] * 10  # + [[None]]
-
-    return weather_stats
-
-
 # Get TRUST data and the weather conditions for each incident location
 def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                                   ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -152,11 +104,13 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
             incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
             # Get data for the specified "Incident Periods"
             incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-            incidents['Critical_StartDateTime'] = incidents.StartDateTime.apply(
-                datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
-            incidents['Critical_EndDateTime'] = incidents.EndDateTime.apply(
-                datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_end_hrs)
+            incidents['Critical_StartDateTime'] = \
+                incidents.StartDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
+            incidents['Critical_EndDateTime'] = \
+                incidents.EndDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_end_hrs)
             incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
+
+            weather_stats_calculations = specify_weather_stats_calculations()
 
             # Processing Weather data for IP - Get data of Weather conditions which led to Incidents for each record
             def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end) -> list:
@@ -177,14 +131,16 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
                                                                                pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats = calculate_weather_variables_stats(ip_weather_obs)
+                weather_stats = prototype.utils.calculate_statistics_for_weather_variables(
+                    ip_weather_obs, weather_stats_calculations)
                 return weather_stats
 
             # Get data for the specified IP
-            ip_stats = incidents.apply(
+            ip_statistics = incidents.apply(
                 lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
                 axis=1)
-            ip_statistics = pd.DataFrame(ip_stats.to_list(), ip_stats.index, get_weather_variable_names())
+            ip_statistics = pd.DataFrame(ip_statistics.to_list(), index=ip_statistics.index,
+                                         columns=prototype.utils.get_weather_variable_names(weather_stats_calculations))
             ip_statistics['Temperature_diff'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             #
@@ -207,8 +163,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 :return: [list] a list of statistics
                 """
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, nip_start, nip_end,
-                                                                                   pickle_it=False)
+                non_ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(
+                    weather_cell_id, nip_start, nip_end, pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
                     (ip_data.StanoxSection == stanox_section) &
@@ -220,14 +176,16 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                         (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
                         (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
                 # Get the max/min/avg Weather parameters for those incident periods
-                non_ip_weather_stats = calculate_weather_variables_stats(non_ip_weather_obs)
+                non_ip_weather_stats = prototype.utils.calculate_statistics_for_weather_variables(
+                    non_ip_weather_obs, weather_stats_calculations)
                 return non_ip_weather_stats
 
             # Get stats data for the specified "Non-Incident Periods"
             nip_stats = nip_data.apply(
                 lambda x: get_weather_stats_for_non_ip(
                     x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
-            nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index, get_weather_variable_names())
+            nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index,
+                                          prototype.utils.get_weather_variable_names(weather_stats_calculations))
             nip_statistics['Temperature_diff'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             #
@@ -421,7 +379,7 @@ def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_
                                                    ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                                    shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
                                                    update=False):
-    pickle_filename = mssqlserver.metex.make_filename("mod_data", route_name, weather_category,
+    pickle_filename = mssqlserver.metex.make_filename("integrated_data", route_name, weather_category,
                                                       ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                                       shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     path_to_file = cdd_prototype_wind(pickle_filename)
