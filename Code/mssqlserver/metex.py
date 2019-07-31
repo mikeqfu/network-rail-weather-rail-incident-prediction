@@ -1197,15 +1197,15 @@ def view_schedule8_details(route_name=None, weather_category=None, reset_index=F
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_details" + ("_weather_attributed" if weather_attributed_only else "")
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category, save_as=".pickle"))
+    pickle_filename = "Schedule8_details" + ("_weather_attributed" if weather_attributed_only else "")
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category, save_as=".pickle"))
     if os.path.isfile(path_to_pickle) and not update:
         schedule8_details = load_pickle(path_to_pickle)
         if reset_index and schedule8_details.index.name == 'PfPIId':
             schedule8_details.reset_index(inplace=True)
     else:
         try:
-            path_to_merged = cdd_metex_db_views("{}.pickle".format(filename))
+            path_to_merged = cdd_metex_db_views("{}.pickle".format(pickle_filename))
             if not os.path.isfile(path_to_merged) or update:
                 schedule8_details = merge_schedule8_data(weather_attributed_only, pickle_it=pickle_it)
             else:
@@ -1229,13 +1229,13 @@ def view_schedule8_details_pfpi(route_name=None, weather_category=None, update=F
     :param pickle_it:
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_details_pfpi"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_details_pfpi"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 data = get_subset(temp_data, route_name, weather_category)
@@ -1270,7 +1270,7 @@ def view_schedule8_details_pfpi(route_name=None, weather_category=None, update=F
             return data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by incident location and Weather category
@@ -1283,13 +1283,13 @@ def view_schedule8_costs_by_location(route_name=None, weather_category=None, upd
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_location"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_location"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1310,7 +1310,7 @@ def view_schedule8_costs_by_location(route_name=None, weather_category=None, upd
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by datetime and location
@@ -1323,13 +1323,13 @@ def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=
     :param pickle_it:
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_datetime_location"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_datetime_location"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1357,7 +1357,7 @@ def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by datetime, location and incident reason
@@ -1370,13 +1370,13 @@ def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_ca
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_datetime_location_reason"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_datetime_location_reason"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1411,7 +1411,7 @@ def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_ca
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 data by datetime and Weather category
@@ -1423,13 +1423,13 @@ def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, upd
     :param pickle_it:
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_datetime"
+    pickle_filename = "Schedule8_costs_by_datetime"
     path_to_pickle = cdd_metex_db_views(make_filename("Schedule8_costs_by_datetime", route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1452,7 +1452,7 @@ def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, upd
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by incident reason
@@ -1464,13 +1464,13 @@ def view_schedule8_costs_by_reason(route_name=None, weather_category=None, updat
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_reason"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_reason"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1498,18 +1498,18 @@ def view_schedule8_costs_by_reason(route_name=None, weather_category=None, updat
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by location and incident reason
 def view_schedule8_costs_by_location_reason(route_name=None, weather_category=None, update=False, pickle_it=False):
-    filename = "Schedule8_costs_by_location_reason"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_location_reason"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1541,7 +1541,7 @@ def view_schedule8_costs_by_location_reason(route_name=None, weather_category=No
             return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # Get Schedule 8 costs by Weather category
@@ -1553,13 +1553,13 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
     :param pickle_it: [bool]
     :return: [pandas.DataFrame]
     """
-    filename = "Schedule8_costs_by_weather_category"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "Schedule8_costs_by_weather_category"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = cdd_metex_db_views(make_filename(filename))
+            path_to_pickle_temp = cdd_metex_db_views(make_filename(pickle_filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 temp_data = load_pickle(path_to_pickle_temp)
                 extracted_data = get_subset(temp_data, route_name, weather_category)
@@ -1579,7 +1579,7 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
                 return extracted_data
         except Exception as e:
             print("Failed to retrieve \"{}.\" {}.".format(
-                os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+                os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # ====================================================================================================================
@@ -1589,8 +1589,8 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
 # Get Schedule 8 costs (minutes & costs) aggregated for each STANOX section
 def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=None, start_and_end_elr=None,
                                            update=False) -> pd.DataFrame:
-    filename = "incident_locations"
-    path_to_pickle = cdd_metex_db_views(make_filename(filename, route_name, weather_category))
+    pickle_filename = "incident_locations"
+    path_to_pickle = cdd_metex_db_views(make_filename(pickle_filename, route_name, weather_category))
     try:
         if os.path.isfile(path_to_pickle) and not update:
             incident_locations = load_pickle(path_to_pickle)
@@ -1630,7 +1630,7 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
 
     except Exception as e:
         print("Failed to fetch \"{}.\" {}.".format(
-            os.path.splitext(make_filename(filename, route_name, weather_category))[0], e))
+            os.path.splitext(make_filename(pickle_filename, route_name, weather_category))[0], e))
 
 
 # get_imdm(as_dict=False, update=True, save_original_as=None)
