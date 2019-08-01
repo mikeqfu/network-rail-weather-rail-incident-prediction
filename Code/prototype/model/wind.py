@@ -211,7 +211,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 def specify_vegetation_stats_calculations(features):
     # "CoverPercent..."
     cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
-    veg_stats_calc = dict(zip(cover_percents, [np.sum] * len(cover_percents)))
+    veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
     veg_stats_calc.update({'AssetNumber': np.count_nonzero,
                            'TreeNumber': np.nansum,
                            'TreeNumberUp': np.nansum,
@@ -242,13 +242,13 @@ def get_incident_location_vegetation(route_name='Anglia',
                                      shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
                                      update=False):
     """
+    Testing parameters:
     e.g.
-
-    route_name='Anglia'
-    shift_yards_same_elr=220
-    shift_yards_diff_elr=220
-    hazard_pctl=50
-    update=False
+        route_name='Anglia'
+        shift_yards_same_elr=220
+        shift_yards_diff_elr=220
+        hazard_pctl=50
+        update=False
 
     Note that the "CoverPercent..." in furlong_vegetation_data has been
     amended when furlong_data was read. Check the function get_furlong_data().
@@ -286,12 +286,12 @@ def get_incident_location_vegetation(route_name='Anglia',
             # Define a function that computes Vegetation stats for each incident record
             def calculate_vegetation_variables_stats(furlong_ids, start_elr, end_elr, total_yards_adjusted):
                 """
+                Testing parameters:
                 e.g.
-
-                furlong_ids=incident_location_furlongs.Critical_FurlongIDs[17]
-                start_elr=incident_location_furlongs.StartELR[17]
-                end_elr=incident_location_furlongs.EndELR[17]
-                total_yards_adjusted=incident_location_furlongs.Section_Length_Adj[17]
+                    furlong_ids=incident_location_furlongs.Critical_FurlongIDs[5367]
+                    start_elr=incident_location_furlongs.StartELR[5367]
+                    end_elr=incident_location_furlongs.EndELR[5367]
+                    total_yards_adjusted=incident_location_furlongs.Section_Length_Adj[5367]
 
                 Note: to get the n-th percentile may use percentile(n)
 
@@ -331,15 +331,16 @@ def get_incident_location_vegetation(route_name='Anglia',
                     veg_stats.index = pd.Index(data=['-'.join(set(veg_stats.index))] * len(veg_stats.index), name='ELR')
                     veg_stats = veg_stats.groupby(veg_stats.index).aggregate(veg_stats_calc_further)
 
-                    if len(total_yards_adjusted) == 3 and total_yards_adjusted[1] == 0:
+                    if len(total_yards_adjusted) == 3 and \
+                            (total_yards_adjusted[1] == 0 or np.isnan(total_yards_adjusted[1])):
                         total_yards_adjusted = total_yards_adjusted[:1] + total_yards_adjusted[2:]
 
                     veg_stats[cover_percents] = veg_stats[cover_percents].applymap(
-                        lambda x: np.dot(x, total_yards_adjusted) / np.sum(total_yards_adjusted))
+                        lambda x: np.dot(x, total_yards_adjusted) / np.nansum(total_yards_adjusted))
 
                 # Calculate tree densities (number of trees per furlong)
-                veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(np.sum(total_yards_adjusted) / 220.0)
-                veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(np.sum(total_yards_adjusted) / 220.0)
+                veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(np.nansum(total_yards_adjusted) / 220.0)
+                veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(np.nansum(total_yards_adjusted) / 220.0)
 
                 # Rearrange the order of features
                 veg_stats = veg_stats[sorted(veg_stats.columns)]
