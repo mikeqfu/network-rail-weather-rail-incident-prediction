@@ -935,30 +935,40 @@ def make_filename(base_name, route_name=None, weather_category=None, *extra_suff
     return filename
 
 
-# Subset the required data given 'route' and 'Weather'
+# Subset the required data given 'route' and 'weather category'
 def get_subset(data, route_name=None, weather_category=None, reset_index=False):
     if data is not None:
-        dat = data.copy(deep=True)
-        dat.Route = data.Route.astype(str)
-        if 'Route' in data.columns:
-            route_name = fuzzywuzzy.process.extractOne(
-                route_name, list(get_route().Route) + list(get_route().RouteAlias), scorer=fuzzywuzzy.fuzz.ratio)[0] \
-                if route_name else None
-        if 'WeatherCategory' in data.columns:
-            weather_category = fuzzywuzzy.process.extractOne(
-                weather_category, list(set(dat.WeatherCategory)), scorer=fuzzywuzzy.fuzz.ratio)[0] \
-                if weather_category else None
-        # Select data for a specific route and Weather category
-        if route_name and weather_category:
-            data_subset = data[dat.Route.str.contains(route_name) & (dat.WeatherCategory == weather_category)]
-        elif route_name and not weather_category:
-            data_subset = data[dat.Route.str.contains(route_name)]
-        elif not route_name and weather_category:
-            data_subset = data[dat.WeatherCategory == weather_category]
-        else:
-            data_subset = data
+        assert isinstance(data, pd.DataFrame) and not data.empty
+        data_subset = data.copy(deep=True)
+
+        if route_name:
+            try:  # assert 'Route' in data_subset.columns
+                data_subset.Route = data_subset.Route.astype(str)
+                route_names = get_route()
+                route_lookup = list(set(route_names.Route)) + list(set(route_names.RouteAlias))
+                route_name_ = [
+                    fuzzywuzzy.process.extractOne(x, route_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
+                    for x in ([route_name] if isinstance(route_name, str) else list(route_name))]
+                data_subset = data_subset[data_subset.Route.isin(route_name_)]
+            except AttributeError:
+                print("Couldn't slice the data by 'Route'. The attribute may not exist in the DataFrame.")
+                pass
+
+        if weather_category:
+            try:  # assert 'WeatherCategory' in data_subset.columns
+                data_subset.WeatherCategory = data_subset.WeatherCategory.astype(str)
+                weather_category_code = get_weather_codes()
+                weather_category_lookup = list(set(weather_category_code.WeatherCategory))
+                weather_category_ = [
+                    fuzzywuzzy.process.extractOne(x, weather_category_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
+                    for x in ([weather_category] if isinstance(weather_category, str) else list(weather_category))]
+                data_subset = data_subset[data_subset.WeatherCategory.isin(weather_category_)]
+            except AttributeError:
+                print("Couldn't slice the data by 'WeatherCategory'. The attribute may not exist in the DataFrame.")
+                pass
+
         if reset_index:
-            data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
+            data_subset.index = range(len(data_subset))  # dat.reset_index(inplace=True)
     else:
         data_subset = None
     return data_subset
