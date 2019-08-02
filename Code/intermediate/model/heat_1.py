@@ -17,11 +17,12 @@ import statsmodels.discrete.discrete_model as sm_dcm
 import statsmodels.tools as sm_tools
 from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 
-import intermediate.utils
+import intermediate.tools
 import settings
 import spreadsheet.incidents
 import weather.midas
 import weather.ukcp
+from utils import get_subset, make_filename
 
 settings.np_preferences()
 settings.pd_preferences()
@@ -30,16 +31,8 @@ settings.pd_preferences()
 """ Change directory """
 
 
-def cd_prototype_heat(*sub_dir):
-    path = intermediate.utils.cdd_intermediate("heat")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-def cdd_prototype_heat(*sub_dir):
-    path = cd_prototype_heat("data")
+def cdd_intermediate_heat(*sub_dir):
+    path = intermediate.tools.cdd_intermediate("heat", "dat")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -47,8 +40,8 @@ def cdd_prototype_heat(*sub_dir):
 
 
 # Change directory to "Models\\intermediate\\heat\\x" and sub-directories
-def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
-    path = cd_prototype_heat("{}".format(trial_id))
+def cdd_intermediate_heat_mod(trial_id, *sub_dir):
+    path = intermediate.tools.cdd_intermediate("heat", "{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -60,37 +53,45 @@ def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
 
 
 # Attach Weather conditions for each incident location
-def get_incidents_with_weather(route_name=None, weather_category='Heat', season='summer',
-                               prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
-                               trial=True, illustrate_buf_cir=False, update=False):
-
-    filename = "Incidents-with-Weather-conditions"
-    pickle_filename = spreadsheet.incidents.make_filename(
-        filename, route_name, weather_category, "-".join([season] if isinstance(season, str) else season),
-        "trial" if trial else "full")
-    path_to_pickle = cdd_prototype_heat(pickle_filename)
+def get_incident_location_weather(route_name=None, weather_category='Heat', season='summer',
+                                  prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
+                                  trial=True, illustrate_buf_cir=False, update=False):
+    """
+    Testing parameters:
+    e.g.
+        route_name=None
+        weather_category='Heat'
+        season='summer'
+        prior_ip_start_hrs=-0
+        latent_period=-5
+        non_ip_start_hrs=-0
+        trial=True
+        illustrate_buf_cir=False
+        update=False
+    """
+    pickle_filename = make_filename("incident_location_weather", route_name, weather_category,
+                                    "_".join([season] if isinstance(season, str) else season),
+                                    "trial" if trial else "full")
+    path_to_pickle = cdd_intermediate_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        iw_data = load_pickle(path_to_pickle)
+        incident_location_weather = load_pickle(path_to_pickle)
     else:
         try:
             # Incidents data
             incidents_all = spreadsheet.incidents.get_schedule8_weather_incidents()
-            incidents_all = intermediate.utils.get_data_by_season(incidents_all, season)
-            incidents = spreadsheet.incidents.subset(incidents_all, route_name, weather_category)
-            # For testing purpose ...
-            if trial:
-                # import random
-                # rand_iloc_idx = random.sample(range(len(Incidents)), 10)
+            incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
+            incidents_all_by_season = intermediate.tools.get_data_by_season(incidents_all, season)
+            incidents = get_subset(incidents_all_by_season, route_name, weather_category)
+
+            if trial:  # For testing purpose ...
                 incidents = incidents.iloc[0:10, :]
 
             # Weather observations
-            weather_obs = weather.ukcp.fetch_integrated_daily_gridded_weather_obs()
-            weather_obs.reset_index(inplace=True)
+            weather_obs = weather.ukcp.fetch_integrated_daily_gridded_weather_obs().reset_index()
 
             # Radiation observations
-            irad_data = weather.midas.fetch_midas_radtob()
-            irad_data.reset_index(inplace=True)
+            irad_obs = weather.midas.fetch_midas_radtob().reset_index()
 
             # --------------------------------------------------------------------------------------------------------
             """ In the spatial context """
@@ -347,7 +348,7 @@ def get_incidents_with_weather(route_name=None, weather_category='Heat', season=
                 :param period: e.g. period = Incidents.Critical_Period.iloc[1]
                 :return:
                 """
-                prior_ip_radtob = irad_data[irad_data.SRC_ID.isin(met_stn_id) & irad_data.OB_END_DATE.isin(period)]
+                prior_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
                 radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
                 return radtob_stats
 
@@ -431,7 +432,7 @@ def get_incidents_with_weather(route_name=None, weather_category='Heat', season=
                 :param location: e.g. location = non_ip_data.StanoxSection.iloc[0]
                 :return:
                 """
-                non_ip_radtob = irad_data[irad_data.SRC_ID.isin(met_stn_id) & irad_data.OB_END_DATE.isin(period)]
+                non_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
 
                 # Get all incident period data on the same section
                 ip_overlap = prior_ip_data[
@@ -450,8 +451,8 @@ def get_incidents_with_weather(route_name=None, weather_category='Heat', season=
                 return radtob_stats
 
             non_ip_radtob_stats = non_ip_data.apply(
-                lambda x: pd.Series(integrate_nip_midas_radtob(
-                    x.Met_SRC_ID, x.Critical_Period, x.StanoxSection)), axis=1)
+                lambda x: pd.Series(integrate_nip_midas_radtob(x.Met_SRC_ID, x.Critical_Period, x.StanoxSection)),
+                axis=1)
 
             non_ip_radtob_stats.columns = r_col_names
 
@@ -460,21 +461,23 @@ def get_incidents_with_weather(route_name=None, weather_category='Heat', season=
             non_ip_data['Incident_Reported'] = 0
 
             # Merge "ip_data" and "nip_data" into one DataFrame
-            iw_data = pd.concat([prior_ip_data, non_ip_data], axis=0, ignore_index=True, sort=False)
+            incident_location_weather = pd.concat([prior_ip_data, non_ip_data], axis=0, ignore_index=True, sort=False)
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
-            iw_data = iw_data.join(intermediate.utils.categorise_track_orientations(iw_data[['StartNE', 'EndNE']]))
+            incident_location_weather = incident_location_weather.join(
+                intermediate.tools.categorise_track_orientations(incident_location_weather[['StartNE', 'EndNE']]))
 
             # Categorise temperature: 25, 26, 27, 28, 29, 30
-            iw_data = iw_data.join(intermediate.utils.categorise_temperatures(iw_data.Maximum_Temperature_max))
+            incident_location_weather = incident_location_weather.join(
+                intermediate.tools.categorise_temperatures(incident_location_weather.Maximum_Temperature_max))
 
-            save_pickle(iw_data, path_to_pickle)
+            save_pickle(incident_location_weather, path_to_pickle)
 
         except Exception as e:
             print("Failed to get Incidents with Weather conditions. {}.".format(e))
-            iw_data = pd.DataFrame()
+            incident_location_weather = pd.DataFrame()
 
-    return iw_data
+    return incident_location_weather
 
 
 # ====================================================================================================================
@@ -571,7 +574,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
 
 
 #
-def logistic_regression_model(trial_id=0,
+def logistic_regression_model(trial_id,
                               route=None, weather_category='Heat', season='summer',
                               prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
                               outlier_pctl=100,
@@ -581,42 +584,42 @@ def logistic_regression_model(trial_id=0,
                               save_as=".svg", dpi=None,
                               verbose=True):
     """
-    :param trial_id:
-    :param route: [str]
-    :param weather_category: [str]
-    :param season: [str] or [list-like]
-    :param prior_ip_start_hrs: [int] or [float]
-    :param latent_period:
-    :param non_ip_start_hrs: [int] or [float]
-    :param outlier_pctl: [int]
-    :param describe_var: [bool]
-    :param add_const:
-    :param seed:
-    :param model:
-    :param plot_roc:
-    :param plot_predicted_likelihood:
-    :param save_as:
-    :param dpi:
-    :param verbose:
-    :return:
+    Testing parameters:
+    e.g.
+        trial_id
+        route=None
+        weather_category='Heat'
+        season='summer'
+        prior_ip_start_hrs=-0
+        latent_period=-5
+        non_ip_start_hrs=-0
+        outlier_pctl=100
+        describe_var=False
+        add_const=True
+        seed=0
+        model='logit',
+        plot_roc=False
+        plot_predicted_likelihood=False
+        save_as=".tif"
+        dpi=None
+        verbose=True
 
-    IncidentReason  IncidentReasonName    IncidentReasonDescription
+    IncidentReason  IncidentReasonName   IncidentReasonDescription
 
-    IQ              TRACK SIGN            Trackside sign blown down/light out etc.
-    IW              COLD                  Non severe - Snow/Ice/Frost affecting infrastructure equipment',
-                                          'Takeback Pumps'
-    OF              HEAT/WIND             Blanket speed restriction for extreme heat or high wind in accordance with
-                                          the Group Standards
-    Q1              TKB PUMPS             Takeback Pumps
-    X4              BLNK REST             Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER               Severe Weather not snow affecting infrastructure the responsibility of
-                                          Network Rail
-    XX              MISC OBS              Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    IQ              TRACK SIGN           Trackside sign blown down/light out etc.
+    IW              COLD                 Non severe - Snow/Ice/Frost affecting infrastructure equipment',
+                                         'Takeback Pumps'
+    OF              HEAT/WIND            Blanket speed restriction for extreme heat or high wind in accordance with
+                                         the Group Standards
+    Q1              TKB PUMPS            Takeback Pumps
+    X4              BLNK REST            Blanket speed restriction for extreme heat or high wind
+    XW              WEATHER              Severe Weather not snow affecting infrastructure the responsibility of NR
+    XX              MISC OBS             Msc items on line (incl trees) due to effects of Weather responsibility of RT
 
     """
     # Get the m_data for modelling
-    m_data = get_incidents_with_weather(route, weather_category, season,
-                                        prior_ip_start_hrs, latent_period, non_ip_start_hrs)
+    m_data = get_incident_location_weather(route, weather_category, season,
+                                           prior_ip_start_hrs, latent_period, non_ip_start_hrs)
 
     # temp_data = [load_pickle(cdd_mod_heat_inter("Slices", f)) for f in os.listdir(cdd_mod_heat_inter("Slices"))]
     # m_data = pd.concat(temp_data, ignore_index=True, sort=False)
@@ -650,12 +653,11 @@ def logistic_regression_model(trial_id=0,
 
     np.random.seed(seed)
     try:
-        if model == 'probit':
-            mod = sm_dcm.Probit(train_set.Incident_Reported, train_set[explanatory_variables])
-            result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=True)
-        else:
+        if model == 'logit':
             mod = sm_dcm.Logit(train_set.Incident_Reported, train_set[explanatory_variables])
-            result = mod.fit(method='newton', maxiter=1000, full_output=True, disp=True)
+        else:
+            mod = sm_dcm.Probit(train_set.Incident_Reported, train_set[explanatory_variables])
+        result = mod.fit(maxiter=1000, full_output=True, disp=True)  # method='newton'
         print(result.summary()) if verbose else print("")
 
         # Odds ratios
@@ -675,14 +677,14 @@ def logistic_regression_model(trial_id=0,
         # prediction accuracy
         test_set['incident_prediction'] = test_set.incident_prob.apply(lambda x: 1 if x >= threshold else 0)
         test = pd.Series(test_set.Incident_Reported == test_set.incident_prediction)
-        mod_acc = np.divide(test.sum(), len(test))
-        print("\nAccuracy: %f" % mod_acc) if verbose else print("")
+        mod_accuracy = np.divide(test.sum(), len(test))
+        print("\nAccuracy: %f" % mod_accuracy) if verbose else print("")
 
         # incident prediction accuracy
         incident_only = test_set[test_set.Incident_Reported == 1]
         test_acc = pd.Series(incident_only.Incident_Reported == incident_only.incident_prediction)
-        incident_acc = np.divide(test_acc.sum(), len(test_acc))
-        print("Incident accuracy: %f" % incident_acc) if verbose else print("")
+        incident_accuracy = np.divide(test_acc.sum(), len(test_acc))
+        print("Incident accuracy: %f" % incident_accuracy) if verbose else print("")
 
         if plot_roc:
             plt.figure()
@@ -698,7 +700,8 @@ def logistic_regression_model(trial_id=0,
             plt.legend(loc='lower right', fontsize=14)
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
-            save_fig(cdd_prototype_heat_mod(trial_id, "ROC" + save_as), dpi=dpi)
+            if save_as:
+                save_fig(cdd_intermediate_heat_mod(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -719,11 +722,12 @@ def logistic_regression_model(trial_id=0,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            save_fig(cdd_prototype_heat_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+            if save_as:
+                save_fig(cdd_intermediate_heat_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)
         result = e
-        mod_acc, incident_acc, threshold = np.nan, np.nan, np.nan
+        mod_accuracy, incident_accuracy, threshold = np.nan, np.nan, np.nan
 
-    return m_data, train_set, test_set, result, mod_acc, incident_acc, threshold
+    return m_data, train_set, test_set, result, mod_accuracy, incident_accuracy, threshold
