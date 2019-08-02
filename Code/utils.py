@@ -7,6 +7,7 @@ import shutil
 import fuzzywuzzy.fuzz
 import fuzzywuzzy.process
 import numpy as np
+import pandas as pd
 from pyhelpers.dir import cd, cdd
 from pyhelpers.misc import confirmed
 from pyhelpers.store import load_json
@@ -90,16 +91,6 @@ def reset_double_indexes(data):
     return data
 
 
-# Find from a list the closest, case-insensitive, string to the given one
-def find_match(x, lookup):
-    if x is '' or x is None:
-        return None
-    else:
-        for y in lookup:
-            if re.match(x, y, re.IGNORECASE):
-                return y
-
-
 # Check whether a string contains digits
 def contains_digits(text):
     x = re.compile('\\d').search(text)
@@ -129,41 +120,58 @@ def interquartile_range(x):
 
 
 # Form a file name in terms of specific 'Route' and 'Weather' category
-def make_filename(base_name, route_name, weather_category, *extra_suffixes, save_as=".pickle"):
-    if route_name is not None:
-        route_lookup = load_json(cdd("Network\\Routes", "route-names.json"))
-        route_name = fuzzywuzzy.process.extractOne(route_name, route_lookup['Route'], scorer=fuzzywuzzy.fuzz.ratio)[0]
-    if weather_category is not None:
-        weather_category_lookup = load_json(cdd("Weather", "Weather-categories.json"))
-        weather_category = fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup['WeatherCategory'],
-                                                         scorer=fuzzywuzzy.fuzz.ratio)
-    filename_suffix = [s for s in (route_name, weather_category) if s]  # "s" stands for "suffix"
-    filename = "_".join([base_name] + filename_suffix + [str(s) for s in extra_suffixes if s]) + save_as
+def make_filename(base_name, route_name=None, weather_category=None, *extra_suffixes, sep="_", save_as=".pickle"):
+    route_lookup = list(set(load_json(cdd("Network\\Routes", "route-names-changes.json")).values()))
+    weather_category_lookup = load_json(cdd("Weather", "weather-categories.json"))
+    base_name_ = "data" if base_name is None else base_name
+    route_name_ = "" if route_name is None \
+        else sep + fuzzywuzzy.process.extractOne(route_name, route_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0][0]
+    weather_category_ = "" if weather_category is None \
+        else sep + fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup['WeatherCategory'],
+                                                 scorer=fuzzywuzzy.fuzz.ratio)[0]
+    if extra_suffixes:
+        suffix = [str(s) for s in extra_suffixes if s]
+        suffix = sep + sep.join(suffix) if len(suffix) > 1 else sep + suffix[0]
+        filename = base_name_ + route_name_ + weather_category_ + suffix + save_as
+    else:
+        filename = base_name_ + route_name_ + weather_category_ + save_as
     return filename
 
 
 # Subset the required data given 'route' and 'Weather'
-def subset(data, route=None, weather_category=None, reset_index=False):
-    if data is None:
-        data_subset = None
-    else:
-        route_lookup = list(set(data.Route))
-        weather_category_lookup = list(set(data.WeatherCategory))
-        # Select data for a specific route and Weather category
-        if not route and not weather_category:
-            data_subset = data.copy()
-        elif route and not weather_category:
-            data_subset = data[data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]]
-        elif not route and weather_category:
-            data_subset = data[
-                data.WeatherCategory ==
-                fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0]]
-        else:
-            data_subset = data[
-                (data.Route == fuzzywuzzy.process.extractOne(route, route_lookup, score_cutoff=10)[0]) &
-                (data.WeatherCategory ==
-                 fuzzywuzzy.process.extractOne(weather_category, weather_category_lookup, score_cutoff=10)[0])]
-        # Reset index
+def get_subset(data, route_name=None, weather_category=None, reset_index=False):
+    if data is not None:
+        assert isinstance(data, pd.DataFrame) and not data.empty
+        data_subset = data.copy(deep=True)
+
+        if route_name:
+            try:  # assert 'Route' in data_subset.columns
+                data_subset.Route = data_subset.Route.astype(str)
+                route_lookup = list(set(data_subset.Route))
+                route_name_ = [
+                    fuzzywuzzy.process.extractOne(x, route_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
+                    for x in ([route_name] if isinstance(route_name, str) else list(route_name))]
+                data_subset = data_subset[data_subset.Route.isin(route_name_)]
+            except AttributeError:
+                print("Couldn't slice the data by 'Route'. The attribute may not exist in the DataFrame.")
+                pass
+
+        if weather_category:
+            try:  # assert 'WeatherCategory' in data_subset.columns
+                data_subset.WeatherCategory = data_subset.WeatherCategory.astype(str)
+                weather_category_lookup = list(set(data_subset.WeatherCategory))
+                weather_category_ = [
+                    fuzzywuzzy.process.extractOne(x, weather_category_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
+                    for x in ([weather_category] if isinstance(weather_category, str) else list(weather_category))]
+                data_subset = data_subset[data_subset.WeatherCategory.isin(weather_category_)]
+            except AttributeError:
+                print("Couldn't slice the data by 'WeatherCategory'. The attribute may not exist in the DataFrame.")
+                pass
+
         if reset_index:
-            data_subset.reset_index(inplace=True)  # dat.index = range(len(dat))
+            data_subset.index = range(len(data_subset))  # data_subset.reset_index(inplace=True)
+
+    else:
+        data_subset = None
+
     return data_subset
