@@ -1,10 +1,10 @@
 """ Testing models """
 
+import gc
 import os
 import random
 
 import datetime_truncate
-import gc
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -13,15 +13,16 @@ import sklearn.metrics
 import statsmodels.discrete.discrete_model as sm_dcm
 from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 
-import intermediate.utils
+import intermediate.tools
 import mssqlserver.metex
+import prototype.tools
 import settings
 
 settings.pd_preferences()
 
 
 def cd_prototype_heat(*sub_dir):
-    path = intermediate.utils.cdd_intermediate("heat")
+    path = intermediate.tools.cdd_intermediate("heat")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -36,8 +37,8 @@ def cdd_prototype_heat(*sub_dir):
     return path
 
 
-# Change directory to "Models\\intermediate\\heat\\x" and sub-directories
-def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
+# Change directory to "Models\\intermediate\\heat\\?" and sub-directories
+def cdd_prototype_heat_mod(trial_id, *sub_dir):
     path = cd_prototype_heat("{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
@@ -49,290 +50,266 @@ def cdd_prototype_heat_mod(trial_id=0, *sub_dir):
 """ Integrate data of Incidents and Weather """
 
 
-def prep_incidents_with_weather(route_name=None, weather_category='Heat',
-                                on_region=True, on_reason=None, on_season='summer',
-                                test_only=False, random_select=False, use_buffer_zone=False, illustrate_buf_cir=False,
-                                lp=5 * 24, non_ip=24):
-    # Incidents data
-    incidents_data = mssqlserver.metex.view_schedule8_cost_by_datetime_location_reason(route_name)
-    incidents = incidents_data.copy()
-    incidents = incidents[incidents.WeatherCategory.isin(['', weather_category])]
-
-    # Investigate only the following incident reasons
-    if on_reason is not None:
-        reason_codes = mssqlserver.metex.get_incident_reason_metadata().index.tolist()
-        assert all(x for x in on_reason if x in reason_codes) and isinstance(on_reason, list)
-    else:
-        on_reason = ['IR', 'XH', 'IB', 'JH']
-    incidents = incidents[incidents.IncidentReasonCode.isin(on_reason)]
-
-    # Select data for specific seasons
-    incidents = intermediate.utils.get_data_by_season(incidents, on_season)
-
-    # Select data for specific regions
-    if on_region:
-        incidents = incidents[incidents.Route.isin(['South East', 'Anglia', 'Wessex'])]
-
-    if test_only:  # For initial testing ...
-        if random_select:
-            incidents = incidents.iloc[random.sample(range(len(incidents)), test_only), :]
-        else:
-            incidents = incidents.iloc[-test_only - 1:-1, :]
-
-    # --------------------------------------------------------------------------------------------------------
-    """ In the spatial context """
-
-    if use_buffer_zone:
-        # Make a buffer zone for gathering data of weather observations
-        print("Creating a buffer zone for each incident location ... ", end="")
-        incidents['Buffer_Zone'] = incidents.apply(
-            lambda x: intermediate.utils.create_circle_buffer_upon_weather_cell(
-                x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.0), axis=1)
-        print("Done.")
-
-        # Find all weather observation grids intersecting with the buffer zone for each incident location
-        print("Delimiting zone for calculating weather statistics  ... ", end="")
-        incidents['WeatherCell_Obs'] = incidents.Buffer_Zone.map(
-            lambda x: intermediate.utils.find_intersecting_weather_cells(x))
-        print("Done.")
-
-        if illustrate_buf_cir:
-            # Example 1
-            x_incident_start, x_incident_end = incidents.StartLonLat.iloc[12], incidents.EndLonLat.iloc[12]
-            x_midpoint = incidents.MidLonLat.iloc[12]
-            intermediate.utils.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end, whisker_km=0.0,
-                                                        legend_loc='upper left')
-            save_fig(intermediate.utils.cdd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
-            # Example 2
-            x_incident_start, x_incident_end = incidents.StartLonLat.iloc[16], incidents.EndLonLat.iloc[16]
-            x_midpoint = incidents.MidLonLat.iloc[16]
-            intermediate.utils.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end, whisker_km=0.0,
-                                                        legend_loc='lower right')
-            save_fig(intermediate.utils.cdd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
-
-    # --------------------------------------------------------------------------------------------------------
-    """ In the temporal context """
-
-    incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-    # Incident period (IP)
-    incidents['Critical_StartDateTime'] = incidents.StartDateTime.map(
-        lambda x: x.replace(hour=0, minute=0, second=0)) - pd.DateOffset(hours=24)
-    incidents['Critical_EndDateTime'] = incidents.StartDateTime.map(
-        lambda x: x.replace(minute=0) + pd.Timedelta(hours=1) if x.minute > 45 else x.replace(minute=0))
-    incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
-
-    # --------------------------------------------------------------------------------------------------------
-    """ Calculations """
-
-    # Specify the statistics needed for Weather observations (except radiation)
-    def specify_weather_stats_calculations():
-        """
-        :rtype: dict
-        """
-        weather_stats_calculations = {'Temperature': (max, min, np.average),
-                                      'RelativeHumidity': max,
-                                      'WindSpeed': max,
-                                      'WindGust': max,
-                                      'Snowfall': sum,
-                                      'TotalPrecipitation': sum}
-        return weather_stats_calculations
-
-    # Calculate average wind speed and direction
-    def calculate_wind_averages(wind_speeds, wind_directions):
-        u = - wind_speeds * np.sin(np.radians(wind_directions))  # component u, the zonal velocity
-        v = - wind_speeds * np.cos(np.radians(wind_directions))  # component v, the meridional velocity
-        uav, vav = np.mean(u), np.mean(v)  # sum up all u and v values and average it
-        average_wind_speed = np.sqrt(uav ** 2 + vav ** 2)  # Calculate average wind speed
-        # Calculate average wind direction
-        if uav == 0:
-            average_wind_direction = 0 if vav == 0 else (360 if vav > 0 else 180)
-        else:
-            average_wind_direction = (270 if uav > 0 else 90) - 180 / np.pi * np.arctan(vav / uav)
-        return average_wind_speed, average_wind_direction
-
-    # Get all Weather variable names
-    def specify_weather_variable_names():
-        weather_stats_calculations = specify_weather_stats_calculations()
-        stats_names = [x + '_max' for x in weather_stats_calculations.keys()]
-        stats_names[stats_names.index('TotalPrecipitation_max')] = 'TotalPrecipitation_sum'
-        stats_names[stats_names.index('Snowfall_max')] = 'Snowfall_sum'
-        stats_names.insert(stats_names.index('Temperature_max') + 1, 'Temperature_min')
-        stats_names.insert(stats_names.index('Temperature_min') + 1, 'Temperature_avg')
-        stats_names.insert(stats_names.index('Temperature_avg') + 1, 'Temperature_dif')
-        wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
-        weather_variable_names = stats_names + wind_speed_variables + ['Hottest_Heretofore']
-        return weather_variable_names
-
-    # Get the highest temperature of year by far
-    def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
-        # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-        yr_start_dt = datetime_truncate.truncate_year(period_start_dt)
-        # Specify a directory to pickle slices of weather observation data
-        weather_dat_dir = intermediate.utils.cd_intermediate_dat("weather-slices")
-        # Get weather observations
-        weather_obs = mssqlserver.metex.view_weather_by_id_datetime(
-            weather_cell_id, yr_start_dt, period_start_dt, pickle_it=False, dat_dir=weather_dat_dir)
-        weather_obs_by_far = weather_obs[
-            (weather_obs.DateTime < period_start_dt) & (weather_obs.DateTime > yr_start_dt)]
-        highest_temp = weather_obs_by_far.Temperature.max()
-        return highest_temp
-
-    # Calculate the statistics for the weather-related variables (except radiation)
-    def calculate_weather_stats(weather_obs, weather_stats_calculations, values_only=True):
-        if weather_obs.empty:
-            weather_stats = [np.nan] * (sum(map(np.count_nonzero, weather_stats_calculations.values())) + 4)
-            if not values_only:
-                weather_stats = pd.DataFrame(weather_stats, columns=specify_weather_variable_names())
-        else:
-            # Create a pseudo id for groupby() & aggregate()
-            weather_obs['Pseudo_ID'] = 0
-            # Calculate basic statistics
-            weather_stats = weather_obs.groupby('Pseudo_ID').aggregate(weather_stats_calculations)
-            # Calculate average wind speeds and directions
-            weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
-                calculate_wind_averages(weather_obs.WindSpeed, weather_obs.WindDirection)
-            # Lowest temperature between the time of the highest temperature and 00:00
-            highest_temp_dt = weather_obs[
-                weather_obs.Temperature == weather_stats.Temperature['max'][0]].DateTime.min()
-            weather_stats.Temperature['min'] = weather_obs[
-                weather_obs.DateTime < highest_temp_dt].Temperature.min()
-            # Temperature change between the the highest and lowest temperatures
-            weather_stats.insert(3, 'Temperature_dif',
-                                 weather_stats.Temperature['max'] - weather_stats.Temperature['min'])
-            # Find out weather cell ids
-            weather_cell_obs = weather_obs.WeatherCell.unique()
-            weather_cell_id = weather_cell_obs[0] if len(weather_cell_obs) == 1 else tuple(weather_cell_obs)
-            obs_start_dt = weather_obs.DateTime.min()  # Observation start datetime
-            # Whether it is the hottest of the year by far
-            highest_temp = get_highest_temperature_of_year_by_far(weather_cell_id, obs_start_dt)
-            highest_temp_obs = weather_stats.Temperature['max'][0]
-            weather_stats['Hottest_Heretofore'] = 1 if highest_temp_obs >= highest_temp else 0
-            weather_stats.columns = specify_weather_variable_names()
-            # Scale up variable
-            scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg', 'RelativeHumidity_max',
-                             'Snowfall_sum']
-            weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
-            weather_stats.index.name = None
-            if values_only:
-                weather_stats = weather_stats.values[0].tolist()
-        return weather_stats
-
-    # Calculate weather statistics based on the retrieved weather observation data
-    def get_ip_weather_stats(weather_cell_id, start_dt, end_dt):
-        """
-        :param weather_cell_id: e.g. weather_cell_id = incidents.WeatherCell.iloc[0]
-        :param start_dt: e.g. start_dt = incidents.Critical_StartDateTime.iloc[0]
-        :param end_dt: e.g. end_dt = incidents.Critical_EndDateTime.iloc[0]
-        :return:
-        """
-        # Specify a directory to pickle slices of weather observation data
-        weather_dat_dir = intermediate.utils.cd_intermediate_dat("weather-slices")
-        # Query weather observations
-        ip_weather = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, start_dt, end_dt,
-                                                                   pickle_it=False, dat_dir=weather_dat_dir)
-        # Calculate basic statistics of the weather observations
-        weather_stats_calculations = specify_weather_stats_calculations()
-        weather_stats = calculate_weather_stats(ip_weather, weather_stats_calculations, values_only=True)
-        return weather_stats
-
-    # Prior-IP ---------------------------------------------------
-    print("Calculating weather statistics for IPs ... ", end="")
-    incidents[specify_weather_variable_names()] = incidents.apply(
-        lambda x: pd.Series(get_ip_weather_stats(
-            x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
-            x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
-    print("Done.")
-
-    gc.collect()
-
-    incidents.Hottest_Heretofore = incidents.Hottest_Heretofore.astype(int)
-    incidents['Incident_Reported'] = 1
-
-    # Non-IP -----------------------------------------------------------------------------------------------
-    non_ip_data = incidents.copy(deep=True)
-
-    non_ip_data.Critical_StartDateTime = incidents.Critical_StartDateTime - pd.DateOffset(hours=non_ip + lp)
-    # non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + pd.DateOffset(hours=non_ip)
-    non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + incidents.Critical_Period
-
-    # Gather gridded Weather observations of the corresponding non-incident period for each incident record
-    def get_non_ip_weather_stats(weather_cell_id, start_dt, end_dt, stanox_section):
-        """
-        :param weather_cell_id: weather_cell_id = non_ip_data.WeatherCell.iloc[0]
-        :param start_dt: e.g. start_dt = non_ip_data.Critical_StartDateTime.iloc[0]
-        :param end_dt: e.g. end_dt = non_ip_data.Critical_EndDateTime.iloc[0]
-        :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[0]
-        :return:
-        """
-        # Specify a directory to pickle slices of weather observation data
-        weather_dat_dir = intermediate.utils.cd_intermediate_dat("weather-slices")
-        # Query weather observations
-        non_ip_weather = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, start_dt, end_dt,
-                                                                       pickle_it=False, dat_dir=weather_dat_dir)
-        # Get all incident period data on the same section
-        ip_overlap = incidents[
-            (incidents.StanoxSection == stanox_section) &
-            (((incidents.Critical_StartDateTime <= start_dt) & (incidents.Critical_EndDateTime >= start_dt)) |
-             ((incidents.Critical_StartDateTime <= end_dt) & (incidents.Critical_EndDateTime >= end_dt)))]
-        # Skip data of Weather causing Incidents at around the same time; but
-        if not ip_overlap.empty:
-            non_ip_weather = non_ip_weather[
-                (non_ip_weather.DateTime < min(ip_overlap.Critical_StartDateTime)) |
-                (non_ip_weather.DateTime > max(ip_overlap.Critical_EndDateTime))]
-        # Calculate weather statistics
-        weather_stats_calculations = specify_weather_stats_calculations()
-        weather_stats = calculate_weather_stats(non_ip_weather, weather_stats_calculations, values_only=True)
-        return weather_stats
-
-    print("Calculating weather statistics for Non-IPs ... ", end="")
-    non_ip_data[specify_weather_variable_names()] = non_ip_data.apply(
-        lambda x: pd.Series(get_non_ip_weather_stats(
-            x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
-            x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
-    print("Done.")
-
-    gc.collect()
-
-    non_ip_data['Incident_Reported'] = 0
-    # non_ip_data.DelayMinutes = 0.0
-    non_ip_data.DelayCost = 0.0
-
-    # Combine IP data and Non-IP data ----------------------------------------------------
-    incidents_and_weather = pd.concat([incidents, non_ip_data], axis=0, ignore_index=True)
-
-    # Get track orientation
-    incidents_and_weather = intermediate.utils.categorise_track_orientations(incidents_and_weather)
-
-    # Create temperature categories
-    incidents_and_weather = intermediate.utils.categorise_temperatures(incidents_and_weather, 'Temperature_max')
-
-    return incidents_and_weather
-
-
-# Integrate incidents and weather data
-def fetch_incidents_with_weather(trial_id=0, route_name=None, weather_category='Heat',
-                                 on_region=True, on_reason=None, on_season='summer',
-                                 test_only=False, random_select=False, use_buffer_zone=False, illustrate_buf_cir=False,
-                                 lp=5 * 24, non_ip=24,
-                                 update=False):
+def get_incident_location_weather(route_name=None, weather_category='Heat',
+                                  on_region=True, on_reason=None, on_season='summer',
+                                  test_only=False, random_select=False,
+                                  use_buffer_zone=False, illustrate_buf_cir=False,
+                                  ip=24, latent_period=5 * 24, non_ip=24,
+                                  update=False):
+    # Specify a path to save pickle file
     pickle_filename = mssqlserver.metex.make_filename(
         "data", route_name, weather_category, "regional" if on_region else "",
         "-".join([on_season] if isinstance(on_season, str) else on_season), "trial" if test_only else "", sep="-")
-    path_to_pickle = cdd_prototype_heat_mod(trial_id, pickle_filename)
+    path_to_pickle = cdd_prototype_heat(pickle_filename)
+
     if os.path.isfile(path_to_pickle) and not update:
-        incidents_and_weather = load_pickle(path_to_pickle)
+        return load_pickle(path_to_pickle)
     else:
         try:
-            incidents_and_weather = prep_incidents_with_weather(route_name, weather_category,
-                                                                on_region, on_reason, on_season,
-                                                                test_only, random_select, use_buffer_zone,
-                                                                illustrate_buf_cir,
-                                                                lp, non_ip)
+            # Incidents data
+            incidents_data = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason(route_name)
+            incidents = incidents_data.copy()
+            incidents = incidents[incidents.WeatherCategory.isin(['', weather_category])]
+
+            # Investigate only the following incident reasons
+            if on_reason is not None:
+                reason_codes = mssqlserver.metex.get_incident_reason_metadata().index.tolist()
+                assert all(x for x in on_reason if x in reason_codes) and isinstance(on_reason, list)
+            else:
+                on_reason = ['IR', 'XH', 'IB', 'JH']
+            incidents = incidents[incidents.IncidentReasonCode.isin(on_reason)]
+
+            # Select data for specific seasons
+            incidents = intermediate.tools.get_data_by_season(incidents, on_season)
+
+            # Select data for specific regions
+            if on_region:
+                incidents = incidents[incidents.Route.isin(['South East', 'Anglia', 'Wessex'])]
+
+            if test_only:  # For preliminary test
+                if random_select:
+                    incidents = incidents.iloc[random.sample(range(len(incidents)), test_only), :]
+                else:
+                    incidents = incidents.iloc[-test_only - 1:-1, :]
+
+            # --------------------------------------------------------------------------------------------------------
+            """ In the spatial context """
+
+            if use_buffer_zone:
+                # Make a buffer zone for gathering data of weather observations
+                print("Creating a buffer zone for each incident location ... ", end="")
+                incidents['Buffer_Zone'] = incidents.apply(
+                    lambda x: intermediate.tools.create_circle_buffer_upon_weather_cell(
+                        x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.0), axis=1)
+                print("Done.")
+
+                # Find all weather observation grids intersecting with the buffer zone for each incident location
+                print("Delimiting zone for calculating weather statistics  ... ", end="")
+                incidents['WeatherCell_Obs'] = incidents.Buffer_Zone.map(
+                    lambda x: intermediate.tools.find_intersecting_weather_cells(x))
+                print("Done.")
+
+                if illustrate_buf_cir:
+                    # Example 1
+                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[12], incidents.EndLonLat.iloc[12]
+                    x_midpoint = incidents.MidLonLat.iloc[12]
+                    intermediate.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
+                                                                whisker_km=0.0, legend_loc='upper left')
+                    save_fig(intermediate.tools.cdd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
+                    # Example 2
+                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[16], incidents.EndLonLat.iloc[16]
+                    x_midpoint = incidents.MidLonLat.iloc[16]
+                    intermediate.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
+                                                                whisker_km=0.0, legend_loc='lower right')
+                    save_fig(intermediate.tools.cdd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
+
+            # --------------------------------------------------------------------------------------------------------
+            """ In the temporal context """
+
+            incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
+            # Incident period (IP)
+            incidents['Critical_StartDateTime'] = incidents.StartDateTime.map(
+                lambda x: x.replace(hour=0, minute=0, second=0)) - pd.DateOffset(hours=ip)
+            incidents['Critical_EndDateTime'] = incidents.StartDateTime.map(
+                lambda x: x.replace(minute=0) + pd.Timedelta(hours=1) if x.minute > 45 else x.replace(minute=0))
+            incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
+
+            # --------------------------------------------------------------------------------------------------------
+            """ Calculations """
+
+            # Specify the statistics needed for Weather observations (except radiation)
+            def specify_weather_stats_calculations():
+                variables = ['Temperature',
+                             'RelativeHumidity', 'WindSpeed', 'WindGust', 'Snowfall', 'TotalPrecipitation']
+                calculations = (np.nanmax, np.nanmin, np.nanmean)
+                weather_stats_calculations = dict(zip(variables, [calculations] * len(variables)))
+                return weather_stats_calculations
+
+            # Get all Weather variable names
+            def specify_weather_variable_names():
+                weather_stats_calculations = specify_weather_stats_calculations()
+                stats_names = [x + '_max' for x in weather_stats_calculations.keys()]
+                stats_names[stats_names.index('TotalPrecipitation_max')] = 'TotalPrecipitation_sum'
+                stats_names[stats_names.index('Snowfall_max')] = 'Snowfall_sum'
+                stats_names.insert(stats_names.index('Temperature_max') + 1, 'Temperature_min')
+                stats_names.insert(stats_names.index('Temperature_min') + 1, 'Temperature_avg')
+                stats_names.insert(stats_names.index('Temperature_avg') + 1, 'Temperature_dif')
+                wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
+                weather_variable_names = stats_names + wind_speed_variables + ['Hottest_Heretofore']
+                return weather_variable_names
+
+            # Get the highest temperature of year by far
+            def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
+                # Whether "max_temp = weather_stats[0]" is the hottest of year so far
+                yr_start_dt = datetime_truncate.truncate_year(period_start_dt)
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = intermediate.tools.cd_intermediate_dat("weather-slices")
+                # Get weather observations
+                weather_obs = mssqlserver.metex.view_weather_by_id_datetime(
+                    weather_cell_id, yr_start_dt, period_start_dt, pickle_it=False, dat_dir=weather_dat_dir)
+                weather_obs_by_far = weather_obs[
+                    (weather_obs.DateTime < period_start_dt) & (weather_obs.DateTime > yr_start_dt)]
+                highest_temp = weather_obs_by_far.Temperature.max()
+                return highest_temp
+
+            # Calculate the statistics for the weather-related variables (except radiation)
+            def calculate_weather_stats(weather_obs, weather_stats_calculations, values_only=True):
+                if weather_obs.empty:
+                    weather_stats = [np.nan] * (sum(map(np.count_nonzero, weather_stats_calculations.values())) + 4)
+                    if not values_only:
+                        weather_stats = pd.DataFrame(weather_stats, columns=specify_weather_variable_names())
+                else:
+                    # Create a pseudo id for groupby() & aggregate()
+                    weather_obs['Pseudo_ID'] = 0
+                    # Calculate basic statistics
+                    weather_stats = weather_obs.groupby('Pseudo_ID').aggregate(weather_stats_calculations)
+                    # Calculate average wind speeds and directions
+                    weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
+                        prototype.tools.calculate_wind_averages(weather_obs.WindSpeed, weather_obs.WindDirection)
+                    # Lowest temperature between the time of the highest temperature and 00:00
+                    highest_temp_dt = weather_obs[
+                        weather_obs.Temperature == weather_stats.Temperature['max'][0]].DateTime.min()
+                    weather_stats.Temperature['min'] = weather_obs[
+                        weather_obs.DateTime < highest_temp_dt].Temperature.min()
+                    # Temperature change between the the highest and lowest temperatures
+                    weather_stats.insert(3, 'Temperature_dif',
+                                         weather_stats.Temperature['max'] - weather_stats.Temperature['min'])
+                    # Find out weather cell ids
+                    weather_cell_obs = weather_obs.WeatherCell.unique()
+                    weather_cell_id = weather_cell_obs[0] if len(weather_cell_obs) == 1 else tuple(weather_cell_obs)
+                    obs_start_dt = weather_obs.DateTime.min()  # Observation start datetime
+                    # Whether it is the hottest of the year by far
+                    highest_temp = get_highest_temperature_of_year_by_far(weather_cell_id, obs_start_dt)
+                    highest_temp_obs = weather_stats.Temperature['max'][0]
+                    weather_stats['Hottest_Heretofore'] = 1 if highest_temp_obs >= highest_temp else 0
+                    weather_stats.columns = specify_weather_variable_names()
+                    # Scale up variable
+                    scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg',
+                                     'RelativeHumidity_max', 'Snowfall_sum']
+                    weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
+                    weather_stats.index.name = None
+                    if values_only:
+                        weather_stats = weather_stats.values[0].tolist()
+                return weather_stats
+
+            # Calculate weather statistics based on the retrieved weather observation data
+            def get_ip_weather_stats(weather_cell_id, start_dt, end_dt):
+                """
+                Testing parameters:
+                e.g.
+                    weather_cell_id=incidents.WeatherCell.iloc[0]
+                    start_dt=incidents.Critical_StartDateTime.iloc[0]
+                    end_dt=incidents.Critical_EndDateTime.iloc[0]
+                """
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = intermediate.tools.cd_intermediate_dat("weather-slices")
+                # Query weather observations
+                ip_weather = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, start_dt, end_dt,
+                                                                           pickle_it=False, dat_dir=weather_dat_dir)
+                # Calculate basic statistics of the weather observations
+                weather_stats_calculations = specify_weather_stats_calculations()
+                weather_stats = calculate_weather_stats(ip_weather, weather_stats_calculations, values_only=True)
+                return weather_stats
+
+            # Prior-IP ---------------------------------------------------
+            print("Calculating weather statistics for IPs ... ", end="")
+            incidents[specify_weather_variable_names()] = incidents.apply(
+                lambda x: pd.Series(get_ip_weather_stats(
+                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
+            print("Done.")
+
+            gc.collect()
+
+            incidents.Hottest_Heretofore = incidents.Hottest_Heretofore.astype(int)
+            incidents['Incident_Reported'] = 1
+
+            # Non-IP -----------------------------------------------------------------------------------------------
+            non_ip_data = incidents.copy(deep=True)
+
+            non_ip_data.Critical_StartDateTime = \
+                incidents.Critical_StartDateTime - pd.DateOffset(hours=non_ip + latent_period)
+            # non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + pd.DateOffset(hours=non_ip)
+            non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + incidents.Critical_Period
+
+            # Gather gridded Weather observations of the corresponding non-incident period for each incident record
+            def get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section):
+                """
+                :param weather_cell_id: weather_cell_id = non_ip_data.WeatherCell.iloc[0]
+                :param nip_start: e.g. start_dt = non_ip_data.Critical_StartDateTime.iloc[0]
+                :param nip_end: e.g. end_dt = non_ip_data.Critical_EndDateTime.iloc[0]
+                :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[0]
+                :return:
+                """
+                # Specify a directory to pickle slices of weather observation data
+                weather_dat_dir = intermediate.tools.cd_intermediate_dat("weather-slices")
+                # Query weather observations
+                non_ip_weather = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, nip_start, nip_end,
+                                                                               pickle_it=False, dat_dir=weather_dat_dir)
+                # Get all incident period data on the same section
+                ip_overlap = incidents[
+                    (incidents.StanoxSection == stanox_section) &
+                    (((incidents.Critical_StartDateTime <= nip_start) & (incidents.Critical_EndDateTime >= nip_start)) |
+                     ((incidents.Critical_StartDateTime <= nip_end) & (incidents.Critical_EndDateTime >= nip_end)))]
+                # Skip data of Weather causing Incidents at around the same time; but
+                if not ip_overlap.empty:
+                    non_ip_weather = non_ip_weather[
+                        (non_ip_weather.DateTime < min(ip_overlap.Critical_StartDateTime)) |
+                        (non_ip_weather.DateTime > max(ip_overlap.Critical_EndDateTime))]
+                # Calculate weather statistics
+                weather_stats_calculations = specify_weather_stats_calculations()
+                weather_stats = calculate_weather_stats(non_ip_weather, weather_stats_calculations, values_only=True)
+                return weather_stats
+
+            print("Calculating weather statistics for Non-IPs ... ", end="")
+            non_ip_data[specify_weather_variable_names()] = non_ip_data.apply(
+                lambda x: pd.Series(get_non_ip_weather_stats(
+                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
+            print("Done.")
+
+            gc.collect()
+
+            non_ip_data['Incident_Reported'] = 0
+            # non_ip_data.DelayMinutes = 0.0
+            non_ip_data.DelayCost = 0.0
+
+            # Combine IP data and Non-IP data ----------------------------------------------------
+            incidents_and_weather = pd.concat([incidents, non_ip_data], axis=0, ignore_index=True)
+
+            # Get track orientation
+            incidents_and_weather = intermediate.tools.categorise_track_orientations(incidents_and_weather)
+
+            # Create temperature categories
+            incidents_and_weather = intermediate.tools.categorise_temperatures(incidents_and_weather, 'Temperature_max')
+
+            # Save the derived data
             save_pickle(incidents_and_weather, path_to_pickle)
+
+            return incidents_and_weather
+
         except Exception as e:
-            print(e)
-            incidents_and_weather = None
-    return incidents_and_weather
+            print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename), e))
 
 
 # ====================================================================================================================
@@ -462,12 +439,12 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                               plot_roc=True, plot_pred_likelihood=True,
                               save_as=".tif", dpi=None, verbose=True):
     # Get the m_data for modelling
-    incidents_and_weather = fetch_incidents_with_weather(trial_id=trial_id,
-                                                         route_name=None, weather_category='Heat',
-                                                         on_region=regional, on_reason=reason, on_season=season,
-                                                         lp=lp, non_ip=non_ip,
-                                                         test_only=False, illustrate_buf_cir=False,
-                                                         update=update)
+    incidents_and_weather = get_incident_location_weather(trial_id=trial_id,
+                                                          route_name=None, weather_category='Heat',
+                                                          on_region=regional, on_reason=reason, on_season=season,
+                                                          latent_period=lp, non_ip=non_ip,
+                                                          test_only=False, illustrate_buf_cir=False,
+                                                          update=update)
 
     # Select features
     explanatory_variables = specify_explanatory_variables()
