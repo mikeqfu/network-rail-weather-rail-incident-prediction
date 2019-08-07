@@ -15,7 +15,7 @@ import sklearn
 import sklearn.metrics
 import statsmodels.discrete.discrete_model as sm_dcm
 import statsmodels.tools as sm_tools
-from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
+from pyhelpers.store import load_pickle, save_fig, save_pickle
 
 import intermediate.tools
 import settings
@@ -24,7 +24,6 @@ import weather.midas
 import weather.ukcp
 from utils import get_subset, make_filename
 
-settings.np_preferences()
 settings.pd_preferences()
 
 # ====================================================================================================================
@@ -567,10 +566,8 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
 
     plt.tight_layout()
 
-    path_to_fig = cd_prototype_heat("figures", "Variables" + save_as)
-    plt.savefig(path_to_fig, dpi=dpi)
     if save_as == ".svg":
-        save_svg_as_emf(path_to_fig, path_to_fig.replace(save_as, ".emf"))
+        save_fig(intermediate.tools.cd_intermediate_fig_pub("Variables" + save_as), dpi)
 
 
 #
