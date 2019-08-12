@@ -22,7 +22,7 @@ from pyhelpers.store import load_pickle, save, save_pickle, save_svg_as_emf
 
 import mssqlserver.metex
 import mssqlserver.vegetation
-import prototype.utils as proto_utils
+import prototype.tools as proto_utils
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
