@@ -23,7 +23,7 @@ from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage, yards_to_nr_m
 
 from misc.delay_attribution_glossary import get_incident_reason_metadata, get_performance_event_code
 from misc.location_name_errata import location_names_regexp_replacement_dict, location_names_replacement_dict
-from mssqlserver.utils import establish_mssql_connection, get_table_primary_keys, read_table_by_query
+from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
 from utils import cdd_metex, cdd_rc
 
 pd_preferences()

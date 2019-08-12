@@ -10,7 +10,7 @@ from pyhelpers.store import load_json, load_pickle, save, save_pickle
 from pyhelpers.text import find_matched_str
 from pyrcs.utils import nr_mileage_num_to_str
 
-from mssqlserver.utils import establish_mssql_connection, get_table_primary_keys
+from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
 from utils import cdd_vegetation
 
 # ====================================================================================================================
