@@ -133,7 +133,7 @@ def make_radtob_pickle_path(data_filename: str, daily: bool, met_stn: bool):
     return path_to_radtob_pickle
 
 
-def get_midas_radtob(data_filename="midas-radtob-2006-2019", daily=False, met_stn=False, update=False) -> pd.DataFrame:
+def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, met_stn=False, update=False) -> pd.DataFrame:
     """
     :param data_filename: [str]
     :param daily: [bool] if True, 'OB_HOUR_COUNT' == 24, i.e. aggregate value in one day 24 hours; False (default)
