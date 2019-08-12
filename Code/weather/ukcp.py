@@ -10,7 +10,7 @@ from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save_pickle
 
-from weather.utils import cdd_weather, create_grid
+from weather.tools import cdd_weather, create_grid
 
 pd_preferences()
 
