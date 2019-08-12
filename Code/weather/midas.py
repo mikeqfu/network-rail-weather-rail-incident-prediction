@@ -1,5 +1,6 @@
 """ Met Office RADTOB (Radiation values currently being reported) """
 
+import gc
 import os
 import zipfile
 
@@ -15,45 +16,41 @@ pd_preferences()
 
 
 # Locations of the meteorological stations ---------------------------------------------------------------------------
-def prep_meteorological_stations_locations():
-    path_to_spreadsheet = cdd_weather("meteorological-stations.xlsx")
-    try:
-        met_stations_info = pd.read_excel(path_to_spreadsheet, parse_dates=['Station start date'])
-
-        met_stations_info.columns = [x.replace(' ', '_').upper() for x in met_stations_info.columns]
-        met_stations_info = met_stations_info.applymap(lambda x: x.strip() if isinstance(x, str) else x)
-
-        # Convert coordinates to shapely.geometry.Point
-        met_stations_info['LONG_LAT'] = met_stations_info.apply(lambda x: (x['LONGITUDE'], x['LATITUDE']), axis=1)
-        met_stations_info['LONG_LAT_GEOM'] = met_stations_info.apply(
-            lambda x: shapely.geometry.Point((x['LONGITUDE'], x['LATITUDE'])), axis=1)
-        met_stations_info['E_N'] = met_stations_info.apply(lambda x: (x['EASTING'], x['NORTHING']), axis=1)
-        met_stations_info['E_N_GEOM'] = met_stations_info.apply(
-            lambda x: shapely.geometry.Point((x['EASTING'], x['NORTHING'])), axis=1)
-
-        met_stations_info.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
-
-        met_stations_info.sort_values(['SRC_ID', 'MET_STATION'], inplace=True)
-        met_stations_info.set_index('SRC_ID', inplace=True)
-
-        save_pickle(met_stations_info, path_to_spreadsheet.replace(".xlsx", ".pickle"))
-
-    except Exception as e:
-        print("Failed to get the locations of the meteorological stations. {}".format(e))
-
-
-def fetch_meteorological_stations_locations(update=False) -> pd.DataFrame:
+def get_meteorological_stations_locations(update=False) -> pd.DataFrame:
     """
     :param update: [bool]
     """
-    path_to_pickle = cdd_weather("meteorological-stations.pickle")
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_meteorological_stations_locations()
-    try:
-        met_stations_info = load_pickle(path_to_pickle)
-        return met_stations_info
-    except Exception as e:
-        print(e)
+    filename = "meteorological-stations"
+    path_to_pickle = cdd_weather(filename + ".pickle")
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+    else:
+        try:
+            path_to_spreadsheet = cdd_weather(filename + ".xlsx")
+            met_stations_info = pd.read_excel(path_to_spreadsheet, parse_dates=['Station start date'])
+
+            met_stations_info.columns = [x.replace(' ', '_').upper() for x in met_stations_info.columns]
+            met_stations_info = met_stations_info.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+
+            # Convert coordinates to shapely.geometry.Point
+            met_stations_info['LONG_LAT'] = met_stations_info.apply(lambda x: (x['LONGITUDE'], x['LATITUDE']), axis=1)
+            met_stations_info['LONG_LAT_GEOM'] = met_stations_info.apply(
+                lambda x: shapely.geometry.Point((x['LONGITUDE'], x['LATITUDE'])), axis=1)
+            met_stations_info['E_N'] = met_stations_info.apply(lambda x: (x['EASTING'], x['NORTHING']), axis=1)
+            met_stations_info['E_N_GEOM'] = met_stations_info.apply(
+                lambda x: shapely.geometry.Point((x['EASTING'], x['NORTHING'])), axis=1)
+
+            met_stations_info.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
+
+            met_stations_info.sort_values(['SRC_ID', 'MET_STATION'], inplace=True)
+            met_stations_info.set_index('SRC_ID', inplace=True)
+
+            save_pickle(met_stations_info, path_to_pickle.replace(".xlsx", ".pickle"))
+
+            return met_stations_info
+
+        except Exception as e:
+            print("Failed to get the locations of the meteorological stations. {}".format(e))
 
 
 # MIDAS RADTOB (Radiation data) --------------------------------------------------------------------------------------
@@ -117,7 +114,7 @@ def parse_midas_radtob(filename: str, headers: list, daily=False, met_stn=False)
     ro_data.insert(ro_data.columns.get_loc('OB_END_DATE_TIME'), column='OB_END_DATE', value=ob_end_date)
 
     if met_stn:
-        met_stn = fetch_meteorological_stations_locations()
+        met_stn = get_meteorological_stations_locations()
         met_stn.rename(columns={'NAME': 'MET_STATION'}, inplace=True)
         ro_data = ro_data.join(met_stn, on='SRC_ID')
 
@@ -136,56 +133,51 @@ def make_radtob_pickle_path(data_filename: str, daily: bool, met_stn: bool):
     return path_to_radtob_pickle
 
 
-def prep_midas_radtob(data_filename, daily=False, met_stn=False):
+def get_midas_radtob(data_filename="midas-radtob-2006-2019", daily=False, met_stn=False, update=False) -> pd.DataFrame:
     """
-    :param data_filename: [str] e.g. data_filename="midas-radtob-20060101-20141231"
-    :param daily: [bool] if True, 'OB_HOUR_COUNT' == 24, i.e. aggregate value in one day 24 hours; False (default)
-    :param met_stn: [bool] if True, add the location of meteorological station; False (default)
-    """
-    try:
-        # Headers of the midas_radtob data set
-        header_filename = "RO-column-headers.xlsx"
-        path_to_header_file = cdd_weather("MIDAS", header_filename)
-        headers_raw = pd.read_excel(path_to_header_file, header=None)
-        headers = [x.strip() for x in headers_raw.iloc[0, :].values]
-
-        path_to_zip = cdd_weather("MIDAS", data_filename + ".zip")
-        with zipfile.ZipFile(path_to_zip, 'r') as zf:
-            filename_list = natsort.natsorted(zf.namelist())
-            temp_dat = [parse_midas_radtob(zf.open(f), headers, daily, met_stn=False) for f in filename_list]
-        zf.close()
-
-        radtob = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
-
-        # Note: The following line is questionable
-        radtob.loc[(radtob.GLBL_IRAD_AMT < 0) | radtob.GLBL_IRAD_AMT.isna(), 'GLBL_IRAD_AMT'] = 0  # or pd.np.nan
-
-        if met_stn:
-            met_stn = fetch_meteorological_stations_locations()
-            radtob = radtob.join(met_stn, on='SRC_ID')
-
-        radtob.set_index(['SRC_ID', 'OB_END_DATE'], inplace=True)
-
-        path_to_pickle = make_radtob_pickle_path(data_filename, daily, met_stn)
-        save_pickle(radtob, path_to_pickle)
-
-    except Exception as e:
-        print("Failed to get the radiation observations. {}".format(e))
-
-
-def fetch_midas_radtob(data_filename="midas-radtob-20060101-20141231", daily=False, met_stn=False,
-                       update=False) -> pd.DataFrame:
-    """
-    :param data_filename: [str] data_filename="midas-radtob-20060101-20141231"
+    :param data_filename: [str]
     :param daily: [bool] if True, 'OB_HOUR_COUNT' == 24, i.e. aggregate value in one day 24 hours; False (default)
     :param met_stn: [bool] if True, add the location of meteorological station; False (default)
     :param update:
+
+    Testing parameters:
+    e.g.
+        data_filename="midas-radtob-2006-2019"
+        daily=False
+        met_stn=False
+        update=False
     """
     path_to_pickle = make_radtob_pickle_path(data_filename, daily, met_stn)
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_midas_radtob(daily, met_stn)
-    try:
-        radtob = load_pickle(path_to_pickle)
-        return radtob
-    except Exception as e:
-        print(e)
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+    else:
+        try:
+            # Headers of the midas_radtob data set
+            headers_raw = pd.read_excel(cdd_weather("MIDAS", "RO-column-headers.xlsx"), header=None)
+            headers = [x.strip() for x in headers_raw.iloc[0, :].values]
+
+            path_to_zip = cdd_weather("MIDAS", data_filename + ".zip")
+            with zipfile.ZipFile(path_to_zip, 'r') as zf:
+                filename_list = natsort.natsorted(zf.namelist())
+                temp_dat = [parse_midas_radtob(zf.open(f), headers, daily, met_stn=False) for f in filename_list]
+            zf.close()
+
+            radtob = pd.concat(temp_dat, axis=0, ignore_index=True, sort=False)
+
+            # Note: The following line is questionable
+            radtob.loc[(radtob.GLBL_IRAD_AMT < 0) | radtob.GLBL_IRAD_AMT.isna(), 'GLBL_IRAD_AMT'] = 0  # or pd.np.nan
+
+            # Whether to add information about the associated meteorological stations
+            radtob_ = radtob.join(get_meteorological_stations_locations(), on='SRC_ID') if met_stn else radtob
+
+            radtob_.set_index(['SRC_ID', 'OB_END_DATE'], inplace=True)
+
+            # Save data as a pickle
+            save_pickle(radtob_, path_to_pickle)
+
+            gc.collect()
+
+            return radtob_
+
+        except Exception as e:
+            print("Failed to get the radiation observations. {}".format(e))
