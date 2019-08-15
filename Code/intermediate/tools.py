@@ -1,6 +1,7 @@
 import functools
 import os
 
+import datetime_truncate
 import geopandas as gpd
 import geopy.distance
 import matplotlib.font_manager
@@ -93,6 +94,7 @@ def create_circle_buffer_upon_weather_cell(midpoint, incident_start, incident_en
     :param whisker_km: [num] an extended length to the diameter (i.e. on both sides of the start and end locations)
     :param as_geom: [bool]
     :return: [shapely.geometry.Polygon; list of tuples]
+
     """
     # Azimuthal equidistant projection
     aeqd_proj = '+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0'
@@ -308,3 +310,89 @@ def categorise_temperatures(attr_dat, column_name='Temperature_max') -> pd.DataF
     temperature_category_data = pd.concat([attr_dat, temperature_category, categorical_var], axis=1)
 
     return temperature_category_data
+
+
+# ====================================================================================================================
+""" Calculations """
+
+
+# Calculate average wind speed and direction
+def calculate_wind_averages(wind_speeds, wind_directions):
+    u = - wind_speeds * np.sin(np.radians(wind_directions))  # component u, the zonal velocity
+    v = - wind_speeds * np.cos(np.radians(wind_directions))  # component v, the meridional velocity
+    uav, vav = np.nanmean(u), np.nanmean(v)  # sum up all u and v values and average it
+    average_wind_speed = np.sqrt(uav ** 2 + vav ** 2)  # Calculate average wind speed
+    # Calculate average wind direction
+    if uav == 0:
+        average_wind_direction = 0 if vav == 0 else (360 if vav > 0 else 180)
+    else:
+        average_wind_direction = (270 if uav > 0 else 90) - 180 / np.pi * np.arctan(vav / uav)
+    return average_wind_speed, average_wind_direction
+
+
+# Get all Weather variable names
+def get_weather_variable_names(weather_stats_calculations: dict):
+    stats_names = [x + '_max' for x in weather_stats_calculations.keys()]
+    stats_names[stats_names.index('TotalPrecipitation_max')] = 'TotalPrecipitation_sum'
+    stats_names[stats_names.index('Snowfall_max')] = 'Snowfall_sum'
+    stats_names.insert(stats_names.index('Temperature_max') + 1, 'Temperature_min')
+    stats_names.insert(stats_names.index('Temperature_min') + 1, 'Temperature_avg')
+    stats_names.insert(stats_names.index('Temperature_avg') + 1, 'Temperature_dif')
+    wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
+    weather_variable_names = stats_names + wind_speed_variables + ['Hottest_Heretofore']
+    return weather_variable_names
+
+
+# Get the highest temperature of year by far
+def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
+    # Whether "max_temp = weather_stats[0]" is the hottest of year so far
+    yr_start_dt = datetime_truncate.truncate_year(period_start_dt)
+    # Get weather observations
+    weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
+        weather_cell_id, yr_start_dt, period_start_dt, pickle_it=False, dat_dir=cd_intermediate_dat("weather-slices"))
+    #
+    weather_obs_by_far = weather_obs[(weather_obs.DateTime < period_start_dt) & (weather_obs.DateTime > yr_start_dt)]
+    #
+    highest_temperature = weather_obs_by_far.Temperature.max()
+    return highest_temperature
+
+
+# Calculate the statistics for the weather-related variables (except radiation)
+def calculate_statistics_for_weather_variables(weather_obs, weather_stats_calculations, values_only=True):
+    if weather_obs.empty:
+        weather_stats = [np.nan] * (sum(map(np.count_nonzero, weather_stats_calculations.values())) + 4)
+        if not values_only:
+            weather_stats = pd.DataFrame(weather_stats, columns=get_weather_variable_names())
+    else:
+        # Create a pseudo id for groupby() & aggregate()
+        weather_obs['Pseudo_ID'] = 0
+        # Calculate basic statistics
+        weather_stats = weather_obs.groupby('Pseudo_ID').aggregate(weather_stats_calculations)
+        # Calculate average wind speeds and directions
+        weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
+            calculate_wind_averages(weather_obs.WindSpeed, weather_obs.WindDirection)
+        # Lowest temperature between the time of the highest temperature and 00:00
+        highest_temp_dt = weather_obs[
+            weather_obs.Temperature == weather_stats.Temperature['max'][0]].DateTime.min()
+        weather_stats.Temperature['min'] = weather_obs[
+            weather_obs.DateTime < highest_temp_dt].Temperature.min()
+        # Temperature change between the the highest and lowest temperatures
+        weather_stats.insert(3, 'Temperature_dif',
+                             weather_stats.Temperature['max'] - weather_stats.Temperature['min'])
+        # Find out weather cell ids
+        weather_cell_obs = weather_obs.WeatherCell.unique()
+        weather_cell_id = weather_cell_obs[0] if len(weather_cell_obs) == 1 else tuple(weather_cell_obs)
+        obs_start_dt = weather_obs.DateTime.min()  # Observation start datetime
+        # Whether it is the hottest of the year by far
+        highest_temp = get_highest_temperature_of_year_by_far(weather_cell_id, obs_start_dt)
+        highest_temp_obs = weather_stats.Temperature['max'][0]
+        weather_stats['Hottest_Heretofore'] = 1 if highest_temp_obs >= highest_temp else 0
+        weather_stats.columns = get_weather_variable_names()
+        # Scale up variable
+        scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg',
+                         'RelativeHumidity_max', 'Snowfall_sum']
+        weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
+        weather_stats.index.name = None
+        if values_only:
+            weather_stats = weather_stats.values[0].tolist()
+    return weather_stats
