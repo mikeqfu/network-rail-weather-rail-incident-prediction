@@ -17,10 +17,10 @@ from pyhelpers.dir import cdd
 from pyhelpers.misc import get_variable_names
 from pyhelpers.store import load_pickle, save_pickle, save_svg_as_emf
 
+import models.prototype.furlong
+import models.prototype.tools
 import mssqlserver.metex
 import mssqlserver.vegetation
-import prototype.furlong
-import prototype.tools
 import settings
 
 # Apply the preferences ==============================================================================================
@@ -33,7 +33,7 @@ settings.pd_preferences(reset=False)
 
 # Change directory to "Models\\prototype\\wind\\data" and sub-directories
 def cdd_prototype_wind(*sub_dir):
-    path = prototype.tools.cdd_prototype("wind", "data")
+    path = models.prototype.tools.cdd_prototype("wind", "data")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -42,7 +42,7 @@ def cdd_prototype_wind(*sub_dir):
 
 # Change directory to "Models\\prototype\\wind\\{}" and sub-directories
 def cdd_prototype_wind_mod(trial_id, *sub_dir):
-    path = prototype.tools.cdd_prototype("wind", "{}".format(trial_id))
+    path = models.prototype.tools.cdd_prototype("wind", "{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -131,7 +131,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
                                                                                 pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats = prototype.tools.calculate_statistics_for_weather_variables(
+                weather_stats = models.prototype.tools.calculate_statistics_for_weather_variables(
                     ip_weather_obs, weather_stats_calculations)
                 return weather_stats
 
@@ -140,7 +140,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
                 axis=1)
             ip_statistics = pd.DataFrame(ip_statistics.to_list(), index=ip_statistics.index,
-                                         columns=prototype.tools.get_weather_variable_names(weather_stats_calculations))
+                                         columns=models.prototype.tools.get_weather_variable_names(weather_stats_calculations))
             ip_statistics['Temperature_diff'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             #
@@ -176,7 +176,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                         (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
                         (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
                 # Get the max/min/avg Weather parameters for those incident periods
-                non_ip_weather_stats = prototype.tools.calculate_statistics_for_weather_variables(
+                non_ip_weather_stats = models.prototype.tools.calculate_statistics_for_weather_variables(
                     non_ip_weather_obs, weather_stats_calculations)
                 return non_ip_weather_stats
 
@@ -185,7 +185,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 lambda x: get_weather_stats_for_non_ip(
                     x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
             nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index,
-                                          prototype.tools.get_weather_variable_names(weather_stats_calculations))
+                                          models.prototype.tools.get_weather_variable_names(weather_stats_calculations))
             nip_statistics['Temperature_diff'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             #
@@ -267,8 +267,8 @@ def get_incident_location_vegetation(route_name='Anglia',
             # furlong_vegetation_data.set_index('FurlongID', inplace=True)
 
             # Get incident_location_furlongs
-            incident_furlongs = prototype.furlong.get_incident_furlongs(route_name, None, shift_yards_same_elr,
-                                                                        shift_yards_diff_elr)
+            incident_furlongs = models.prototype.furlong.get_incident_furlongs(route_name, None, shift_yards_same_elr,
+                                                                               shift_yards_diff_elr)
 
             # Get all column names as features
             features = incident_furlongs.columns
@@ -280,7 +280,7 @@ def get_incident_location_vegetation(route_name='Anglia',
             fill_0 = [x for x in features if re.match('.*height', x)] + ['HazardTreeNumber']
             fill_inf = [x for x in features if re.match('^.*prox|.*diam', x)]
 
-            incident_location_furlongs = prototype.furlong.get_incident_location_furlongs(
+            incident_location_furlongs = models.prototype.furlong.get_incident_location_furlongs(
                 route_name, None, shift_yards_same_elr, shift_yards_diff_elr).dropna()
 
             # Define a function that computes Vegetation stats for each incident record
@@ -529,7 +529,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(prototype.tools.cd_prototype_fig_pub("Variables", "Weather" + save_as))
+    path_to_file_weather = cdd(models.prototype.tools.cd_prototype_fig_pub("Variables", "Weather" + save_as))
     plt.savefig(path_to_file_weather, dpi=dpi)
     if save_as == ".svg":
         save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -551,7 +551,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax.yaxis.set_label_coords(0, 1.02)
 
     plt.tight_layout()
-    path_to_file_veg = prototype.tools.cd_prototype_fig_pub("Variables", "Vegetation" + save_as)
+    path_to_file_veg = models.prototype.tools.cd_prototype_fig_pub("Variables", "Vegetation" + save_as)
     plt.savefig(path_to_file_veg, dpi=dpi)
     if save_as == ".svg":
         save_svg_as_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
@@ -627,7 +627,7 @@ def logistic_regression_model(trial_id,
                                                                      hazard_pctl)
 
     # Select season data: 'Spring', 'Summer', 'Autumn', 'Winter'
-    integrated_data = prototype.tools.get_data_by_season(integrated_data, in_seasons, incident_datetime_col='StartDate')
+    integrated_data = model.prototype.tools.get_data_by_season(integrated_data, in_seasons, incident_datetime_col='StartDate')
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
@@ -731,7 +731,7 @@ def logistic_regression_model(trial_id,
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
             plt.savefig(cdd_prototype_wind_mod(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = prototype.tools.cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
+            path_to_file_roc = model.prototype.tools.cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
             plt.savefig(path_to_file_roc, dpi=dpi)
             if save_as == ".svg":
                 save_svg_as_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
@@ -755,7 +755,7 @@ def logistic_regression_model(trial_id,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             plt.savefig(cdd_prototype_wind_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = prototype.tools.cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
+            path_to_file_pred = model.prototype.tools.cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
             plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
             if save_as == ".svg":
                 save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.

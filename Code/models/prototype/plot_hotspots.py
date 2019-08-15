@@ -20,9 +20,9 @@ from pyhelpers.geom import get_geometric_midpoint
 from pyhelpers.misc import colour_bar_index, confirmed
 from pyhelpers.store import load_pickle, save, save_pickle, save_svg_as_emf
 
+import models.prototype.tools as proto_utils
 import mssqlserver.metex
 import mssqlserver.vegetation
-import prototype.tools as proto_utils
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================

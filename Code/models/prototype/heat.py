@@ -13,9 +13,9 @@ import sklearn.utils.extmath
 import statsmodels.discrete.discrete_model as sm
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 
+import models.prototype.tools
+import models.prototype.wind
 import mssqlserver.metex
-import prototype.tools
-import prototype.wind
 import settings
 
 # Apply the preferences ==============================================================================================
@@ -28,7 +28,7 @@ plt.rc('font', family='Times New Roman')
 
 
 def cdd_prototype_heat(*sub_dir):
-    path = prototype.tools.cdd_prototype("heat", "data")
+    path = models.prototype.tools.cdd_prototype("heat", "data")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -37,7 +37,7 @@ def cdd_prototype_heat(*sub_dir):
 
 # Change directory to "Model\\prototype-Heat\\Trial_" and sub-directories
 def cdd_prototype_heat_mod(trial_id, *sub_dir):
-    path = prototype.tools.cdd_prototype("heat", "{}".format(trial_id))
+    path = models.prototype.tools.cdd_prototype("heat", "{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -145,7 +145,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
                                                                                 pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats_data = prototype.tools.calculate_statistics_for_weather_variables(
+                weather_stats_data = models.prototype.tools.calculate_statistics_for_weather_variables(
                     ip_weather_obs, weather_stats_calculations)
                 return weather_stats_data
 
@@ -155,7 +155,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 axis=1)
 
             ip_statistics = pd.DataFrame(ip_stats.to_list(), index=ip_stats.index,
-                                         columns=prototype.tools.get_weather_variable_names(weather_stats_calculations))
+                                         columns=models.prototype.tools.get_weather_variable_names(weather_stats_calculations))
             ip_statistics['Temperature_diff'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             ip_data = incidents.join(ip_statistics.dropna(), how='inner')
@@ -189,7 +189,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                         (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
                         (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
                 # Get the max/min/avg Weather parameters for those incident periods
-                non_ip_weather_stats = prototype.tools.calculate_statistics_for_weather_variables(
+                non_ip_weather_stats = models.prototype.tools.calculate_statistics_for_weather_variables(
                     non_ip_weather_obs, weather_stats_calculations)
                 return non_ip_weather_stats
 
@@ -199,7 +199,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                     x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
 
             nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index,
-                                          prototype.tools.get_weather_variable_names(weather_stats_calculations))
+                                          models.prototype.tools.get_weather_variable_names(weather_stats_calculations))
             nip_statistics['Temperature_diff'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
@@ -216,7 +216,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 pd.get_dummies(wind_direction, prefix='WindDirection_avg'))
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
-            track_orientation = prototype.tools.categorise_track_orientations(incident_location_weather)
+            track_orientation = models.prototype.tools.categorise_track_orientations(incident_location_weather)
             incident_location_weather = incident_location_weather.join(track_orientation).join(
                 pd.get_dummies(track_orientation, prefix='Track_Orientation'))
 
@@ -324,7 +324,7 @@ def get_incident_data_with_weather_and_vegetation(route_name='Anglia', weather_c
             incident_location_weather = get_incident_location_weather(
                 route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs)
             # Get Vegetation conditions for the locations
-            incident_location_vegetation = prototype.wind.get_incident_location_vegetation(
+            incident_location_vegetation = models.prototype.wind.get_incident_location_vegetation(
                 route_name, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
             # Merge the above two data sets
@@ -566,7 +566,7 @@ def logistic_regression_model(trial_id,
         shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
     # Select season data: 'spring', 'summer', 'autumn', 'winter'
-    integrated_data = prototype.tools.get_data_by_season(integrated_data, season)
+    integrated_data = model.prototype.tools.get_data_by_season(integrated_data, season)
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
