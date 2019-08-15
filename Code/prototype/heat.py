@@ -14,8 +14,8 @@ import statsmodels.discrete.discrete_model as sm
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 
 import mssqlserver.metex
-import prototype.model.wind
 import prototype.tools
+import prototype.wind
 import settings
 
 # Apply the preferences ==============================================================================================
@@ -142,8 +142,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
 
                 """
                 # Get Weather data about where and when the incident occurred
-                ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
-                                                                               pickle_it=False)
+                ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
+                                                                                pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats_data = prototype.tools.calculate_statistics_for_weather_variables(
                     ip_weather_obs, weather_stats_calculations)
@@ -176,7 +176,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 :return:
                 """
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(
+                non_ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
                     weather_cell_id, nip_start, nip_end, pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
@@ -324,7 +324,7 @@ def get_incident_data_with_weather_and_vegetation(route_name='Anglia', weather_c
             incident_location_weather = get_incident_location_weather(
                 route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs)
             # Get Vegetation conditions for the locations
-            incident_location_vegetation = prototype.model.wind.get_incident_location_vegetation(
+            incident_location_vegetation = prototype.wind.get_incident_location_vegetation(
                 route_name, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
 
             # Merge the above two data sets

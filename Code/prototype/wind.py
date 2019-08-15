@@ -128,8 +128,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 
                 """
                 # Get Weather data about where and when the incident occurred
-                ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
-                                                                               pickle_it=False)
+                ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
+                                                                                pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
                 weather_stats = prototype.tools.calculate_statistics_for_weather_variables(
                     ip_weather_obs, weather_stats_calculations)
@@ -163,7 +163,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 :return: [list] a list of statistics
                 """
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = mssqlserver.metex.view_weather_by_id_datetime(
+                non_ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
                     weather_cell_id, nip_start, nip_end, pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
