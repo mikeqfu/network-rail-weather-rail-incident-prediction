@@ -148,14 +148,14 @@ def find_weather_cell_id(longitude, latitude):
 
 # Get all Weather variable names
 def get_weather_variable_names(weather_stats_calculations: dict):
-    wind_variable_names = []
+    weather_variable_names = []
     for k, v in weather_stats_calculations.items():
         if isinstance(v, tuple):
             for v_ in v:
-                wind_variable_names.append('_'.join([k, v_.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
+                weather_variable_names.append('_'.join([k, v_.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
         else:
-            wind_variable_names.append('_'.join([k, v.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
-    wind_variable_names_ = wind_variable_names + ['WindSpeed_avg', 'WindDirection_avg']
+            weather_variable_names.append('_'.join([k, v.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
+    wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg']
     return wind_variable_names_
 
 
