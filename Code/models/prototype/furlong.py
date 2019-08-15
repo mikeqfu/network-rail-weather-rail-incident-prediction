@@ -10,7 +10,7 @@ from pyhelpers.store import load_pickle, save_pickle
 from pyrcs.line_data_cls import elrs_mileages
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_to_yards, str_to_num_mileage, yards_to_nr_mileage
 
-import models.prototype.tools
+import models.tools
 import mssqlserver.metex
 import mssqlserver.vegetation
 
@@ -19,7 +19,7 @@ import mssqlserver.vegetation
 def fetch_nr_vegetation_furlong_data(update=False) -> pd.DataFrame:
 
     pickle_filename = "vegetation_furlong_data"
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename + ".pickle")
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -175,12 +175,12 @@ def adjust_incident_mileages(nr_furlong_data, elr, start_mileage_num, end_mileag
 def get_connecting_nodes(route_name=None, update=False) -> pd.DataFrame:
     filename = "connections_between_different_ELRs"
     pickle_filename = mssqlserver.metex.make_filename(filename, route_name)
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
         try:
-            path_to_pickle_temp = models.prototype.tools.cd_prototype_dat(mssqlserver.metex.make_filename(filename))
+            path_to_pickle_temp = models.tools.cd_prototype_dat(mssqlserver.metex.make_filename(filename))
             if os.path.isfile(path_to_pickle_temp) and not update:
                 connecting_nodes_all = load_pickle(path_to_pickle_temp)
                 connecting_nodes = mssqlserver.metex.get_subset(connecting_nodes_all, route_name)
@@ -212,7 +212,7 @@ def get_connecting_nodes(route_name=None, update=False) -> pd.DataFrame:
 def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shift_yards_same_elr, update=False):
     pickle_filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_same_start_end_ELRs", route_name,
                                                       weather_category, shift_yards_same_elr)
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -253,7 +253,7 @@ def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=
     pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_same_start_end_ELRs",
                                                       route_name, weather_category, shift_yards_same_elr,
                                                       save_as=".pickle")
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -285,7 +285,7 @@ def get_incident_furlongs_same_start_end_elrs(route_name=None, weather_category=
 def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shift_yards_diff_elr, update=False):
     pickle_filename = mssqlserver.metex.make_filename("adjusted_incident_mileages_diff_start_end_ELRs", route_name,
                                                       weather_category, shift_yards_diff_elr)
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -385,7 +385,7 @@ def get_incident_furlongs_diff_start_end_elrs(route_name=None, weather_category=
     pickle_filename = mssqlserver.metex.make_filename("incident_furlongs_diff_start_end_ELRs",
                                                       route_name, weather_category, shift_yards_diff_elr,
                                                       save_as=".pickle")
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -420,7 +420,7 @@ def get_incident_furlongs(route_name=None, weather_category=None,
 
     pickle_filename = mssqlserver.metex.make_filename("incident_furlongs", route_name, weather_category,
                                                       shift_yards_same_elr, shift_yards_diff_elr)
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:
@@ -446,7 +446,7 @@ def get_incident_location_furlongs(route_name=None, weather_category=None,
 
     pickle_filename = mssqlserver.metex.make_filename("incident_location_furlongs", route_name, weather_category,
                                                       shift_yards_same_elr, shift_yards_diff_elr)
-    path_to_pickle = models.prototype.tools.cd_prototype_dat(pickle_filename)
+    path_to_pickle = models.tools.cd_prototype_dat(pickle_filename)
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
     else:

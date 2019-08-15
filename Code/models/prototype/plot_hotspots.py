@@ -19,10 +19,40 @@ from pyhelpers.dir import cd, cdd
 from pyhelpers.geom import get_geometric_midpoint
 from pyhelpers.misc import colour_bar_index, confirmed
 from pyhelpers.store import load_pickle, save, save_pickle, save_svg_as_emf
+from pyhelpers.store import save_fig
 
-import models.prototype.tools as proto_utils
+import models.tools
 import mssqlserver.metex
 import mssqlserver.vegetation
+
+# ====================================================================================================================
+""" Save output figures """
+
+
+# A function for saving the plots
+def save_prototype_hotpots_fig(fig, keyword, show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                               save_as, dpi):
+    """
+    :param fig: [matplotlib.figure.Figure]
+    :param keyword: [str] a keyword for specifying the filename
+    :param show_metex_weather_cells: [bool]
+    :param show_osm_landuse_forest: [bool]
+    :param show_nr_hazardous_trees: [bool]
+    :param save_as: [str]
+    :param dpi: [int] or None
+    :return:
+    """
+    if save_as is not None:
+        if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
+            suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
+                         ['cell', 'veg', 'haz'])
+            filename = '_'.join([keyword] + [v for s, v in suffix if s is True])
+            path_to_file = models.tools.cd_prototype_fig_pub("Hotspots", filename + save_as)
+            save_fig(path_to_file, dpi=dpi)
+
+
+# ====================================================================================================================
+""" """
 
 
 # Create a boundary based on specified bounds (llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat) ===========================
@@ -380,7 +410,7 @@ def plot_base_map_plus(route_name='Anglia', show_metex_weather_cells=True, show_
         filename_suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
                               ['cell', 'veg', 'haz'])
         fig_filename = '_'.join(['Basemap'] + [v for s, v in filename_suffix if s is True])
-        path_to_fig = proto_utils.cd_prototype_fig_pub("Basemap", fig_filename + save_as)
+        path_to_fig = models.tools.cd_prototype_fig_pub("Basemap", fig_filename + save_as)
         fig.savefig(path_to_fig, dpi=dpi)
         print("Done.")
         if save_as == ".svg":
@@ -564,9 +594,9 @@ def hotspots_annual_delays(route_name='Anglia', weather_category='Wind', update=
         plot_hazardous_trees(base_map, route_name=route_name, legend_loc=(1.05, 0.975))
 
     # Save figure
-    proto_utils.save_hotpots_fig(fig, "hotspots_annual_delays",
-                                 show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                                 save_as, dpi)
+    save_prototype_hotpots_fig(fig, "hotspots_annual_delays",
+                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                               save_as, dpi)
 
 
 # Plot hotspots of delay minutes =====================================================================================
@@ -642,8 +672,8 @@ def hotspots_delays(route_name='Anglia', weather_category='Wind', update=False,
         plot_hazardous_trees(base_map, route_name, legend_loc=(1.05, 0.975))
 
     # Save figure
-    proto_utils.save_hotpots_fig(fig, "hotspots_delays", show_metex_weather_cells, show_osm_landuse_forest,
-                                 show_nr_hazardous_trees, save_as, dpi)
+    save_prototype_hotpots_fig(fig, "hotspots_delays", show_metex_weather_cells, show_osm_landuse_forest,
+                               show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots in terms of incident frequency =======================================================================
@@ -720,8 +750,8 @@ def hotspots_frequency(route_name='Anglia', weather_category='Wind', update=Fals
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, route_name=route_name, legend_loc=(1.05, 0.975))
 
-    proto_utils.save_hotpots_fig(fig, "hotspots_frequency", show_metex_weather_cells, show_osm_landuse_forest,
-                                 show_nr_hazardous_trees, save_as, dpi)
+    save_prototype_hotpots_fig(fig, "hotspots_frequency", show_metex_weather_cells, show_osm_landuse_forest,
+                               show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots of delay cost ========================================================================================
@@ -801,8 +831,8 @@ def hotspots_cost(route_name='Anglia', weather_category='Wind', update=False,
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, route_name=route_name, legend_loc=(1.05, 0.975))
 
-    proto_utils.save_hotpots_fig(fig, "hotspots_cost", show_metex_weather_cells, show_osm_landuse_forest,
-                                 show_nr_hazardous_trees, save_as, dpi)
+    save_prototype_hotpots_fig(fig, "hotspots_cost", show_metex_weather_cells, show_osm_landuse_forest,
+                               show_nr_hazardous_trees, save_as, dpi)
 
 
 # Plot hotspots in terms of delay minutes per incident ===============================================================
@@ -881,9 +911,9 @@ def hotspots_delays_per_incident(route_name='Anglia', weather_category='Wind', u
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, route_name=route_name, legend_loc=(1.05, 0.975))
 
-    proto_utils.save_hotpots_fig(fig, "hotspots_delays_per_incident",
-                                 show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                                 save_as, dpi)
+    save_prototype_hotpots_fig(fig, "hotspots_delays_per_incident",
+                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                               save_as, dpi)
 
 
 #
