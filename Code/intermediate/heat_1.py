@@ -30,8 +30,9 @@ settings.pd_preferences()
 """ Change directory """
 
 
+# Change directory to "Models\\intermediate\\heat\\data" and sub-directories
 def cdd_intermediate_heat(*sub_dir):
-    path = intermediate.tools.cdd_intermediate("heat", "dat")
+    path = intermediate.tools.cdd_intermediate("heat", "data")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -90,7 +91,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
             weather_obs = weather.ukcp.fetch_integrated_daily_gridded_weather_obs().reset_index()
 
             # Radiation observations
-            irad_obs = weather.midas.fetch_midas_radtob().reset_index()
+            irad_obs = weather.midas.get_radtob().reset_index()
 
             # --------------------------------------------------------------------------------------------------------
             """ In the spatial context """
@@ -177,7 +178,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
                 lambda x: find_intersecting_weather_grid(x, obs_grids_geom))
 
             # Met station locations
-            met_stations = weather.midas.fetch_meteorological_stations_locations()[['E_N', 'E_N_GEOM']]
+            met_stations = weather.midas.get_radiation_stations_information()[['E_N', 'E_N_GEOM']]
             met_stations_geom = shapely.geometry.MultiPoint(list(met_stations.E_N_GEOM))
 
             # Find the closest grid centroid and return the corresponding (pseudo) grid id
