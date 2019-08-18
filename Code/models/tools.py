@@ -407,10 +407,13 @@ def get_weather_variable_names(weather_stats_calculations: dict):
     for k, v in weather_stats_calculations.items():
         if isinstance(v, tuple):
             for v_ in v:
-                weather_variable_names.append('_'.join([k, v_.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
+                weather_variable_names.append('_'.join(
+                    [k, v_.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
         else:
-            weather_variable_names.append('_'.join([k, v.__name__.replace('mean', 'avg')]).replace('_nan', '_'))
-    wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg']
+            weather_variable_names.append('_'.join(
+                [k, v.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
+    weather_variable_names.insert(weather_variable_names.index('Temperature_min') + 1, 'Temperature_dif')
+    wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg', 'Hottest_Heretofore']
     return wind_variable_names_
 
 
@@ -463,19 +466,6 @@ def calculate_prototype_weather_statistics(weather_obs, weather_stats_calculatio
     return stats_info
 
 
-# Get weather variable names for intermediate model
-def get_intermediate_weather_variable_names(weather_stats_calculations: dict):
-    stats_names = [x + '_max' for x in weather_stats_calculations.keys()]
-    stats_names[stats_names.index('TotalPrecipitation_max')] = 'TotalPrecipitation_sum'
-    stats_names[stats_names.index('Snowfall_max')] = 'Snowfall_sum'
-    stats_names.insert(stats_names.index('Temperature_max') + 1, 'Temperature_min')
-    stats_names.insert(stats_names.index('Temperature_min') + 1, 'Temperature_avg')
-    stats_names.insert(stats_names.index('Temperature_avg') + 1, 'Temperature_dif')
-    wind_speed_variables = ['WindSpeed_avg', 'WindDirection_avg']
-    weather_variable_names = stats_names + wind_speed_variables + ['Hottest_Heretofore']
-    return weather_variable_names
-
-
 # Get the highest temperature of year by far
 def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
@@ -484,7 +474,7 @@ def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
     weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
         weather_cell_id, yr_start_dt, period_start_dt, pickle_it=False, dat_dir=cd_intermediate_dat("weather-slices"))
     #
-    weather_obs_by_far = weather_obs[(weather_obs.DateTime < period_start_dt) & (weather_obs.DateTime > yr_start_dt)]
+    weather_obs_by_far = weather_obs[(weather_obs.DateTime <= period_start_dt) & (weather_obs.DateTime >= yr_start_dt)]
     #
     highest_temperature = weather_obs_by_far.Temperature.max()
     return highest_temperature
@@ -492,40 +482,54 @@ def get_highest_temperature_of_year_by_far(weather_cell_id, period_start_dt):
 
 # Calculate the statistics for the weather-related variables (except radiation)
 def calculate_intermediate_weather_statistics(weather_obs, weather_stats_calculations, values_only=True):
+    """
+    Testing parameters:
+    e.g.
+        weather_obs=ip_weather
+        weather_stats_calculations=weather_statistics_calculations
+        values_only=True
+    """
     if weather_obs.empty:
-        weather_stats = [np.nan] * (sum(map(np.count_nonzero, weather_stats_calculations.values())) + 4)
+        weather_variable_names = get_weather_variable_names(weather_stats_calculations)
+        weather_stats = [np.nan] * len(weather_variable_names)
         if not values_only:
-            weather_stats = pd.DataFrame(weather_stats, columns=get_intermediate_weather_variable_names())
+            weather_stats = pd.DataFrame(np.array(weather_stats).reshape((1, len(weather_stats))),
+                                         columns=weather_variable_names)
     else:
         # Create a pseudo id for groupby() & aggregate()
         weather_obs['Pseudo_ID'] = 0
-        # Calculate basic statistics
+        # Calculate summary statistics
         weather_stats = weather_obs.groupby('Pseudo_ID').aggregate(weather_stats_calculations)
+        # Rename columns
+        weather_stats.columns = ['_'.join(x).replace('nan', '').replace('mean', 'avg').replace('median', 'med')
+                                 for x in weather_stats.columns.values]
+
         # Calculate average wind speeds and directions
         weather_stats['WindSpeed_avg'], weather_stats['WindDirection_avg'] = \
             calculate_wind_averages(weather_obs.WindSpeed, weather_obs.WindDirection)
-        # Lowest temperature between the time of the highest temperature and 00:00
-        highest_temp_dt = weather_obs[
-            weather_obs.Temperature == weather_stats.Temperature['max'][0]].DateTime.min()
-        weather_stats.Temperature['min'] = weather_obs[
-            weather_obs.DateTime < highest_temp_dt].Temperature.min()
+
+        # Lowest temperature between the time of the highest temperature and weather_obs start
+        highest_temp_dt = weather_obs[weather_obs.Temperature == weather_stats.Temperature_max.values[0]].DateTime.min()
+        weather_stats.Temperature_min = weather_obs[weather_obs.DateTime < highest_temp_dt].Temperature.min()
         # Temperature change between the the highest and lowest temperatures
-        weather_stats.insert(3, 'Temperature_dif',
-                             weather_stats.Temperature['max'] - weather_stats.Temperature['min'])
+        weather_stats.insert(weather_stats.columns.get_loc('Temperature_min') + 1, 'Temperature_dif',
+                             weather_stats.Temperature_max - weather_stats.Temperature_min)
+
         # Find out weather cell ids
-        weather_cell_obs = weather_obs.WeatherCell.unique()
-        weather_cell_id = weather_cell_obs[0] if len(weather_cell_obs) == 1 else tuple(weather_cell_obs)
+        obs_weather_cells = weather_obs.WeatherCell.unique()
+        weather_cell_id = obs_weather_cells[0] if len(obs_weather_cells) == 1 else tuple(obs_weather_cells)
         obs_start_dt = weather_obs.DateTime.min()  # Observation start datetime
+
         # Whether it is the hottest of the year by far
         highest_temp = get_highest_temperature_of_year_by_far(weather_cell_id, obs_start_dt)
-        highest_temp_obs = weather_stats.Temperature['max'][0]
-        weather_stats['Hottest_Heretofore'] = 1 if highest_temp_obs >= highest_temp else 0
-        weather_stats.columns = get_intermediate_weather_variable_names()
-        # Scale up variable
-        scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg',
-                         'RelativeHumidity_max', 'Snowfall_sum']
-        weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
+        weather_stats['Hottest_Heretofore'] = 1 if weather_stats.Temperature_max.values[0] >= highest_temp else 0
+
+        # # Scale up variable
+        # scale_up_vars = ['WindSpeed_max', 'WindGust_max', 'WindSpeed_avg', 'RelativeHumidity_max', 'Snowfall_sum']
+        # weather_stats[scale_up_vars] = weather_stats[scale_up_vars] / 10.0
         weather_stats.index.name = None
+
         if values_only:
             weather_stats = weather_stats.values[0].tolist()
+
     return weather_stats
