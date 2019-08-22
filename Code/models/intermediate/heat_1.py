@@ -17,7 +17,7 @@ import statsmodels.discrete.discrete_model as sm_dcm
 import statsmodels.tools as sm_tools
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 
-import intermediate.tools
+import models.tools
 import settings
 import spreadsheet.incidents
 import weather.midas
@@ -32,7 +32,7 @@ settings.pd_preferences()
 
 # Change directory to "Models\\intermediate\\heat\\data" and sub-directories
 def cdd_intermediate_heat(*sub_dir):
-    path = intermediate.tools.cdd_intermediate("heat", "data")
+    path = models.tools.cdd_intermediate("heat", "data")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -41,7 +41,7 @@ def cdd_intermediate_heat(*sub_dir):
 
 # Change directory to "Models\\intermediate\\heat\\x" and sub-directories
 def cdd_intermediate_heat_mod(trial_id, *sub_dir):
-    path = intermediate.tools.cdd_intermediate("heat", "{}".format(trial_id))
+    path = models.tools.cdd_intermediate("heat", "{}".format(trial_id))
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -81,7 +81,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
             # Incidents data
             incidents_all = spreadsheet.incidents.get_schedule8_weather_incidents()
             incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
-            incidents_all_by_season = intermediate.tools.get_data_by_season(incidents_all, season)
+            incidents_all_by_season = models.tools.get_data_by_season(incidents_all, season)
             incidents = get_subset(incidents_all_by_season, route_name, weather_category)
 
             if trial:  # For testing purpose ...
@@ -465,11 +465,11 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
             incident_location_weather = incident_location_weather.join(
-                intermediate.tools.categorise_track_orientations(incident_location_weather[['StartNE', 'EndNE']]))
+                models.tools.categorise_track_orientations(incident_location_weather[['StartNE', 'EndNE']]))
 
             # Categorise temperature: 25, 26, 27, 28, 29, 30
             incident_location_weather = incident_location_weather.join(
-                intermediate.tools.categorise_temperatures(incident_location_weather.Maximum_Temperature_max))
+                models.tools.categorise_temperatures(incident_location_weather.Maximum_Temperature_max))
 
             save_pickle(incident_location_weather, path_to_pickle)
 
@@ -568,7 +568,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
     plt.tight_layout()
 
     if save_as == ".svg":
-        save_fig(intermediate.tools.cd_intermediate_fig_pub("Variables" + save_as), dpi)
+        save_fig(models.tools.cd_intermediate_fig_pub("Variables" + save_as), dpi)
 
 
 #
