@@ -321,40 +321,50 @@ def get_angle_of_line_between(p1, p2, in_degrees=False):
 
 
 # Track orientations
-def categorise_track_orientations(data):
-    df = data.copy()
-    df['Track_Orientation'] = None
+def categorise_track_orientations(data, start_lon_colname, start_lat_colname, end_lon_colname, end_lat_colname):
+    track_orientations = pd.DataFrame(None, index=range(len(data)), columns=['Track_Orientation'])
     # origin = (-0.565409, 51.23622)
-    lon1, lat1, lon2, lat2 = df.StartLongitude, df.StartLatitude, df.EndLongitude, df.EndLatitude
-    df['Track_Orientation_radians'] = np.arctan2(lat2 - lat1, lon2 - lon1)  # Angles in radians, [-pi, pi]
+    start_lon, start_lat = data[start_lon_colname], data[start_lat_colname]
+    end_lon, end_lat = data[end_lon_colname], data[end_lat_colname]
+    track_orientations['Track_Orientation_radians'] = np.arctan2(end_lat - start_lat, end_lon - start_lon)  # [-pi, pi]
 
     # N-S / S-N: [-np.pi*2/3, -np.pi/3] & [np.pi/3, np.pi*2/3]
     n_s = np.logical_or(
-        np.logical_and(df.Track_Orientation_radians >= -np.pi * 2 / 3, df.Track_Orientation_radians < -np.pi / 3),
-        np.logical_and(df.Track_Orientation_radians >= np.pi / 3, df.Track_Orientation_radians < np.pi * 2 / 3))
-    df.Track_Orientation[n_s] = 'N_S'
+        np.logical_and(track_orientations.Track_Orientation_radians >= -np.pi * 2 / 3,
+                       track_orientations.Track_Orientation_radians < -np.pi / 3),
+        np.logical_and(track_orientations.Track_Orientation_radians >= np.pi / 3,
+                       track_orientations.Track_Orientation_radians < np.pi * 2 / 3))
+    track_orientations.Track_Orientation[n_s] = 'N_S'
 
     # NE-SW / SW-NE: [np.pi/6, np.pi/3] & [-np.pi*5/6, -np.pi*2/3]
     ne_sw = np.logical_or(
-        np.logical_and(df.Track_Orientation_radians >= np.pi / 6, df.Track_Orientation_radians < np.pi / 3),
-        np.logical_and(df.Track_Orientation_radians >= -np.pi * 5 / 6, df.Track_Orientation_radians < -np.pi * 2 / 3))
-    df.Track_Orientation[ne_sw] = 'NE_SW'
+        np.logical_and(track_orientations.Track_Orientation_radians >= np.pi / 6,
+                       track_orientations.Track_Orientation_radians < np.pi / 3),
+        np.logical_and(track_orientations.Track_Orientation_radians >= -np.pi * 5 / 6,
+                       track_orientations.Track_Orientation_radians < -np.pi * 2 / 3))
+    track_orientations.Track_Orientation[ne_sw] = 'NE_SW'
 
     # NW-SE / SE-NW: [np.pi*2/3, np.pi*5/6], [-np.pi/3, -np.pi/6]
     nw_se = np.logical_or(
-        np.logical_and(df.Track_Orientation_radians >= np.pi * 2 / 3, df.Track_Orientation_radians < np.pi * 5 / 6),
-        np.logical_and(df.Track_Orientation_radians >= -np.pi / 3, df.Track_Orientation_radians < -np.pi / 6))
-    df.Track_Orientation[nw_se] = 'NW_SE'
+        np.logical_and(track_orientations.Track_Orientation_radians >= np.pi * 2 / 3,
+                       track_orientations.Track_Orientation_radians < np.pi * 5 / 6),
+        np.logical_and(track_orientations.Track_Orientation_radians >= -np.pi / 3,
+                       track_orientations.Track_Orientation_radians < -np.pi / 6))
+    track_orientations.Track_Orientation[nw_se] = 'NW_SE'
 
     # E-W / W-E: [-np.pi, -np.pi*5/6], [-np.pi/6, np.pi/6], [np.pi*5/6, np.pi]
-    df.Track_Orientation.fillna('E_W', inplace=True)
+    track_orientations.Track_Orientation.fillna('E_W', inplace=True)
     # e_w = np.logical_or(np.logical_or(
     #     np.logical_and(df.Track_Orientation_radians >= -np.pi, df.Track_Orientation_radians < -np.pi * 5 / 6),
     #     np.logical_and(df.Track_Orientation_radians >= -np.pi/6, df.Track_Orientation_radians < np.pi/6)),
     #     np.logical_and(df.Track_Orientation_radians >= np.pi*5/6, df.Track_Orientation_radians < np.pi))
     # data.Track_Orientation[e_w] = 'E-W'
 
-    return df[['Track_Orientation']]
+    categorical_var = pd.get_dummies(track_orientations.Track_Orientation, prefix='Track_Orientation', prefix_sep='_')
+
+    track_orientations = pd.concat([track_orientations[['Track_Orientation']], categorical_var], axis=1)
+
+    return track_orientations
 
 
 # (an alternative to the above)
@@ -385,14 +395,15 @@ def categorise_track_orientations_(lon1, lat1, lon2, lat2):
 
 # Categorise temperature: <24, 24, 25, 26, 27, 28, 29, >=30
 def categorise_temperatures(attr_dat, column_name='Temperature_max') -> pd.DataFrame:
-    temp_category = pd.cut(attr_dat[column_name], [-np.inf] + list(np.arange(24, 31)) + [np.inf],
-                           right=False, include_lowest=False)
+
+    temp_category = pd.cut(attr_dat[column_name], [-np.inf] + list(np.arange(24, 31)) + [np.inf], right=False,
+                           include_lowest=False)
     temperature_category = pd.DataFrame({'Temperature_Category': temp_category})
 
     categorical_var = pd.get_dummies(temperature_category, column_name, prefix_sep=' ')
     categorical_var.columns = [c + '°C' for c in categorical_var.columns]
 
-    temperature_category_data = pd.concat([attr_dat, temperature_category, categorical_var], axis=1)
+    temperature_category_data = pd.concat([temperature_category, categorical_var], axis=1)
 
     return temperature_category_data
 
