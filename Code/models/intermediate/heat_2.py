@@ -12,7 +12,7 @@ import sklearn.metrics
 import statsmodels.discrete.discrete_model as sm_dcm
 from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 
-import intermediate.tools
+import models.tools
 import mssqlserver.metex
 import settings
 
@@ -23,7 +23,7 @@ plt.rc('font', family='Times New Roman')
 
 # Change directory to "Models\\intermediate\\heat" and sub-directories
 def cd_intermediate_heat(*sub_dir):
-    path = intermediate.tools.cdd_intermediate("heat")
+    path = models.tools.cdd_intermediate("heat")
     os.makedirs(path, exist_ok=True)
     for x in sub_dir:
         path = os.path.join(path, x)
@@ -52,17 +52,6 @@ def cdd_prototype_heat_mod(trial_id, *sub_dir):
 """ Integrate data of Incidents and Weather """
 
 
-# Specify the statistics needed for Weather observations (except radiation)
-def specify_weather_stats_calculations():
-    weather_stats_calculations = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
-                                  'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
-                                  'WindSpeed': np.nanmax,
-                                  'WindGust': np.nanmax,
-                                  'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
-                                  'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
-    return weather_stats_calculations
-
-
 #
 def get_incident_location_weather(route_name=None, weather_category='Heat',
                                   on_region=True, on_reason=None, on_season='summer',
@@ -89,8 +78,9 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
     """
     # Specify a path to save pickle file
     pickle_filename = mssqlserver.metex.make_filename(
-        "incident_location_weather", route_name, weather_category, "regional" if on_region else "",
-        "_".join([on_season] if isinstance(on_season, str) else on_season), "trial" if test_only else "", sep="_")
+        "", route_name, weather_category, "regional" if on_region else "",
+        "_".join([on_season] if isinstance(on_season, str) else on_season), "trial" if test_only else "",
+        ip_hours, lp_days, non_ip_hours, sep="_")
     path_to_pickle = cdd_intermediate_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -111,13 +101,14 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
             incidents = incidents[incidents.IncidentReasonCode.isin(on_reason)]
 
             # Select data for specific seasons
-            incidents = intermediate.tools.get_data_by_season(incidents, on_season)
+            incidents = models.tools.get_data_by_season(incidents, on_season)
 
             # Select data for specific regions
             if on_region:
                 incidents = incidents[incidents.Route.isin(['South East', 'Anglia', 'Wessex'])]
 
             if test_only:  # For preliminary test
+                test_only = int(input("Number of records for testing: ")) if test_only is True else 10
                 if random_select:
                     incidents = incidents.iloc[random.sample(range(len(incidents)), test_only), :]
                 else:
@@ -130,29 +121,29 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
                 # Make a buffer zone for gathering data of weather observations
                 print("Creating a buffer zone for each incident location ... ", end="")
                 incidents['Buffer_Zone'] = incidents.apply(
-                    lambda x: intermediate.tools.create_circle_buffer_upon_weather_cell(
+                    lambda x: models.tools.create_circle_buffer_upon_weather_cell(
                         x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.0), axis=1)
                 print("Done.")
 
                 # Find all weather observation grids intersecting with the buffer zone for each incident location
                 print("Delimiting zone for calculating weather statistics  ... ", end="")
-                incidents['WeatherCell_Obs'] = incidents.Buffer_Zone.map(
-                    lambda x: intermediate.tools.find_intersecting_weather_cells(x))
+                incidents['WeatherCell_Ext'] = incidents.Buffer_Zone.map(
+                    lambda x: models.tools.find_intersecting_weather_cells(x))
                 print("Done.")
 
                 if illustrate_buf_cir:
                     # Example 1
                     x_incident_start, x_incident_end = incidents.StartLonLat.iloc[12], incidents.EndLonLat.iloc[12]
                     x_midpoint = incidents.MidLonLat.iloc[12]
-                    intermediate.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
-                                                                whisker_km=0.0, legend_loc='upper left')
-                    save_fig(intermediate.tools.cdd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
+                    models.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
+                                                          whisker_km=0.0, legend_loc='upper left')
+                    save_fig(models.tools.cdd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
                     # Example 2
                     x_incident_start, x_incident_end = incidents.StartLonLat.iloc[16], incidents.EndLonLat.iloc[16]
                     x_midpoint = incidents.MidLonLat.iloc[16]
-                    intermediate.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
-                                                                whisker_km=0.0, legend_loc='lower right')
-                    save_fig(intermediate.tools.cdd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
+                    models.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
+                                                          whisker_km=0.0, legend_loc='lower right')
+                    save_fig(models.tools.cdd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
 
             # --------------------------------------------------------------------------------------------------------
             """ In the temporal context """
@@ -168,7 +159,18 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
             # --------------------------------------------------------------------------------------------------------
             """ Calculations """
 
-            weather_stats_calculations = specify_weather_stats_calculations()
+            # Specify the statistics needed for Weather observations (except radiation)
+            def specify_weather_statistics_calculations():
+                weather_stats_calc = {
+                    'Temperature': (np.nanmax, np.nanmin, np.nanmean, np.nanstd, np.nanvar, np.nanmedian),
+                    'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
+                    'WindSpeed': (np.nanmax, np.nanmin),
+                    'WindGust': (np.nanmax, np.nanmin),
+                    'Snowfall': (np.nanmax, np.nansum),
+                    'TotalPrecipitation': (np.nanmax, np.nansum)}
+                return weather_stats_calc
+
+            weather_statistics_calculations = specify_weather_statistics_calculations()
 
             # Calculate weather statistics based on the retrieved weather observation data
             def get_weather_stats_for_ip(weather_cell_id, start_dt, end_dt):
@@ -180,26 +182,26 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
                     end_dt=incidents.Critical_EndDateTime.iloc[0]
                 """
                 # Specify a directory to pickle slices of weather observation data
-                weather_dat_dir = intermediate.tools.cd_intermediate_dat("weather-slices")
+                weather_dat_dir = models.tools.cd_intermediate_dat("weather-slices")
                 # Query weather observations
                 ip_weather = mssqlserver.metex.fetch_weather_by_id_datetime(
                     weather_cell_id, start_dt, end_dt, pickle_it=False, dat_dir=weather_dat_dir)
                 # Calculate basic statistics of the weather observations
-                weather_stats = intermediate.tools.calculate_statistics_for_weather_variables(
-                    ip_weather, weather_stats_calculations, values_only=True)
+                weather_stats = models.tools.calculate_intermediate_weather_statistics(
+                    ip_weather, weather_statistics_calculations, values_only=True)
                 return weather_stats
 
             # Prior-IP ---------------------------------------------------
-            print("Calculating weather statistics for IPs ... ", end="")
-            incidents[specify_weather_variable_names()] = incidents.apply(
+            print("Calculating weather statistics for IPs (LP = {}) ... ".format(lp_days), end="")
+            weather_variable_names = models.tools.get_weather_variable_names(weather_statistics_calculations)
+            incidents[weather_variable_names] = incidents.apply(
                 lambda x: pd.Series(get_weather_stats_for_ip(
-                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.WeatherCell_Ext if use_buffer_zone else x.WeatherCell,
                     x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
             print("Done.")
 
             gc.collect()
 
-            incidents.Hottest_Heretofore = incidents.Hottest_Heretofore.astype(int)
             incidents['Incident_Reported'] = 1
 
             # Non-IP -----------------------------------------------------------------------------------------------
@@ -220,10 +222,10 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
                 :return:
                 """
                 # Specify a directory to pickle slices of weather observation data
-                weather_dat_dir = intermediate.tools.cd_intermediate_dat("weather-slices")
+                weather_dat_dir = models.tools.cd_intermediate_dat("weather-slices")
                 # Query weather observations
-                non_ip_weather = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, nip_start, nip_end,
-                                                                                pickle_it=False, dat_dir=weather_dat_dir)
+                non_ip_weather = mssqlserver.metex.fetch_weather_by_id_datetime(
+                    weather_cell_id, nip_start, nip_end, pickle_it=False, dat_dir=weather_dat_dir)
                 # Get all incident period data on the same section
                 ip_overlap = incidents[
                     (incidents.StanoxSection == stanox_section) &
@@ -235,64 +237,70 @@ def get_incident_location_weather(route_name=None, weather_category='Heat',
                         (non_ip_weather.DateTime < min(ip_overlap.Critical_StartDateTime)) |
                         (non_ip_weather.DateTime > max(ip_overlap.Critical_EndDateTime))]
                 # Calculate weather statistics
-                weather_stats_calculations = specify_weather_stats_calculations()
-                weather_stats = calculate_statistics_for_weather_variables(non_ip_weather, weather_stats_calculations, values_only=True)
+                weather_stats = models.tools.calculate_intermediate_weather_statistics(
+                    non_ip_weather, weather_statistics_calculations, values_only=True)
                 return weather_stats
 
-            print("Calculating weather statistics for Non-IPs ... ", end="")
-            non_ip_data[specify_weather_variable_names()] = non_ip_data.apply(
+            print("Calculating weather statistics for Non-IPs (LP = {}) ... ".format(lp_days), end="")
+            non_ip_data[weather_variable_names] = non_ip_data.apply(
                 lambda x: pd.Series(get_non_ip_weather_stats(
-                    x.WeatherCell_Obs if use_buffer_zone else x.WeatherCell,
+                    x.WeatherCell_Ext if use_buffer_zone else x.WeatherCell,
                     x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
             print("Done.")
 
             gc.collect()
 
             non_ip_data['Incident_Reported'] = 0
-            # non_ip_data.DelayMinutes = 0.0
+            non_ip_data.DelayMinutes = 0.0
             non_ip_data.DelayCost = 0.0
 
             # Combine IP data and Non-IP data ----------------------------------------------------
-            incidents_and_weather = pd.concat([incidents, non_ip_data], axis=0, ignore_index=True)
+            incidents_location_weather = pd.concat([non_ip_data, incidents], axis=0, ignore_index=True)
+            incidents_location_weather.dropna(inplace=True)
 
             # Get track orientation
-            incidents_and_weather = intermediate.tools.categorise_track_orientations(incidents_and_weather)
+            track_orientations = models.tools.categorise_track_orientations(
+                incidents_location_weather, 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude')
+            incidents_location_weather = pd.concat([incidents_location_weather, track_orientations], axis=1)
 
             # Create temperature categories
-            incidents_and_weather = intermediate.tools.categorise_temperatures(incidents_and_weather, 'Temperature_max')
+            temperature_categories = models.tools.categorise_temperatures(incidents_location_weather, 'Temperature_max')
+            incidents_location_weather = pd.concat([incidents_location_weather, temperature_categories], axis=1)
 
             # Save the derived data
-            save_pickle(incidents_and_weather, path_to_pickle)
+            save_pickle(incidents_location_weather, path_to_pickle)
 
-            return incidents_and_weather
+            return incidents_location_weather
 
         except Exception as e:
             print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename), e))
 
 
-def plot_temperature_deviation(route_name='Anglia', lp_day_range=14, add_err_bar=True, update=False,
+def plot_temperature_deviation(route_name=None, lp_day_range=14, add_err_bar=True, update=False,
                                save_as=None, dpi=None):
     """
     Testing parameters:
     e.g.
-        route_name='Anglia'
-        nip_ip_gap=-14
+        route_name=None
+        lp_day_range=14
         add_err_bar=True
         update=False
         save_as=".tif"
         dpi=None
     """
 
-    incident_location_weather = [get_incident_location_weather(route_name, lp_days=d, update=update)
-                                 for d in range(1, lp_day_range + 1)]
+    incident_location_weather = [
+        get_incident_location_weather(route_name, weather_category='Heat', on_region=True, on_reason=None,
+                                      on_season='summer', ip_hours=24, lp_days=d, non_ip_hours=24, update=update)
+        for d in range(1, lp_day_range + 1)]
 
     time_and_iloc = ['StartDateTime', 'EndDateTime', 'StanoxSection', 'IncidentDescription']
     selected_cols, data = time_and_iloc + ['Temperature_max'], incident_location_weather[0]
-    ip_temperature_max = data[data.IncidentReported == 1][selected_cols]
+    ip_temperature_max = data[data.Incident_Reported == 1][selected_cols]
     diff_means, diff_std = [], []
     for i in range(0, lp_day_range):
         data = incident_location_weather[i]
-        nip_temperature_max = data[data.IncidentReported == 0][selected_cols]
+        nip_temperature_max = data[data.Incident_Reported == 0][selected_cols]
         temp_diffs = pd.merge(ip_temperature_max, nip_temperature_max, on=time_and_iloc, suffixes=('_ip', '_nip'))
         temp_diff = temp_diffs.Temperature_max_ip - temp_diffs.Temperature_max_nip
         diff_means.append(temp_diff.abs().mean())
@@ -549,8 +557,8 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
                 plt.tight_layout()
                 if save_plot:
-                    save_fig(cdd_prototype_heat_mod("{}".format(trial_id),
-                                                    "ROC" + ("-regional" if regional else "") + save_as), dpi=dpi)
+                    roc_plot_filename = "ROC" + ("-regional" if regional else "") + save_as
+                    save_fig(cdd_prototype_heat_mod("{}".format(trial_id), roc_plot_filename), dpi=dpi)
             return optimal_thr
 
         optimal_threshold = compute_roc(show=plot_roc, save_plot=save_as)
@@ -570,7 +578,6 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 - the number of correct negative predictions divided by the total number of negatives
                 - (i.e. the number of items correctly identified as negative out of total negatives)
             """
-
             test_set['incident_prediction'] = test_set.incident_prob.apply(lambda x: 1 if x >= optimal_threshold else 0)
 
             # Accuracy
@@ -617,15 +624,14 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
 
             return accuracy, precision, recall
 
-        mod_accuracy, mod_precision, mod_recall = check_predictability(show=plot_pred_likelihood, save_plot=save_as)
+        m_accuracy, m_precision, m_recall = check_predictability(show=plot_pred_likelihood, save_plot=save_as)
 
     except Exception as e:
         print(e)
         mod_result = None
-        mod_accuracy, mod_precision, mod_recall, optimal_threshold = np.nan, np.nan, np.nan, np.nan
+        m_accuracy, m_precision, m_recall, optimal_threshold = np.nan, np.nan, np.nan, np.nan
 
-    return incidents_and_weather, train_set, test_set, mod_result, \
-        mod_accuracy, mod_precision, mod_recall, optimal_threshold
+    return incidents_and_weather, train_set, test_set, mod_result, m_accuracy, m_precision, m_recall, optimal_threshold
 
 
 """
