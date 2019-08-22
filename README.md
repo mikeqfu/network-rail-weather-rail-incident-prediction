@@ -1,14 +1,25 @@
-### Prototype data models for understanding and predicting weather-related incidents on Great Britain's rail network
+# Understanding and predicting weather-related incidents on GB's rail network
 
-This repo presents prototype data models for predicting weather-related incidents on GB's rail network. Two case study examples are demonstrated in the context of delays caused primarily by high winds and temperatures, respectively.
+**Contact**: Qian Fu [![Twitter URL](https://img.shields.io/twitter/url/https/Qian_Fu?style=social)](https://twitter.com/Qian_Fu) 
 
-### Brief background
+![GitHub top language](https://img.shields.io/github/languages/top/mikeqfu/GB-weather-related-rail-incidents?label=Python)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/mikeqfu/GB-weather-related-rail-incidents?color=yellowgreen&label=Code%20size)
+[![GitHub](https://img.shields.io/github/license/mikeqfu/GB-weather-related-rail-incidents?label=License)](https://github.com/mikeqfu/GB-weather-related-rail-incidents/blob/master/LICENSE)
 
-The model was initially developed in a research project which was intended to establish a modelling framework for exploration of the applicability of existing data resources to specific industry problems. The methodology was demonstrated in the context of wind-related 8 delays on the rail network in Great Britain. This case study examined the sub-networks most susceptible to delays as a result of high-wind events; and it identified appropriate data sources that could support the decision-making process around placement of trackside weather stations to monitor the impact of the high wind speeds. 
 
-The study investigates a variety of relevant data sources, including historical records of wind-related incidents, and the weather and vegetation conditions around the incident locations. It shows on how those data could be exploited and modelled with logistic regression analysis. A number of factors contributing to wind-related delay incidents are identified and used for making predictions of likelihood of such incidents occurrences. 
+This repo presents data models for predicting weather-related incidents on GB's rail network. Two case study examples are demonstrated in the context of delays caused primarily by high winds and high temperatures, respectively.
 
-The prototype data model is generic and should also be adaptable to other contexts, e.g. with other categories of weather-related incidents or a wider range of common industry tasks.
+
+
+## Brief background
+
+The prototype data model for the wind-related rail incidents was initially explored in a research project which was intended to establish a modelling framework for establishing the value of existing data resources as supporting data sets for improved decision-making in the UK rail industry. The methodology was firstly demonstrated in the context of delays as a result of high-wind events on the rail network. This case study examined the sub-networks most susceptible to the wind-related delays; and it identified appropriate data sources that could support the decision-making process around placement of trackside weather stations to monitor the impact of the high wind speeds. 
+
+The study investigated a variety of data sources, including historical records of rail incidents (attributed to poor weather), and weather observations and vegetation conditions in the vicinity of the incident locations. It showed on how those data could be modelled with logistic regression analysis, based on data integration in both temporal and spatial contexts. A number of factors contributing to the wind- / heat-related incidents have been identified and then used for making predictions of the occurrences of such incidents. 
+
+The prototype data models are generic and should also be adaptable to other other categories of weather-related incidents or a wider range of common industry tasks. 
+
+
 
 ---
 
@@ -37,8 +48,8 @@ The prototype data model is generic and should also be adaptable to other contex
   [doi:10.1049/cp.2016.0515](https://ieeexplore.ieee.org/document/7816543/). 
 
 
-##### *Python packages (open for further development)*
+##### *Open-source Python packages (open for further development)*
 
-- **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - Download, read/parse and import/export OSM data extracts. 
-- **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A small tool for collecting railway codes used in GB. 
+- **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - A toolkit for collecting, parsing and saving/loading OSM data extracts. 
+- **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A web scraper for collecting railway codes used in Great Britain. 
 - **pyhelpers** [[source code](https://github.com/mikeqfu/pyhelpers)] - A small toolkit of some helper functions to facilitate writing Python code.
