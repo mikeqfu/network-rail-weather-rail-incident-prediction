@@ -831,160 +831,168 @@ def make_filename(base_name, route_name, *extra_suffixes, sep="_", save_as=".pic
 
 
 # View Vegetation data (75247, 45)
-def prep_vegetation_coverage_per_furlong(route_name=None):
-    furlong_data = get_furlong_data()  # (75247, 39)
-    furlong_location = get_furlong_location()  # Set 'FurlongID' to be its index (77017, 7)
-    cutting_angle_class = get_cutting_angle_class()  # (5, 1)
-    cutting_depth_class = get_cutting_depth_class()  # (5, 1)
-    # Merge the data that has been obtained
-    furlong_vegetation_coverage = furlong_data. \
-        join(furlong_location,  # (75247, 48)
-             on='FurlongID', how='inner', lsuffix='', rsuffix='_FurlongLocation'). \
-        join(cutting_angle_class,  # (75247, 49)
-             on='CuttingAngle', how='inner'). \
-        join(cutting_depth_class,  # (75247, 50)
-             on='CuttingDepth', how='inner', lsuffix='_CuttingAngle', rsuffix='_CuttingDepth')
-
-    if route_name is not None:
-        route_name = find_matched_str(route_name, get_du_route().Route)
-        furlong_vegetation_coverage = furlong_vegetation_coverage[
-            furlong_vegetation_coverage.Route == route_name]
-
-    # The total number of trees on both sides
-    furlong_vegetation_coverage['TreeNumber'] = \
-        furlong_vegetation_coverage[['TreeNumberUp', 'TreeNumberDown']].sum(1)
-
-    # Edit the merged data
-    furlong_vegetation_coverage.drop(
-        labels=[f for f in furlong_vegetation_coverage.columns if re.match('.*_FurlongLocation$', f)],
-        axis=1, inplace=True)  # (75247, 45)
-
-    # Rearrange
-    furlong_vegetation_coverage.sort_values(by='StructuredPlantNumber', inplace=True)
-    furlong_vegetation_coverage.index = range(len(furlong_vegetation_coverage))
-
-    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_coverage_per_furlong", route_name))
-    save_pickle(furlong_vegetation_coverage, path_to_pickle)
-
-
-def view_vegetation_coverage_per_furlong(route_name=None, update=False):
+def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True):
     """
-    :param route_name: 
-    :param update: 
-    :return: 
+    :param route_name: [str; None (default)]
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pd.DataFrame]
     """
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation_coverage_per_furlong", route_name))
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_vegetation_coverage_per_furlong(route_name)
-    try:
-        return load_pickle(path_to_pickle)
-    except Exception as e:
-        print(e)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_vegetation_coverage = load_pickle(path_to_pickle)
+    else:
+        try:
+            furlong_data = get_furlong_data()  # (75247, 39)
+            furlong_location = get_furlong_location()  # Set 'FurlongID' to be its index (77017, 7)
+            cutting_angle_class = get_cutting_angle_class()  # (5, 1)
+            cutting_depth_class = get_cutting_depth_class()  # (5, 1)
+            # Merge the data that has been obtained
+            furlong_vegetation_coverage = furlong_data. \
+                join(furlong_location,  # (75247, 48)
+                     on='FurlongID', how='inner', lsuffix='', rsuffix='_FurlongLocation'). \
+                join(cutting_angle_class,  # (75247, 49)
+                     on='CuttingAngle', how='inner'). \
+                join(cutting_depth_class,  # (75247, 50)
+                     on='CuttingDepth', how='inner', lsuffix='_CuttingAngle', rsuffix='_CuttingDepth')
+
+            if route_name is not None:
+                route_name = find_matched_str(route_name, get_du_route().Route)
+                furlong_vegetation_coverage = furlong_vegetation_coverage[
+                    furlong_vegetation_coverage.Route == route_name]
+
+            # The total number of trees on both sides
+            furlong_vegetation_coverage['TreeNumber'] = \
+                furlong_vegetation_coverage[['TreeNumberUp', 'TreeNumberDown']].sum(1)
+
+            # Edit the merged data
+            furlong_vegetation_coverage.drop(
+                labels=[f for f in furlong_vegetation_coverage.columns if re.match('.*_FurlongLocation$', f)],
+                axis=1, inplace=True)  # (75247, 45)
+
+            # Rearrange
+            furlong_vegetation_coverage.sort_values(by='StructuredPlantNumber', inplace=True)
+            furlong_vegetation_coverage.index = range(len(furlong_vegetation_coverage))
+
+            if pickle_it:
+                save_pickle(furlong_vegetation_coverage, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to fetch the information of vegetation coverage per furlong. {}".format(e))
+            furlong_vegetation_coverage = None
+
+    return furlong_vegetation_coverage
 
 
 # View data of hazardous tress (22180, 66)
-def prep_hazardous_trees(route_name=None):
-    hazard_tree = get_hazard_tree()  # (23950, 59) 1770 with FurlongID being -1
-    furlong_location = get_furlong_location()  # (77017, 7)
-    tree_age_class = get_tree_age_class()  # (7, 1)
-    tree_size_class = get_tree_size_class()  # (5, 1)
-
-    hazardous_trees_data = hazard_tree. \
-        join(furlong_location,  # (22180, 68)
-             on='FurlongID', how='inner', lsuffix='', rsuffix='_FurlongLocation'). \
-        join(tree_age_class,  # (22180, 69)
-             on='TreeAgeCatID', how='inner'). \
-        join(tree_size_class,  # (22180, 70)
-             on='TreeSizeCatID', how='inner', lsuffix='_TreeAgeClass', rsuffix='_TreeSizeClass'). \
-        drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
-
-    if route_name is not None:
-        route_name = find_matched_str(route_name, get_du_route().Route)
-        hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == route_name]
-
-    # Edit the merged data
-    hazardous_trees_data.drop([f for f in hazardous_trees_data.columns if re.match('.*_FurlongLocation$', f)][:3],
-                              axis=1, inplace=True)  # (22180, 66)
-    hazardous_trees_data.index = range(len(hazardous_trees_data))  # Rearrange index
-
-    hazardous_trees_data.rename(columns={'StartMileage': 'Furlong_StartMileage',
-                                         'EndMileage': 'Furlong_EndMileage',
-                                         'Electrified': 'Furlong_Electrified',
-                                         'HazardOnly': 'Furlong_HazardOnly'}, inplace=True)
-
-    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees", route_name))
-    save_pickle(hazardous_trees_data, path_to_pickle)
-
-
-def view_hazardous_trees(route_name=None, update=False):
+def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
     """
-    :param route_name:
-    :param update: 
-    :return: 
+    :param route_name: [str; None (default)]
+    :param update: [bool]
+    :param pickle_it [bool]
+    :return: [pd.DataFrame]
     """
     path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees", route_name))
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_hazardous_trees(route_name)
-    try:
-        return load_pickle(path_to_pickle)
-    except Exception as e:
-        print(e)
+    if os.path.isfile(path_to_pickle) and not update:
+        hazardous_trees_data = load_pickle(path_to_pickle)
+    else:
+        try:
+            hazard_tree = get_hazard_tree()  # (23950, 59) 1770 with FurlongID being -1
+            furlong_location = get_furlong_location()  # (77017, 7)
+            tree_age_class = get_tree_age_class()  # (7, 1)
+            tree_size_class = get_tree_size_class()  # (5, 1)
+
+            hazardous_trees_data = hazard_tree. \
+                join(furlong_location,  # (22180, 68)
+                     on='FurlongID', how='inner', lsuffix='', rsuffix='_FurlongLocation'). \
+                join(tree_age_class,  # (22180, 69)
+                     on='TreeAgeCatID', how='inner'). \
+                join(tree_size_class,  # (22180, 70)
+                     on='TreeSizeCatID', how='inner', lsuffix='_TreeAgeClass', rsuffix='_TreeSizeClass'). \
+                drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
+
+            if route_name is not None:
+                route_name = find_matched_str(route_name, get_du_route().Route)
+                hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == route_name]
+
+            # Edit the merged data
+            hazardous_trees_data.drop(
+                [f for f in hazardous_trees_data.columns if re.match('.*_FurlongLocation$', f)][:3],
+                axis=1, inplace=True)  # (22180, 66)
+            hazardous_trees_data.index = range(len(hazardous_trees_data))  # Rearrange index
+
+            hazardous_trees_data.rename(columns={'StartMileage': 'Furlong_StartMileage',
+                                                 'EndMileage': 'Furlong_EndMileage',
+                                                 'Electrified': 'Furlong_Electrified',
+                                                 'HazardOnly': 'Furlong_HazardOnly'}, inplace=True)
+
+            if pickle_it:
+                save_pickle(hazardous_trees_data, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to fetch the information of hazardous trees. {}".format(e))
+            hazardous_trees_data = None
+
+    return hazardous_trees_data
 
 
 # View Vegetation data as well as hazardous trees information (75247, 58)
-def prep_vegetation_condition_per_furlong(route_name=None):
-    hazardous_trees_data = view_hazardous_trees()  # (22180, 66)
-
-    group_cols = ['ELR', 'DU', 'Route', 'Furlong_StartMileage', 'Furlong_EndMileage']
-    furlong_hazardous_trees = hazardous_trees_data.groupby(group_cols).aggregate({
-        # 'AssetNumber': np.count_nonzero,
-        'Haztreeid': pd.np.count_nonzero,
-        'TreeheightM': [lambda x: tuple(x), min, max],
-        'TreediameterM': [lambda x: tuple(x), min, max],
-        'TreeproxrailM': [lambda x: tuple(x), min, max],
-        'Treeprox3py': [lambda x: tuple(x), min, max]})  # (11320, 13)
-
-    furlong_hazardous_trees.columns = ['_'.join(x).strip() for x in furlong_hazardous_trees.columns.values]
-    furlong_hazardous_trees.rename(columns={'Haztreeid_count_nonzero': 'TreeNumber'}, inplace=True)
-    furlong_hazardous_trees.columns = ['Hazard' + x.strip('_<lambda_0>') for x in furlong_hazardous_trees.columns]
-
-    #
-    furlong_vegetation_coverage = view_vegetation_coverage_per_furlong()  # (75247, 45)
-
-    # Processing ...
-    furlong_vegetation_data = furlong_vegetation_coverage.join(
-        furlong_hazardous_trees, on=['ELR', 'DU', 'Route', 'StartMileage', 'EndMileage'], how='left')
-    furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 58)
-
-    if route_name is not None:
-        route_name = find_matched_str(route_name, get_du_route().Route)
-        furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == route_name]
-        furlong_vegetation_data.index = range(len(furlong_vegetation_data))
-
-    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_condition_per_furlong", route_name))
-    save_pickle(furlong_vegetation_data, path_to_pickle)
-
-
-def view_vegetation_condition_per_furlong(route_name=None, update=False):
+def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True):
     """
-    :param route_name:
-    :param update: 
-    :return: 
+    :param route_name: [str; None (default)]
+    :param update: [bool]
+    :param pickle_it [bool]
+    :return: [pd.DataFrame]
     """
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation_condition_per_furlong", route_name))
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_vegetation_condition_per_furlong(route_name)
-    try:
-        return load_pickle(path_to_pickle)
-    except Exception as e:
-        print(e)
+    if os.path.isfile(path_to_pickle) and not update:
+        furlong_vegetation_data = load_pickle(path_to_pickle)
+    else:
+        try:
+            hazardous_trees_data = view_hazardous_trees()  # (22180, 66)
+
+            group_cols = ['ELR', 'DU', 'Route', 'Furlong_StartMileage', 'Furlong_EndMileage']
+            furlong_hazard_tree = hazardous_trees_data.groupby(group_cols).aggregate({
+                # 'AssetNumber': np.count_nonzero,
+                'Haztreeid': pd.np.count_nonzero,
+                'TreeheightM': [lambda x: tuple(x), min, max],
+                'TreediameterM': [lambda x: tuple(x), min, max],
+                'TreeproxrailM': [lambda x: tuple(x), min, max],
+                'Treeprox3py': [lambda x: tuple(x), min, max]})  # (11320, 13)
+
+            furlong_hazard_tree.columns = ['_'.join(x).strip() for x in furlong_hazard_tree.columns.values]
+            furlong_hazard_tree.rename(columns={'Haztreeid_count_nonzero': 'TreeNumber'}, inplace=True)
+            furlong_hazard_tree.columns = ['Hazard' + x.strip('_<lambda_0>') for x in furlong_hazard_tree.columns]
+
+            #
+            furlong_vegetation_coverage = view_vegetation_coverage_per_furlong()  # (75247, 45)
+
+            # Processing ...
+            furlong_vegetation_data = furlong_vegetation_coverage.join(
+                furlong_hazard_tree, on=['ELR', 'DU', 'Route', 'StartMileage', 'EndMileage'], how='left')
+            furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 58)
+
+            if route_name is not None:
+                route_name = find_matched_str(route_name, get_du_route().Route)
+                furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == route_name]
+                furlong_vegetation_data.index = range(len(furlong_vegetation_data))
+
+            if pickle_it:
+                save_pickle(furlong_vegetation_data, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to fetch the information of vegetation condition per furlong. {}".format(e))
+            furlong_vegetation_data = None
+
+    return furlong_vegetation_data
 
 
 """
 route_name = None
 update = True
+pickle_it = True
 
-view_vegetation_coverage_per_furlong(route_name, update=update)
-view_hazardous_trees(route_name, update=update)
-view_vegetation_condition_per_furlong(route_name, update=update)
+view_vegetation_coverage_per_furlong(route_name, update=update, pickle_it=pickle_it)
+view_hazardous_trees(route_name, update=update, pickle_it=pickle_it)
+view_vegetation_condition_per_furlong(route_name, update=update, pickle_it=pickle_it)
 """
