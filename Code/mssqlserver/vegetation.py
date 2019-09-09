@@ -8,7 +8,7 @@ from pyhelpers.dir import cdd
 from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.store import load_json, load_pickle, save, save_pickle
 from pyhelpers.text import find_matched_str
-from pyrcs.utils import nr_mileage_num_to_str
+from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage
 
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
 from utils import cdd_vegetation
@@ -45,7 +45,7 @@ def cdd_veg_db_views(*sub_dir):
 
 
 # ====================================================================================================================
-""" Misc """
+""" Tool """
 
 
 # Route names dictionary
@@ -81,7 +81,7 @@ def make_case_sensitive_route_names_dict(reverse=False):
 
 
 # ====================================================================================================================
-""" Get table data from the NR_VEG database """
+""" Get table data from the database 'NR_Vegetation_20141031' """
 
 
 # Read tables available in NR_VEG database ===========================================================================
@@ -818,16 +818,26 @@ get_hazard_tree(set_index=False, update=update)
 """ Get views based on the NR_VEG data """
 
 
-def make_filename(base_name, route_name, *extra_suffixes, sep="_", save_as=".pickle"):
-    base_name_ = "data" if base_name is None else base_name
-    route_name_ = "" if route_name is None else "_" + find_matched_str(route_name, get_du_route().Route)
+def make_filename(base_name, route_name, *extra_suffixes, sep="-", save_as=".pickle"):
+    """
+    :param base_name: [str; None]
+    :param route_name: [str; None]
+    :param extra_suffixes: [str; None]
+    :param sep: [str; None]
+    :param save_as: [str] ".pickle" (default)
+    :return: [str]
+    """
+    assert save_as.startswith("."), "\"save_as\" must be extension-like, such as \".pickle\"."
+    base_name_ = "" if base_name is None else base_name
+    route_name_ = "" if route_name is None \
+        else (sep if base_name_ else "") + find_matched_str(route_name, get_du_route().Route)
     if extra_suffixes:
         suffix = [str(s) for s in extra_suffixes if s]
         suffix = sep.join(suffix) if len(suffix) > 1 else sep + suffix[0]
         filename = base_name_ + route_name_ + suffix + save_as
     else:
         filename = base_name_ + route_name_ + save_as
-    return filename
+    return filename.lower()
 
 
 # View Vegetation data (75247, 45)
@@ -837,10 +847,17 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
     :param update: [bool]
     :param pickle_it: [bool]
     :return: [pd.DataFrame]
+
+    Testing e.g.
+        route_name = None
+        update = False
+        pickle_it = True
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_coverage_per_furlong", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation-coverage-per-furlong", route_name))
+
     if os.path.isfile(path_to_pickle) and not update:
         furlong_vegetation_coverage = load_pickle(path_to_pickle)
+
     else:
         try:
             furlong_data = get_furlong_data()  # (75247, 39)
@@ -891,10 +908,17 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
     :param update: [bool]
     :param pickle_it [bool]
     :return: [pd.DataFrame]
+
+    Testing e.g.
+        route_name = None
+        update = False
+        pickle_it = True
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("hazardous_trees", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("hazardous-trees", route_name))
+
     if os.path.isfile(path_to_pickle) and not update:
         hazardous_trees_data = load_pickle(path_to_pickle)
+
     else:
         try:
             hazard_tree = get_hazard_tree()  # (23950, 59) 1770 with FurlongID being -1
@@ -943,10 +967,17 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
     :param update: [bool]
     :param pickle_it [bool]
     :return: [pd.DataFrame]
+
+    Testing e.g.
+        route_name = None
+        update = False
+        pickle_it = True
     """
-    path_to_pickle = cdd_veg_db_views(make_filename("vegetation_condition_per_furlong", route_name))
+    path_to_pickle = cdd_veg_db_views(make_filename("vegetation-condition-per-furlong", route_name))
+
     if os.path.isfile(path_to_pickle) and not update:
         furlong_vegetation_data = load_pickle(path_to_pickle)
+
     else:
         try:
             hazardous_trees_data = view_hazardous_trees()  # (22180, 66)
@@ -987,12 +1018,65 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
     return furlong_vegetation_data
 
 
+# ELR & mileage data of furlong locations
+def view_nr_vegetation_furlong_data(update=False, pickle_it=True) -> pd.DataFrame:
+    """
+    :param update: [bool]
+    :param pickle_it: [bool]
+    :return: [pd.DataFrame]
+
+    Testing e.g.
+        update = False
+        pickle_it = True
+    """
+    path_to_pickle = cdd_veg_db_views("vegetation-furlong-data" + ".pickle")
+
+    if os.path.isfile(path_to_pickle) and not update:
+        nr_vegetation_furlong_data = load_pickle(path_to_pickle)
+
+    else:
+        try:
+            # Get the data of furlong location
+            nr_vegetation_furlong_data = view_vegetation_condition_per_furlong()
+            nr_vegetation_furlong_data.set_index('FurlongID', inplace=True)
+            nr_vegetation_furlong_data.sort_index(inplace=True)
+
+            # Column names of mileage data (as string)
+            str_mileage_colnames = ['StartMileage', 'EndMileage']
+            # Column names of ELR and mileage data (as string)
+            elr_mileage_colnames = ['ELR'] + str_mileage_colnames
+
+            nr_vegetation_furlong_data.drop_duplicates(elr_mileage_colnames, inplace=True)
+
+            # Create two new columns of mileage data (as float)
+            num_mileage_colnames = ['StartMileage_num', 'EndMileage_num']
+            nr_vegetation_furlong_data[num_mileage_colnames] = nr_vegetation_furlong_data[
+                str_mileage_colnames].applymap(str_to_num_mileage)
+
+            # Sort the furlong data by ELR and mileage
+            nr_vegetation_furlong_data.sort_values(['ELR'] + num_mileage_colnames, inplace=True)
+
+            if pickle_it:
+                save_pickle(nr_vegetation_furlong_data, path_to_pickle)
+
+        except Exception as e:
+            print("Failed to fetch ELR & mileage data of furlong locations. {}".format(e))
+            nr_vegetation_furlong_data = None
+
+    return nr_vegetation_furlong_data
+
+
 """
 route_name = None
 update = True
 pickle_it = True
 
 view_vegetation_coverage_per_furlong(route_name, update=update, pickle_it=pickle_it)
+
 view_hazardous_trees(route_name, update=update, pickle_it=pickle_it)
+view_hazardous_trees('Anglia', update=update, pickle_it=pickle_it)
+
 view_vegetation_condition_per_furlong(route_name, update=update, pickle_it=pickle_it)
+
+view_nr_vegetation_furlong_data(update=update, pickle_it=pickle_it)
 """
