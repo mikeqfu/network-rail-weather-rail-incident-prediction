@@ -1,17 +1,19 @@
-""" Read and clean data of NR_VEG database """
+""" Read and clean data of NR_Vegetation database """
 
 import os
 import re
 
 import pandas as pd
-from pyhelpers.dir import cdd
 from pyhelpers.geom import osgb36_to_wgs84
-from pyhelpers.store import load_json, load_pickle, save, save_pickle
+from pyhelpers.settings import pd_preferences
+from pyhelpers.store import load_pickle, save, save_pickle
 from pyhelpers.text import find_matched_str
 from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage
 
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
-from utils import cdd_vegetation
+from utils import cdd_vegetation, update_nr_route_names
+
+pd_preferences()
 
 # ====================================================================================================================
 """ Change directories """
@@ -45,59 +47,36 @@ def cdd_veg_db_views(*sub_dir):
 
 
 # ====================================================================================================================
-""" Tool """
+""" Read table data from the database """
 
 
-# Route names dictionary
-def make_case_sensitive_route_names_dict(reverse=False):
-    # title_case = sorted(get_furlong_location()['Route'].unique().tolist())
-    title_cases = ['Anglia',
-                   'East Midlands',
-                   'Kent',
-                   'LNE',
-                   'LNW North',
-                   'LNW South',
-                   'Scotland',
-                   'Sussex',
-                   'Wales',
-                   'Wessex',
-                   'Western Thames Valley',
-                   'Western West']
-    # upper_case = sorted(get_du_route()['Route'].unique().tolist())
-    upper_cases = ['ANGLIA',
-                   'EAST MIDLANDS',
-                   'KENT',
-                   'LNE',
-                   'LNW North',
-                   'LNW South',
-                   'SCOTLAND',
-                   'SUSSEX',
-                   'WALES',
-                   'WESSEX',
-                   'WESTERN Thames Valley',
-                   'WESTERN West']
-    route_names_dict = dict(zip(upper_cases, title_cases)) if reverse else dict(zip(title_cases, upper_cases))
-    return route_names_dict
-
-
-# ====================================================================================================================
-""" Get table data from the database 'NR_Vegetation_20141031' """
-
-
-# Read tables available in NR_VEG database ===========================================================================
+# Read tables available in NR_Vegetation database
 def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=True, parse_dates=None, params=None,
                    schema='dbo', save_as=None, update=False):
     """
     :param table_name: [str]
-    :param schema: [str]
-    :param index_col: [str; None]
-    :param route_name: [str; None]
-    :param coerce_float: [bool; None]
-    :param parse_dates: [list or dict, default: None]
-    :param params: [list, tuple or dict, optional, default: None]
-    :param save_as: [str; None]
-    :param update: [bool]
-    :return: [pandas.DataFrame]
+    :param index_col: [str; None (default)]
+    :param route_name: [str; None (default)]
+    :param coerce_float: [bool; None] (default: True)
+    :param parse_dates: [list; dict; None (default)]
+    :param params: [list; tuple; dict; None (default)]
+    :param schema: [str] (default: 'dbo')
+    :param save_as: [str; None (default)]
+    :param update: [bool] (default: False)
+    :return: [pd.DataFrame]
+
+    Testing e.g.
+        table_name = 'AdverseWind'
+        index_col = None
+        route_name = None
+        coerce_float = True
+        parse_dates = None
+        params = None
+        schema = 'dbo'
+        save_as = None
+        update = False
+
+        read_veg_table(table_name, index_col, route_name, coerce_float, parse_dates, params, schema, save_as, update)
     """
     table = schema + '.' + table_name
     # Make a direct connection to the queried database
@@ -106,7 +85,7 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
         sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
     else:
         sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given a specific Route
-    # Create a pandas.DataFrame of the queried table
+    # Create a pd.DataFrame of the queried table
     data = pd.read_sql(sql=sql_query, con=conn_veg, index_col=index_col, coerce_float=coerce_float,
                        parse_dates=parse_dates, params=params)
     # Disconnect the database
@@ -120,35 +99,49 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
     return data
 
 
-# Get primary keys of a table in database 'NR_VEG'
+# Get primary keys of a table in database 'NR_Vegetation'
 def get_veg_table_pk(table_name):
+    """
+    :param table_name: [str]
+    :return: [list]
+
+    Testing e.g.
+        table_name = 'AdverseWind'
+        get_veg_table_pk(table_name)
+    """
     pri_key = get_table_primary_keys(database_name='NR_Vegetation_20141031', table_name=table_name)
     return pri_key
 
 
-def update_route_names(table_data, route_col_name='Route'):
-    assert isinstance(table_data, pd.DataFrame)
-    tbl_dat = table_data.copy(deep=True)
-    assert route_col_name in tbl_dat.columns
-    route_names_changes = load_json(cdd("Network\\Routes", "route-names-changes.json"))
-    tbl_dat.rename(columns={'Route': 'RouteAlias'}, inplace=True)
-    tbl_dat['Route'] = tbl_dat.RouteAlias.replace(route_names_changes)
-    return tbl_dat
+# ====================================================================================================================
+""" Get table data """
 
 
 # Get AdverseWind
-def get_adverse_wind(update=False, save_original_as=None):
+def get_adverse_wind(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_adverse_wind(update, save_original_as, verbose)
+    """
     table_name = 'AdverseWind'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
         adverse_wind = load_pickle(path_to_pickle)
     else:
         try:
-            adverse_wind = read_veg_table(table_name, save_as=save_original_as, update=update)
-            # Update route names
-            adverse_wind = update_route_names(adverse_wind, route_col_name='Route')
+            adverse_wind = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            update_nr_route_names(adverse_wind, route_col_name='Route')  # Update route names
             adverse_wind = adverse_wind.groupby('Route').agg(list).applymap(lambda x: x if len(x) > 1 else x[0])
-            save_pickle(adverse_wind, path_to_pickle)
+            save_pickle(adverse_wind, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             adverse_wind = None
@@ -156,7 +149,20 @@ def get_adverse_wind(update=False, save_original_as=None):
 
 
 # Get CuttingAngleClass
-def get_cutting_angle_class(update=False, save_original_as=None):
+def get_cutting_angle_class(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_cutting_angle_class(update, save_original_as, verbose)
+    """
     table_name = 'CuttingAngleClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -165,7 +171,7 @@ def get_cutting_angle_class(update=False, save_original_as=None):
         try:
             cutting_angle = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                            update=update)
-            save_pickle(cutting_angle, path_to_pickle)
+            save_pickle(cutting_angle, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             cutting_angle = None
@@ -173,7 +179,20 @@ def get_cutting_angle_class(update=False, save_original_as=None):
 
 
 # Get CuttingDepthClass
-def get_cutting_depth_class(update=False, save_original_as=None):
+def get_cutting_depth_class(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_cutting_depth_class(update, save_original_as, verbose)
+    """
     table_name = 'CuttingDepthClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -182,7 +201,7 @@ def get_cutting_depth_class(update=False, save_original_as=None):
         try:
             cutting_depth = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                            update=update)
-            save_pickle(cutting_depth, path_to_pickle)
+            save_pickle(cutting_depth, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             cutting_depth = None
@@ -190,18 +209,32 @@ def get_cutting_depth_class(update=False, save_original_as=None):
 
 
 # Get DUList
-def get_du_list(index=True, update=False, save_original_as=None):
+def get_du_list(index=True, update=False, save_original_as=None, verbose=False):
+    """
+    :param index: [bool] (default: True)
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        index = True
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_du_list(index, update, save_original_as, verbose)
+        get_du_list(False, update, save_original_as, verbose)
+    """
     table_name = 'DUList'
-    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if index else "") + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
         du_list = load_pickle(path_to_pickle)
     else:
         try:
-            du_list = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
-                                     update=update)
-            save_pickle(du_list, path_to_pickle)
-            if not index:
-                du_list = du_list.reset_index()
+            du_list = read_veg_table(table_name, index_col=get_veg_table_pk(table_name) if index else None,
+                                     save_as=save_original_as, update=update)
+            save_pickle(du_list, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             du_list = None
@@ -209,7 +242,20 @@ def get_du_list(index=True, update=False, save_original_as=None):
 
 
 # Get PathRoute
-def get_path_route(update=False, save_original_as=None):
+def get_path_route(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_path_route(update, save_original_as, verbose)
+    """
     table_name = 'PathRoute'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -218,7 +264,7 @@ def get_path_route(update=False, save_original_as=None):
         try:
             path_route = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                         update=update)
-            save_pickle(path_route, path_to_pickle)
+            save_pickle(path_route, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             path_route = None
@@ -226,7 +272,20 @@ def get_path_route(update=False, save_original_as=None):
 
 
 # Get Routes
-def get_du_route(update=False, save_original_as=None):
+def get_du_route(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_du_route(update, save_original_as, verbose)
+    """
     table_name = 'Routes'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -242,8 +301,8 @@ def get_du_route(update=False, save_original_as=None):
             # Replace values in column 'DUNameGIS'
             routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'}, inplace=True)
             # Update route names
-            routes = update_route_names(routes, route_col_name='Route')
-            save_pickle(routes, path_to_pickle)
+            update_nr_route_names(routes, route_col_name='Route')
+            save_pickle(routes, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             routes = None
@@ -251,7 +310,20 @@ def get_du_route(update=False, save_original_as=None):
 
 
 # Get S8Data
-def get_s8data(update=False, save_original_as=None):
+def get_s8data(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_s8data(update, save_original_as, verbose)
+    """
     table_name = 'S8Data'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -260,8 +332,8 @@ def get_s8data(update=False, save_original_as=None):
         try:
             s8data = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                     update=update)
-            s8data = update_route_names(s8data, route_col_name='Route')
-            save_pickle(s8data, path_to_pickle)
+            update_nr_route_names(s8data, route_col_name='Route')
+            save_pickle(s8data, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             s8data = None
@@ -269,7 +341,20 @@ def get_s8data(update=False, save_original_as=None):
 
 
 # Get TreeAgeClass
-def get_tree_age_class(update=False, save_original_as=None):
+def get_tree_age_class(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_tree_age_class(update, save_original_as, verbose)
+    """
     table_name = 'TreeAgeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -278,7 +363,7 @@ def get_tree_age_class(update=False, save_original_as=None):
         try:
             tree_age_class = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
                                             save_as=save_original_as, update=update)
-            save_pickle(tree_age_class, path_to_pickle)
+            save_pickle(tree_age_class, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_age_class = None
@@ -286,7 +371,20 @@ def get_tree_age_class(update=False, save_original_as=None):
 
 
 # Get TreeSizeClass
-def get_tree_size_class(update=False, save_original_as=None):
+def get_tree_size_class(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_tree_size_class(update, save_original_as, verbose)
+    """
     table_name = 'TreeSizeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -294,9 +392,8 @@ def get_tree_size_class(update=False, save_original_as=None):
     else:
         try:
             tree_size_class = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
-                                             save_as=save_original_as,
-                                             update=update)
-            save_pickle(tree_size_class, path_to_pickle)
+                                             save_as=save_original_as, update=update)
+            save_pickle(tree_size_class, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_size_class = None
@@ -304,7 +401,20 @@ def get_tree_size_class(update=False, save_original_as=None):
 
 
 # Get TreeType
-def get_tree_type(update=False, save_original_as=None):
+def get_tree_type(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_tree_type(update, save_original_as, verbose)
+    """
     table_name = 'TreeType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -313,7 +423,7 @@ def get_tree_type(update=False, save_original_as=None):
         try:
             tree_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                        update=update)
-            save_pickle(tree_type, path_to_pickle)
+            save_pickle(tree_type, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_type = None
@@ -321,7 +431,20 @@ def get_tree_type(update=False, save_original_as=None):
 
 
 # Get FellingType
-def get_felling_type(update=False, save_original_as=None):
+def get_felling_type(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_felling_type(update, save_original_as, verbose)
+    """
     table_name = 'FellingType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -330,7 +453,7 @@ def get_felling_type(update=False, save_original_as=None):
         try:
             felling_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                           update=update)
-            save_pickle(felling_type, path_to_pickle)
+            save_pickle(felling_type, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             felling_type = None
@@ -338,7 +461,20 @@ def get_felling_type(update=False, save_original_as=None):
 
 
 # Get AreaWorkType
-def get_area_work_type(update=False, save_original_as=None):
+def get_area_work_type(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_area_work_type(update, save_original_as, verbose)
+    """
     table_name = 'AreaWorkType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -347,7 +483,7 @@ def get_area_work_type(update=False, save_original_as=None):
         try:
             area_work_type = read_veg_table(table_name, index_col=get_veg_table_pk('AreaWorkType'),
                                             save_as=save_original_as, update=update)
-            save_pickle(area_work_type, path_to_pickle)
+            save_pickle(area_work_type, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             area_work_type = None
@@ -355,7 +491,20 @@ def get_area_work_type(update=False, save_original_as=None):
 
 
 # Get ServiceDetail
-def get_service_detail(update=False, save_original_as=None):
+def get_service_detail(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_service_detail(update, save_original_as, verbose)
+    """
     table_name = 'ServiceDetail'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -364,7 +513,7 @@ def get_service_detail(update=False, save_original_as=None):
         try:
             service_detail = read_veg_table(table_name, index_col=get_veg_table_pk('ServiceDetail'),
                                             save_as=save_original_as, update=update)
-            save_pickle(service_detail, path_to_pickle)
+            save_pickle(service_detail, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             service_detail = None
@@ -372,7 +521,20 @@ def get_service_detail(update=False, save_original_as=None):
 
 
 # Get ServicePath
-def get_service_path(update=False, save_original_as=None):
+def get_service_path(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_service_path(update, save_original_as, verbose)
+    """
     table_name = 'ServicePath'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -381,7 +543,7 @@ def get_service_path(update=False, save_original_as=None):
         try:
             service_path = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                           update=update)
-            save_pickle(service_path, path_to_pickle)
+            save_pickle(service_path, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             service_path = None
@@ -389,7 +551,20 @@ def get_service_path(update=False, save_original_as=None):
 
 
 # Get Supplier
-def get_supplier(update=False, save_original_as=None):
+def get_supplier(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_supplier(update, save_original_as, verbose)
+    """
     table_name = 'Supplier'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -398,7 +573,7 @@ def get_supplier(update=False, save_original_as=None):
         try:
             supplier = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                       update=update)
-            save_pickle(supplier, path_to_pickle)
+            save_pickle(supplier, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             supplier = None
@@ -406,17 +581,30 @@ def get_supplier(update=False, save_original_as=None):
 
 
 # Get SupplierCosts
-def get_supplier_costs(update=False, save_original_as=None):
+def get_supplier_costs(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_supplier_costs(update, save_original_as, verbose)
+    """
     table_name = 'SupplierCosts'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
         supplier_costs = load_pickle(path_to_pickle)
     else:
         try:
-            supplier_costs = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
-                                            save_as=save_original_as,
-                                            update=update)
-            save_pickle(supplier_costs, path_to_pickle)
+            supplier_costs = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            update_nr_route_names(supplier_costs, route_col_name='Route')
+            supplier_costs.set_index(get_veg_table_pk(table_name), inplace=True)
+            save_pickle(supplier_costs, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             supplier_costs = None
@@ -424,7 +612,20 @@ def get_supplier_costs(update=False, save_original_as=None):
 
 
 # Get SupplierCostsArea
-def get_supplier_costs_area(update=False, save_original_as=None):
+def get_supplier_costs_area(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_supplier_costs_area(update, save_original_as, verbose)
+    """
     table_name = 'SupplierCostsArea'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -432,11 +633,9 @@ def get_supplier_costs_area(update=False, save_original_as=None):
     else:
         try:
             costs_area = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
-            costs_area = update_route_names(costs_area, route_col_name='Route')
-            index_col = get_veg_table_pk(table_name)
-            index_col.remove('Route')
-            costs_area.set_index(index_col, inplace=True)
-            save_pickle(costs_area, path_to_pickle)
+            update_nr_route_names(costs_area, route_col_name='Route')
+            costs_area.set_index(get_veg_table_pk(table_name), inplace=True)
+            save_pickle(costs_area, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             costs_area = None
@@ -444,7 +643,20 @@ def get_supplier_costs_area(update=False, save_original_as=None):
 
 
 # Get SupplierCostsSimple
-def get_supplier_cost_simple(update=False, save_original_as=None):
+def get_supplier_cost_simple(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_supplier_cost_simple(update, save_original_as, verbose)
+    """
     table_name = 'SupplierCostsSimple'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -452,11 +664,9 @@ def get_supplier_cost_simple(update=False, save_original_as=None):
     else:
         try:
             costs_simple = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
-            costs_simple = update_route_names(costs_simple, route_col_name='Route')
-            index_col = get_veg_table_pk(table_name)
-            index_col.remove('Route')
-            costs_simple.set_index(index_col, inplace=True)
-            save_pickle(costs_simple, path_to_pickle)
+            update_nr_route_names(costs_simple, route_col_name='Route')
+            costs_simple.set_index(get_veg_table_pk(table_name), inplace=True)
+            save_pickle(costs_simple, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             costs_simple = None
@@ -464,7 +674,20 @@ def get_supplier_cost_simple(update=False, save_original_as=None):
 
 
 # Get TreeActionFractions
-def get_tree_action_fractions(update=False, save_original_as=None):
+def get_tree_action_fractions(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_tree_action_fractions(update, save_original_as, verbose)
+    """
     table_name = 'TreeActionFractions'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -473,7 +696,7 @@ def get_tree_action_fractions(update=False, save_original_as=None):
         try:
             tree_action_fractions = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
                                                    save_as=save_original_as, update=update)
-            save_pickle(tree_action_fractions, path_to_pickle)
+            save_pickle(tree_action_fractions, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             tree_action_fractions = None
@@ -481,7 +704,20 @@ def get_tree_action_fractions(update=False, save_original_as=None):
 
 
 # Get VegSurvTypeClass
-def get_veg_surv_type_class(update=False, save_original_as=None):
+def get_veg_surv_type_class(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_veg_surv_type_class(update, save_original_as, verbose)
+    """
     table_name = 'VegSurvTypeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -490,7 +726,7 @@ def get_veg_surv_type_class(update=False, save_original_as=None):
         try:
             veg_surv_type_class = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
                                                  save_as=save_original_as, update=update)
-            save_pickle(veg_surv_type_class, path_to_pickle)
+            save_pickle(veg_surv_type_class, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             veg_surv_type_class = None
@@ -498,7 +734,20 @@ def get_veg_surv_type_class(update=False, save_original_as=None):
 
 
 # Get WBFactors
-def get_wb_factors(update=False, save_original_as=None):
+def get_wb_factors(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_wb_factors(update, save_original_as, verbose)
+    """
     table_name = 'WBFactors'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -507,7 +756,7 @@ def get_wb_factors(update=False, save_original_as=None):
         try:
             wb_factors = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                         update=update)
-            save_pickle(wb_factors, path_to_pickle)
+            save_pickle(wb_factors, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             wb_factors = None
@@ -515,7 +764,20 @@ def get_wb_factors(update=False, save_original_as=None):
 
 
 # Get Weedspray
-def get_weed_spray(update=False, save_original_as=None):
+def get_weed_spray(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_weed_spray(update, save_original_as, verbose)
+    """
     table_name = 'Weedspray'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -523,9 +785,9 @@ def get_weed_spray(update=False, save_original_as=None):
     else:
         try:
             weed_spray = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
-            weed_spray = update_route_names(weed_spray, route_col_name='Route')
-            # weed_spray.set_index(get_veg_table_pk(table_name), inplace=True)
-            save_pickle(weed_spray, path_to_pickle)
+            update_nr_route_names(weed_spray, route_col_name='Route')
+            weed_spray.set_index('RouteAlias', inplace=True)
+            save_pickle(weed_spray, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             weed_spray = None
@@ -533,7 +795,20 @@ def get_weed_spray(update=False, save_original_as=None):
 
 
 # Get WorkHours
-def get_work_hours(update=False, save_original_as=None):
+def get_work_hours(update=False, save_original_as=None, verbose=False):
+    """
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_work_hours(update, save_original_as, verbose)
+    """
     table_name = 'WorkHours'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -542,7 +817,7 @@ def get_work_hours(update=False, save_original_as=None):
         try:
             work_hours = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
                                         update=update)
-            save_pickle(work_hours, path_to_pickle)
+            save_pickle(work_hours, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             work_hours = None
@@ -550,13 +825,29 @@ def get_work_hours(update=False, save_original_as=None):
 
 
 # Get FurlongData
-def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_original_as=None):
+def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_original_as=None, verbose=False):
     """
+    :param set_index: [bool] (default: False)
+    :param pseudo_amendment: [bool] (default: True)
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        set_index = False
+        pseudo_amendment = True
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_furlong_data(set_index, pseudo_amendment, update, save_original_as, verbose)
+
     Equipment Class: VL ('VEGETATION - 1/8 MILE SECTION')
     1/8 mile = 220 yards = 1 furlong
     """
     table_name = 'FurlongData'
-    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if set_index else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         furlong_data = load_pickle(path_to_pickle)
@@ -582,14 +873,12 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
             # Edit the 'TEF' columns
             furlong_data.OtherVegScore.replace({-1: 0}, inplace=True)
             renamed_cols = list(renamed_cols_dict.values())
-            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(
-                lambda x: 0 if pd.np.isnan(x) else x + 1)
+            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(lambda x: 0 if pd.np.isnan(x) else x + 1)
             # Re-format date of measure
             furlong_data.DateOfMeasure = furlong_data.DateOfMeasure.map(
                 lambda x: pd.datetime.strptime(x, '%d/%m/%Y %H:%M'))
             # Edit route data
-            furlong_data.Route = furlong_data.Route.replace(make_case_sensitive_route_names_dict())
-            furlong_data = update_route_names(furlong_data, route_col_name='Route')
+            update_nr_route_names(furlong_data, route_col_name='Route')
 
             if set_index:
                 furlong_data.set_index(get_veg_table_pk(table_name), inplace=True)
@@ -642,7 +931,7 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
                                 err = pd.np.divide(errors.loc[i], len(features))
                                 furlong_data.loc[i, features] += err
 
-            save_pickle(furlong_data, path_to_pickle)
+            save_pickle(furlong_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -652,15 +941,26 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
 
 
 # Get FurlongLocation
-def get_furlong_location(relevant_columns_only=True, update=False, save_original_as=None):
+def get_furlong_location(relevant_columns_only=True, update=False, save_original_as=None, verbose=False):
     """
+    :param relevant_columns_only: [bool] (default: True)
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        relevant_columns_only = True
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_furlong_location(relevant_columns_only, update, save_original_as, verbose)
+
     Note: One ELR&mileage may have multiple 'FurlongID's.
     """
     table_name = 'FurlongLocation'
-    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
-
-    if relevant_columns_only:
-        path_to_pickle = path_to_pickle.replace(table_name, table_name + "_cut")
+    path_to_pickle = cdd_veg_db_tables(table_name + ("-cut" if relevant_columns_only else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         furlong_location = load_pickle(path_to_pickle)
@@ -668,8 +968,7 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
         try:
             # Read data from database
             furlong_location = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
-                                              save_as=save_original_as,
-                                              update=update)
+                                              save_as=save_original_as, update=update)
             # Re-format mileage data
             furlong_location[['StartMileage', 'EndMileage']] = \
                 furlong_location[['StartMileage', 'EndMileage']].applymap(nr_mileage_num_to_str)
@@ -678,15 +977,14 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
             furlong_location[['Electrified', 'HazardOnly']] = \
                 furlong_location[['Electrified', 'HazardOnly']].applymap(int)
             # Replace Route names
-            furlong_location.Route.replace(make_case_sensitive_route_names_dict(), inplace=True)
-            furlong_location = update_route_names(furlong_location, route_col_name='Route')
+            update_nr_route_names(furlong_location, route_col_name='Route')
 
             # Select useful columns only?
             if relevant_columns_only:
                 furlong_location = furlong_location[['Route', 'RouteAlias', 'DU', 'ELR', 'StartMileage', 'EndMileage',
                                                      'Electrified', 'HazardOnly']]
 
-            save_pickle(furlong_location, path_to_pickle)
+            save_pickle(furlong_location, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -696,13 +994,27 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
 
 
 # Get HazardTree
-def get_hazard_tree(set_index=False, update=False, save_original_as=None):
+def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbose=False):
     """
+    :param set_index: [bool] (default: False)
+    :param update: [bool] (default: False)
+    :param save_original_as: [str; None (default)]
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        set_index = False
+        update = True
+        save_original_as = None
+        verbose = True
+
+        get_hazard_tree(set_index, update, save_original_as, verbose)
+
     Note that error data exists in 'FurlongID'. They could be cancelled out when the 'hazard_tree' data set is being
     merged with other data sets on the 'FurlongID'. Errors also exist in 'Easting' and 'Northing' columns.
     """
     table_name = 'HazardTree'
-    path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if set_index else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         hazard_tree = load_pickle(path_to_pickle)
@@ -718,17 +1030,15 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None):
             hazard_tree.Treespecies.replace({'': 'No data'}, inplace=True)
 
             # Update route data
-            hazard_tree.Route.replace(make_case_sensitive_route_names_dict(), inplace=True)  # Replace names of Routes
-            hazard_tree = update_route_names(hazard_tree, route_col_name='Route')
+            update_nr_route_names(hazard_tree, route_col_name='Route')
 
             # Integrate information from several features in a DataFrame
             def sum_up_selected_features(data, selected_features, new_feature):
                 """
-                To integrate information from certain columns in a DataFrame
-                :param data: [DataFrame] original DataFrame
+                :param data: [pd.DataFrame] original DataFrame
                 :param selected_features: [list] list of columns names
                 :param new_feature: [str] new column name
-                :return: DataFrame
+                :return: [pd.DataFrame]
                 """
                 data.replace({True: 1, False: 0}, inplace=True)
                 data[new_feature] = data[selected_features].fillna(0).apply(sum, axis=1)
@@ -765,15 +1075,13 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None):
             hazard_tree.index = range(len(hazard_tree))
 
             # Add two columns of Latitudes and Longitudes corresponding to the Easting and Northing coordinates
-            lonlat = osgb36_to_wgs84(hazard_tree.Easting.values, hazard_tree.Northing.values)
-            hazard_tree = hazard_tree.join(pd.DataFrame(pd.np.column_stack(lonlat), columns=['Longitude', 'Latitude']))
+            hazard_tree['Longitude'], hazard_tree['Latitude'] = osgb36_to_wgs84(
+                hazard_tree.Easting.values, hazard_tree.Northing.values)
 
-            save_pickle(hazard_tree, path_to_pickle)
+            save_pickle(hazard_tree, path_to_pickle, verbose=verbose)
 
             if set_index:
                 hazard_tree.set_index(get_veg_table_pk(table_name), inplace=True)
-
-            hazard_tree.dropna(inplace=True)
 
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -782,76 +1090,82 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None):
     return hazard_tree
 
 
-"""
-update = True
+# Update the local pickle files for all tables
+def update_vegetation_table_pickles(update=True, verbose=True):
+    _ = get_adverse_wind(update, verbose=verbose)
+    _ = get_cutting_angle_class(update, verbose=verbose)
+    _ = get_cutting_depth_class(update, verbose=verbose)
+    _ = get_du_list(index=True, update=update, verbose=verbose)
+    _ = get_du_list(index=False, update=update, verbose=verbose)
+    _ = get_path_route(update, verbose=verbose)
+    _ = get_du_route(update, verbose=verbose)
+    _ = get_s8data(update, verbose=verbose)
+    _ = get_tree_age_class(update, verbose=verbose)
+    _ = get_tree_size_class(update, verbose=verbose)
+    _ = get_tree_type(update, verbose=verbose)
+    _ = get_felling_type(update, verbose=verbose)
+    _ = get_area_work_type(update, verbose=verbose)
+    _ = get_service_detail(update, verbose=verbose)
+    _ = get_service_path(update, verbose=verbose)
+    _ = get_supplier(update, verbose=verbose)
+    _ = get_supplier_costs(update, verbose=verbose)
+    _ = get_supplier_costs_area(update, verbose=verbose)
+    _ = get_supplier_cost_simple(update, verbose=verbose)
+    _ = get_tree_action_fractions(update, verbose=verbose)
+    _ = get_veg_surv_type_class(update, verbose=verbose)
+    _ = get_wb_factors(update, verbose=verbose)
+    _ = get_weed_spray(update, verbose=verbose)
+    _ = get_work_hours(update, verbose=verbose)
+    
+    _ = get_furlong_data(set_index=False, pseudo_amendment=True, update=update, verbose=verbose)
+    _ = get_furlong_location(relevant_columns_only=True, update=update, verbose=verbose)
+    _ = get_hazard_tree(set_index=False, update=update, verbose=verbose)
 
-get_adverse_wind(update)
-get_cutting_angle_class(update)
-get_cutting_depth_class(update)
-get_du_list(index=True, update=update)
-get_path_route(update)
-get_du_route(update)
-get_s8data(update)
-get_tree_age_class(update)
-get_tree_size_class(update)
-get_tree_type(update)
-get_felling_type(update)
-get_area_work_type(update)
-get_service_detail(update)
-get_service_path(update)
-get_supplier(update)
-get_supplier_costs(update)
-get_supplier_costs_area(update)
-get_supplier_cost_simple(update)
-get_tree_action_fractions(update)
-get_veg_surv_type_class(update)
-get_wb_factors(update)
-get_weed_spray(update)
-get_work_hours(update)
-
-get_furlong_data(set_index=False, pseudo_amendment=True, update=update)
-get_furlong_location(relevant_columns_only=True, update=update)
-get_hazard_tree(set_index=False, update=update)
-"""
 
 # ====================================================================================================================
-""" Get views based on the NR_VEG data """
+""" Get views based on the NR_Vegetation data """
 
 
+# Create a pickle filename
 def make_filename(base_name, route_name, *extra_suffixes, sep="-", save_as=".pickle"):
     """
     :param base_name: [str; None]
     :param route_name: [str; None]
     :param extra_suffixes: [str; None]
     :param sep: [str; None]
-    :param save_as: [str] ".pickle" (default)
+    :param save_as: [str] (default: ".pickle")
     :return: [str]
     """
     assert save_as.startswith("."), "\"save_as\" must be extension-like, such as \".pickle\"."
     base_name_ = "" if base_name is None else base_name
     route_name_ = "" if route_name is None \
-        else (sep if base_name_ else "") + find_matched_str(route_name, get_du_route().Route)
+        else (sep if base_name_ else "") + find_matched_str(route_name, get_du_route().Route).replace(" ", "_")
     if extra_suffixes:
-        suffix = [str(s) for s in extra_suffixes if s]
-        suffix = sep.join(suffix) if len(suffix) > 1 else sep + suffix[0]
+        suffix = ["{}".format(s) for s in extra_suffixes if s]
+        suffix = (sep if any(x for x in (base_name_, route_name_)) else "") + sep.join(suffix) \
+            if len(suffix) > 1 else sep + suffix[0]
         filename = base_name_ + route_name_ + suffix + save_as
     else:
         filename = base_name_ + route_name_ + save_as
-    return filename.lower()
+    return filename
 
 
 # View Vegetation data (75247, 45)
-def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True):
+def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
     """
     :param route_name: [str; None (default)]
-    :param update: [bool]
-    :param pickle_it: [bool]
-    :return: [pd.DataFrame]
+    :param update: [bool] (default: False)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
 
     Testing e.g.
         route_name = None
-        update = False
+        update = True
         pickle_it = True
+        verbose = True
+
+        view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
     """
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation-coverage-per-furlong", route_name))
 
@@ -860,8 +1174,8 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
 
     else:
         try:
-            furlong_data = get_furlong_data()  # (75247, 39)
-            furlong_location = get_furlong_location()  # Set 'FurlongID' to be its index (77017, 7)
+            furlong_data = get_furlong_data()  # (75247, 40)
+            furlong_location = get_furlong_location()  # Set 'FurlongID' to be its index (77017, 8)
             cutting_angle_class = get_cutting_angle_class()  # (5, 1)
             cutting_depth_class = get_cutting_depth_class()  # (5, 1)
             # Merge the data that has been obtained
@@ -892,7 +1206,7 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
             furlong_vegetation_coverage.index = range(len(furlong_vegetation_coverage))
 
             if pickle_it:
-                save_pickle(furlong_vegetation_coverage, path_to_pickle)
+                save_pickle(furlong_vegetation_coverage, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to fetch the information of vegetation coverage per furlong. {}".format(e))
@@ -902,17 +1216,22 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
 
 
 # View data of hazardous tress (22180, 66)
-def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
+def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=False):
     """
     :param route_name: [str; None (default)]
-    :param update: [bool]
-    :param pickle_it [bool]
-    :return: [pd.DataFrame]
+    :param update: [bool] (default: False)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
 
     Testing e.g.
         route_name = None
-        update = False
+        update = True
         pickle_it = True
+        verbose = True
+
+        view_hazardous_trees(route_name, update, pickle_it, verbose)
+        view_hazardous_trees('Anglia', update, pickle_it, verbose)
     """
     path_to_pickle = cdd_veg_db_views(make_filename("hazardous-trees", route_name))
 
@@ -921,8 +1240,8 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
 
     else:
         try:
-            hazard_tree = get_hazard_tree()  # (23950, 59) 1770 with FurlongID being -1
-            furlong_location = get_furlong_location()  # (77017, 7)
+            hazard_tree = get_hazard_tree()  # (23950, 60) 1770 with FurlongID being -1
+            furlong_location = get_furlong_location()  # (77017, 8)
             tree_age_class = get_tree_age_class()  # (7, 1)
             tree_size_class = get_tree_size_class()  # (5, 1)
 
@@ -951,7 +1270,7 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
                                                  'HazardOnly': 'Furlong_HazardOnly'}, inplace=True)
 
             if pickle_it:
-                save_pickle(hazardous_trees_data, path_to_pickle)
+                save_pickle(hazardous_trees_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to fetch the information of hazardous trees. {}".format(e))
@@ -961,17 +1280,21 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True):
 
 
 # View Vegetation data as well as hazardous trees information (75247, 58)
-def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True):
+def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
     """
     :param route_name: [str; None (default)]
-    :param update: [bool]
-    :param pickle_it [bool]
-    :return: [pd.DataFrame]
+    :param update: [bool] (default: False)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
 
     Testing e.g.
         route_name = None
-        update = False
+        update = True
         pickle_it = True
+        verbose = True
+
+        view_vegetation_condition_per_furlong(route_name, update, pickle_it, verbose)
     """
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation-condition-per-furlong", route_name))
 
@@ -1009,7 +1332,7 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
                 furlong_vegetation_data.index = range(len(furlong_vegetation_data))
 
             if pickle_it:
-                save_pickle(furlong_vegetation_data, path_to_pickle)
+                save_pickle(furlong_vegetation_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to fetch the information of vegetation condition per furlong. {}".format(e))
@@ -1019,17 +1342,21 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
 
 
 # ELR & mileage data of furlong locations
-def view_nr_vegetation_furlong_data(update=False, pickle_it=True) -> pd.DataFrame:
+def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False) -> pd.DataFrame:
     """
-    :param update: [bool]
-    :param pickle_it: [bool]
-    :return: [pd.DataFrame]
+    :param update: [bool] (default: False)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: False)
+    :return: [pd.DataFrame; None]
 
     Testing e.g.
-        update = False
+        update = True
         pickle_it = True
+        verbose = True
+
+        view_nr_vegetation_furlong_data(update, pickle_it, verbose)
     """
-    path_to_pickle = cdd_veg_db_views("vegetation-furlong-data" + ".pickle")
+    path_to_pickle = cdd_veg_db_views("vegetation-furlong-data.pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         nr_vegetation_furlong_data = load_pickle(path_to_pickle)
@@ -1057,7 +1384,7 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True) -> pd.DataFram
             nr_vegetation_furlong_data.sort_values(['ELR'] + num_mileage_colnames, inplace=True)
 
             if pickle_it:
-                save_pickle(nr_vegetation_furlong_data, path_to_pickle)
+                save_pickle(nr_vegetation_furlong_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
             print("Failed to fetch ELR & mileage data of furlong locations. {}".format(e))
@@ -1066,17 +1393,14 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True) -> pd.DataFram
     return nr_vegetation_furlong_data
 
 
-"""
-route_name = None
-update = True
-pickle_it = True
+# Update the local pickle files for all essential views
+def update_vegetation_view_pickles(route_name=None, update=True, pickle_it=True, verbose=True):
 
-view_vegetation_coverage_per_furlong(route_name, update=update, pickle_it=pickle_it)
+    _ = view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
 
-view_hazardous_trees(route_name, update=update, pickle_it=pickle_it)
-view_hazardous_trees('Anglia', update=update, pickle_it=pickle_it)
+    _ = view_hazardous_trees(route_name, update, pickle_it, verbose)
+    _ = view_hazardous_trees('Anglia', update, pickle_it, verbose)
 
-view_vegetation_condition_per_furlong(route_name, update=update, pickle_it=pickle_it)
+    _ = view_vegetation_condition_per_furlong(route_name, update, pickle_it, verbose)
 
-view_nr_vegetation_furlong_data(update=update, pickle_it=pickle_it)
-"""
+    _ = view_nr_vegetation_furlong_data(update, pickle_it, verbose)
