@@ -1314,7 +1314,7 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
                 'TreeproxrailM': [lambda x: tuple(x), min, max],
                 'Treeprox3py': [lambda x: tuple(x), min, max]})  # (11320, 13)
 
-            furlong_hazard_tree.columns = ['_'.join(x).strip() for x in furlong_hazard_tree.columns.values]
+            furlong_hazard_tree.columns = ['_'.join(x).strip() for x in furlong_hazard_tree.columns]
             furlong_hazard_tree.rename(columns={'Haztreeid_count_nonzero': 'TreeNumber'}, inplace=True)
             furlong_hazard_tree.columns = ['Hazard' + x.strip('_<lambda_0>') for x in furlong_hazard_tree.columns]
 
