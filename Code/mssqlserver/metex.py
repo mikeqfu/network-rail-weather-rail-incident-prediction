@@ -27,10 +27,10 @@ from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
 from pyhelpers.text import find_similar_str
 from pyrcs.line_data import LineData
 from pyrcs.other_assets import OtherAssets
+from pyrcs.utils import fetch_dict_for_location_names_repl
 from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage, yards_to_nr_mileage
 
 from misc.delay_attribution_glossary import get_incident_reason_metadata, get_performance_event_code
-from misc.location_name_errata import location_names_regexp_replacement_dict, location_names_replacement_dict
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
 from utils import cdd_metex, cdd_network, update_nr_route_names
 
@@ -687,8 +687,8 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                 dat.Name.replace(location_stanme_dict, inplace=True)
 
                 # Use manually-created dictionary of regular expressions
-                dat.replace(location_names_replacement_dict('Description'), inplace=True)
-                dat.replace(location_names_regexp_replacement_dict('Description'), inplace=True)
+                dat.replace(fetch_dict_for_location_names_repl(k='Description'), inplace=True)
+                dat.replace(fetch_dict_for_location_names_repl(k='Description', regex=True), inplace=True)
 
                 # Use STANOX dictionary
                 stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
@@ -783,8 +783,8 @@ def get_stanox_section(update=False, save_original_as=None, verbose=False):
             tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC', as_dict=True)
 
             # Secondly, process 'STANME' and 'TIPLOC'
-            loc_name_replacement_dict = location_names_replacement_dict()
-            loc_name_regexp_replacement_dict = location_names_regexp_replacement_dict()
+            loc_name_replacement_dict = fetch_dict_for_location_names_repl()
+            loc_name_regexp_replacement_dict = fetch_dict_for_location_names_repl(regex=True)
             # Processing 'StartStanox_tmp'
             stanox_section.StartStanox_temp = stanox_section.StartStanox_temp. \
                 replace(stanme_dict).replace(tiploc_dict). \
@@ -1029,12 +1029,11 @@ def get_weather_cell(update=False, save_original_as=None, show_map=False, projec
             weather_cell['lr_Latitude'] = weather_cell.ur_Latitude - weather_cell.height  # / 2
 
             # Get IMDM Weather cell map
-            imdm_weather_cell_map = get_imdm_weather_cell_map().reset_index()[[id_name, 'IMDM', 'Route']]
-            imdm_weather_cell_map = imdm_weather_cell_map.groupby(id_name).agg(list)
-            imdm_weather_cell_map = imdm_weather_cell_map.applymap(lambda x: x[0] if len(x) == 1 else x)
+            imdm_weather_cell_map = get_imdm_weather_cell_map().reset_index()
 
             # Merge the acquired data set
-            weather_cell = weather_cell.join(imdm_weather_cell_map)
+            weather_cell = imdm_weather_cell_map.join(weather_cell, on='WeatherCellId').sort_values('WeatherCellId')
+            weather_cell.set_index('WeatherCellId', inplace=True)
 
             # Create polygons WGS84 (Longitude, Latitude)
             weather_cell['Polygon_WGS84'] = weather_cell.apply(
@@ -1056,6 +1055,11 @@ def get_weather_cell(update=False, save_original_as=None, show_map=False, projec
                 lambda x: shapely.geometry.Polygon(
                     zip([x.ll_Easting, x.ul_Easting, x.ur_Easting, x.lr_Easting],
                         [x.ll_Northing, x.ul_Northing, x.ur_Northing, x.lr_Northing])), axis=1)
+
+            regions_and_routes = load_json(cdd_network("Regions", "routes.json"))
+            regions_and_routes_list = [{x: k} for k, v in regions_and_routes.items() for x in v]
+            regions_and_routes_dict = {k: v for d in regions_and_routes_list for k, v in d.items()}
+            weather_cell['Region'] = weather_cell.Route.replace(regions_and_routes_dict)
 
             save_pickle(weather_cell, path_to_pickle, verbose=verbose)
 
@@ -1363,6 +1367,11 @@ def get_subset(data_set, route_name=None, weather_category=None, rearrange_index
     :param weather_category: [str; None (default)]
     :param rearrange_index: [bool] (default: False)
     :return: [pd.DataFrame; None]
+
+    Testing e.g.
+        route_name = 'Anglia'
+        weather_category = None
+        rearrange_index = False
     """
     if data_set is not None:
         assert isinstance(data_set, pd.DataFrame) and not data_set.empty
