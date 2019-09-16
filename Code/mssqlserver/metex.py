@@ -2151,6 +2151,16 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
 
 # Update the local pickle files for all essential views
 def update_metex_view_pickles(update=True, pickle_it=True, verbose=True):
+    """
+    :param update: [bool] (default: True)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: True)
+
+    Testing e.g.
+        update = True
+        pickle_it = True
+        verbose = True
+    """
     _ = view_schedule8_costs_by_location(None, None, update, pickle_it, verbose)
     _ = view_schedule8_costs_by_location('Anglia', None, update, pickle_it, verbose)
     _ = view_schedule8_costs_by_location('Anglia', 'Wind', update, pickle_it, verbose)
