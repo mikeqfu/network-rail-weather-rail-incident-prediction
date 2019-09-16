@@ -2160,6 +2160,8 @@ def update_metex_view_pickles(update=True, pickle_it=True, verbose=True):
         update = True
         pickle_it = True
         verbose = True
+
+        update_metex_view_pickles(update, pickle_it, verbose)
     """
     _ = view_schedule8_costs_by_location(None, None, update, pickle_it, verbose)
     _ = view_schedule8_costs_by_location('Anglia', None, update, pickle_it, verbose)

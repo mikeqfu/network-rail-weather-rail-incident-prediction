@@ -1395,6 +1395,20 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
 
 # Update the local pickle files for all essential views
 def update_vegetation_view_pickles(route_name=None, update=True, pickle_it=True, verbose=True):
+    """
+    :param route_name: [str; None (default)]
+    :param update: [bool] (default: True)
+    :param pickle_it: [bool] (default: True)
+    :param verbose: [bool] (default: True)
+
+    Testing e.g.
+        route_name = None
+        update = True
+        pickle_it = True
+        verbose = True
+
+        update_vegetation_view_pickles(route_name, update, pickle_it, verbose)
+    """
 
     _ = view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
 
