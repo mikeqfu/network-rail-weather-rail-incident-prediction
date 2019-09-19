@@ -27,7 +27,7 @@ from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
 from pyhelpers.text import find_similar_str
 from pyrcs.line_data import LineData
 from pyrcs.other_assets import OtherAssets
-from pyrcs.utils import fetch_dict_for_location_names_repl
+from pyrcs.utils import fetch_location_names_repl_dict
 from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage, yards_to_nr_mileage
 
 from misc.delay_attribution_glossary import get_incident_reason_metadata, get_performance_event_code
@@ -687,8 +687,8 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                 dat.Name.replace(location_stanme_dict, inplace=True)
 
                 # Use manually-created dictionary of regular expressions
-                dat.replace(fetch_dict_for_location_names_repl(k='Description'), inplace=True)
-                dat.replace(fetch_dict_for_location_names_repl(k='Description', regex=True), inplace=True)
+                dat.replace(fetch_location_names_repl_dict(k='Description'), inplace=True)
+                dat.replace(fetch_location_names_repl_dict(k='Description', regex=True), inplace=True)
 
                 # Use STANOX dictionary
                 stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
@@ -783,8 +783,8 @@ def get_stanox_section(update=False, save_original_as=None, verbose=False):
             tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC', as_dict=True)
 
             # Secondly, process 'STANME' and 'TIPLOC'
-            loc_name_replacement_dict = fetch_dict_for_location_names_repl()
-            loc_name_regexp_replacement_dict = fetch_dict_for_location_names_repl(regex=True)
+            loc_name_replacement_dict = fetch_location_names_repl_dict()
+            loc_name_regexp_replacement_dict = fetch_location_names_repl_dict(regex=True)
             # Processing 'StartStanox_tmp'
             stanox_section.StartStanox_temp = stanox_section.StartStanox_temp. \
                 replace(stanme_dict).replace(tiploc_dict). \
