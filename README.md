@@ -50,6 +50,6 @@ The prototype data models are generic and should also be adaptable to other othe
 
 ##### *Open-source Python packages (open for further development)*
 
-- **pydriosm** [[source code](https://github.com/mikeqfu/pydriosm)] - A toolkit for collecting, parsing and saving/loading OSM data extracts. 
-- **pyrcs** [[source code](https://github.com/mikeqfu/pyrcs)] - A web scraper for collecting railway codes used in Great Britain. 
-- **pyhelpers** [[source code](https://github.com/mikeqfu/pyhelpers)] - A small toolkit of some helper functions to facilitate writing Python code.
+- [**pydriosm**](https://github.com/mikeqfu/pydriosm) - A toolkit for collecting, parsing and storing OSM data extracts. 
+- [**pyrcs**](https://github.com/mikeqfu/pyrcs) - A small web scraper for collecting railway codes used in the UK rail industry. 
+- [**pyhelpers**](https://github.com/mikeqfu/pyhelpers) - A small toolkit of some helper functions to facilitate data manipulation. 
