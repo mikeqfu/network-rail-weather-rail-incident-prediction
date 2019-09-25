@@ -2,7 +2,7 @@
 
 Historic delay attribution glossary
 
-Source: https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/datasets/
+https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/our-information-and-data/
 
 """
 
