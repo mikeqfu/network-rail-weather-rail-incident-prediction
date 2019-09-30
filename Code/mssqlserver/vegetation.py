@@ -5,6 +5,7 @@ import re
 
 import pandas as pd
 from pyhelpers.geom import osgb36_to_wgs84
+from pyhelpers.misc import confirmed
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save, save_pickle
 from pyhelpers.text import find_matched_str
@@ -1092,34 +1093,51 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
 
 # Update the local pickle files for all tables
 def update_vegetation_table_pickles(update=True, verbose=True):
-    _ = get_adverse_wind(update, verbose=verbose)
-    _ = get_cutting_angle_class(update, verbose=verbose)
-    _ = get_cutting_depth_class(update, verbose=verbose)
-    _ = get_du_list(index=True, update=update, verbose=verbose)
-    _ = get_du_list(index=False, update=update, verbose=verbose)
-    _ = get_path_route(update, verbose=verbose)
-    _ = get_du_route(update, verbose=verbose)
-    _ = get_s8data(update, verbose=verbose)
-    _ = get_tree_age_class(update, verbose=verbose)
-    _ = get_tree_size_class(update, verbose=verbose)
-    _ = get_tree_type(update, verbose=verbose)
-    _ = get_felling_type(update, verbose=verbose)
-    _ = get_area_work_type(update, verbose=verbose)
-    _ = get_service_detail(update, verbose=verbose)
-    _ = get_service_path(update, verbose=verbose)
-    _ = get_supplier(update, verbose=verbose)
-    _ = get_supplier_costs(update, verbose=verbose)
-    _ = get_supplier_costs_area(update, verbose=verbose)
-    _ = get_supplier_cost_simple(update, verbose=verbose)
-    _ = get_tree_action_fractions(update, verbose=verbose)
-    _ = get_veg_surv_type_class(update, verbose=verbose)
-    _ = get_wb_factors(update, verbose=verbose)
-    _ = get_weed_spray(update, verbose=verbose)
-    _ = get_work_hours(update, verbose=verbose)
-    
-    _ = get_furlong_data(set_index=False, pseudo_amendment=True, update=update, verbose=verbose)
-    _ = get_furlong_location(relevant_columns_only=True, update=update, verbose=verbose)
-    _ = get_hazard_tree(set_index=False, update=update, verbose=verbose)
+    """
+    :param update: [bool] (default: True)
+    :param verbose: [bool] (default: True)
+
+    Testing e.g.
+        update = True
+        verbose = True
+
+        update_vegetation_table_pickles(update, verbose)
+    """
+    if confirmed("To update the pickles of the NR_Vegetation Table data?"):
+
+        _ = get_adverse_wind(update, verbose=verbose)
+        _ = get_area_work_type(update, verbose=verbose)
+        _ = get_cutting_angle_class(update, verbose=verbose)
+        _ = get_cutting_depth_class(update, verbose=verbose)
+        _ = get_du_list(index=False, update=update, verbose=verbose)
+        _ = get_du_list(index=True, update=update, verbose=verbose)
+        _ = get_felling_type(update, verbose=verbose)
+
+        _ = get_furlong_data(set_index=False, pseudo_amendment=True, update=update, verbose=verbose)
+        _ = get_furlong_location(relevant_columns_only=False, update=update, verbose=verbose)
+        _ = get_furlong_location(relevant_columns_only=True, update=update, verbose=verbose)
+        _ = get_hazard_tree(set_index=False, update=update, verbose=verbose)
+
+        _ = get_path_route(update, verbose=verbose)
+        _ = get_du_route(update, verbose=verbose)
+        _ = get_s8data(update, verbose=verbose)
+        _ = get_service_detail(update, verbose=verbose)
+        _ = get_service_path(update, verbose=verbose)
+        _ = get_supplier(update, verbose=verbose)
+        _ = get_supplier_costs(update, verbose=verbose)
+        _ = get_supplier_costs_area(update, verbose=verbose)
+        _ = get_supplier_cost_simple(update, verbose=verbose)
+        _ = get_tree_action_fractions(update, verbose=verbose)
+        _ = get_tree_age_class(update, verbose=verbose)
+        _ = get_tree_size_class(update, verbose=verbose)
+        _ = get_tree_type(update, verbose=verbose)
+        _ = get_veg_surv_type_class(update, verbose=verbose)
+        _ = get_wb_factors(update, verbose=verbose)
+        _ = get_weed_spray(update, verbose=verbose)
+        _ = get_work_hours(update, verbose=verbose)
+
+        if verbose:
+            print("\nUpdate finished.")
 
 
 # ====================================================================================================================
@@ -1409,12 +1427,16 @@ def update_vegetation_view_pickles(route_name=None, update=True, pickle_it=True,
 
         update_vegetation_view_pickles(route_name, update, pickle_it, verbose)
     """
+    if confirmed("To update the View pickles of the NR_Vegetation data?"):
 
-    _ = view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
+        _ = view_hazardous_trees(route_name, update, pickle_it, verbose)
+        _ = view_hazardous_trees('Anglia', update, pickle_it, verbose)
 
-    _ = view_hazardous_trees(route_name, update, pickle_it, verbose)
-    _ = view_hazardous_trees('Anglia', update, pickle_it, verbose)
+        _ = view_vegetation_condition_per_furlong(route_name, update, pickle_it, verbose)
 
-    _ = view_vegetation_condition_per_furlong(route_name, update, pickle_it, verbose)
+        _ = view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
 
-    _ = view_nr_vegetation_furlong_data(update, pickle_it, verbose)
+        _ = view_nr_vegetation_furlong_data(update, pickle_it, verbose)
+
+        if verbose:
+            print("\nUpdate finished.")
