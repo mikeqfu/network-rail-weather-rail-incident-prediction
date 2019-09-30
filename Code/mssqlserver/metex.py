@@ -22,6 +22,7 @@ import pandas as pd
 import shapely.geometry
 from pyhelpers.dir import cd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
+from pyhelpers.misc import confirmed
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
 from pyhelpers.text import find_similar_str
@@ -1269,50 +1270,67 @@ def get_track_summary(update=False, save_original_as=None, verbose=False):
 
 # Update the local pickle files for all tables
 def update_metex_table_pickles(update=True, verbose=True):
-    _ = get_imdm(as_dict=False, update=update, save_original_as=None, verbose=verbose)
-    _ = get_imdm(as_dict=True, update=update, save_original_as=None, verbose=verbose)
+    """
+    :param update: [bool] (default: True)
+    :param verbose: [bool] (default: True)
 
-    _ = get_imdm_alias(as_dict=False, update=update, save_original_as=None, verbose=verbose)
-    _ = get_imdm_alias(as_dict=True, update=update, save_original_as=None, verbose=verbose)
+    Testing e.g.
+        update = True
+        verbose = True
+        update_metex_table_pickles(update, verbose)
+    """
+    if confirmed("To update the local pickles of the Table data of the NR_METEX database?"):
 
-    _ = get_imdm_weather_cell_map(route_info=True, grouped=False, update=update, save_original_as=None, verbose=verbose)
-    _ = get_imdm_weather_cell_map(route_info=True, grouped=True, update=update, save_original_as=None, verbose=verbose)
-    _ = get_imdm_weather_cell_map(route_info=False, grouped=False, update=update, save_original_as=None,
-                                  verbose=verbose)
-    _ = get_imdm_weather_cell_map(route_info=False, grouped=True, update=update, save_original_as=None, verbose=verbose)
+        _ = get_imdm(as_dict=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_imdm(as_dict=True, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_incident_reason_info(plus=True, update=update, save_original_as=None, verbose=verbose)
-    _ = get_incident_reason_info(plus=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_imdm_alias(as_dict=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_imdm_alias(as_dict=True, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_weather_codes(as_dict=False, update=update, save_original_as=None, verbose=verbose)
-    _ = get_weather_codes(as_dict=True, update=update, save_original_as=None, verbose=verbose)
+        _ = get_imdm_weather_cell_map(route_info=True, grouped=False, update=update, save_original_as=None,
+                                      verbose=verbose)
+        _ = get_imdm_weather_cell_map(route_info=True, grouped=True, update=update, save_original_as=None,
+                                      verbose=verbose)
+        _ = get_imdm_weather_cell_map(route_info=False, grouped=False, update=update, save_original_as=None,
+                                      verbose=verbose)
+        _ = get_imdm_weather_cell_map(route_info=False, grouped=True, update=update, save_original_as=None,
+                                      verbose=verbose)
 
-    _ = get_incident_record(update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
+        _ = get_incident_reason_info(plus=True, update=update, save_original_as=None, verbose=verbose)
+        _ = get_incident_reason_info(plus=False, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_location(update=update, save_original_as=None, verbose=verbose)
+        _ = get_weather_codes(as_dict=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_weather_codes(as_dict=True, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_pfpi(plus=True, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
-    _ = get_pfpi(plus=False, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
+        _ = get_incident_record(update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
 
-    _ = get_route(as_dict=False, update=update, save_original_as=None, verbose=verbose)
-    _ = get_route(as_dict=True, update=update, save_original_as=None, verbose=verbose)
+        _ = get_location(update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_stanox_location(use_nr_mileage_format=True, update=update, save_original_as=None, verbose=verbose)
-    _ = get_stanox_location(use_nr_mileage_format=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_pfpi(plus=True, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
+        _ = get_pfpi(plus=False, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
 
-    _ = get_stanox_section(update=update, save_original_as=None, verbose=verbose)
+        _ = get_route(as_dict=False, update=update, save_original_as=None, verbose=verbose)
+        _ = get_route(as_dict=True, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_trust_incident(start_year=2006, end_year=None, update=update, save_original_as=None, use_corrected_csv=True,
-                           verbose=verbose)
-    # _ = get_weather()
+        _ = get_stanox_location(use_nr_mileage_format=True, update=update, save_original_as=None, verbose=verbose)
+        _ = get_stanox_location(use_nr_mileage_format=False, update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_weather_cell(update=update, save_original_as=None, show_map=True, projection='tmerc', save_map_as=".png",
-                         dpi=600, verbose=verbose)
-    # _ = get_weather_cell_map_boundary(route=None, adjustment=(0.285, 0.255))
+        _ = get_stanox_section(update=update, save_original_as=None, verbose=verbose)
 
-    _ = get_track(update=update, save_original_as=None, verbose=verbose)
+        _ = get_trust_incident(start_year=2006, end_year=None, update=update, save_original_as=None,
+                               use_corrected_csv=True, verbose=verbose)
+        # _ = get_weather()
 
-    _ = get_track_summary(update=update, save_original_as=None, verbose=verbose)
+        _ = get_weather_cell(update=update, save_original_as=None, show_map=True, projection='tmerc',
+                             save_map_as=".png", dpi=600, verbose=verbose)
+        # _ = get_weather_cell_map_boundary(route=None, adjustment=(0.285, 0.255))
+
+        _ = get_track(update=update, save_original_as=None, verbose=verbose)
+
+        _ = get_track_summary(update=update, save_original_as=None, verbose=verbose)
+
+        if verbose:
+            print("\nUpdate finished.")
 
 
 # ====================================================================================================================
@@ -2163,19 +2181,24 @@ def update_metex_view_pickles(update=True, pickle_it=True, verbose=True):
 
         update_metex_view_pickles(update, pickle_it, verbose)
     """
-    _ = view_schedule8_costs_by_location(None, None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_location('Anglia', None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_location('Anglia', 'Wind', update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_location('Anglia', 'Heat', update, pickle_it, verbose)
+    if confirmed("To update the View pickles of the NR_METEX data?"):
 
-    _ = view_schedule8_costs_by_datetime_location(None, None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location('Anglia', None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location('Anglia', 'Wind', update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location('Anglia', 'Heat', update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_location(None, None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_location('Anglia', None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_location('Anglia', 'Wind', update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_location('Anglia', 'Heat', update, pickle_it, verbose)
 
-    _ = view_schedule8_costs_by_datetime_location_reason(None, None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location_reason('Anglia', None, update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Wind', update, pickle_it, verbose)
-    _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Heat', update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location(None, None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location('Anglia', None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location('Anglia', 'Wind', update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location('Anglia', 'Heat', update, pickle_it, verbose)
 
-    _ = fetch_incident_locations_from_nr_metex(None, None, start_and_end_elr=None, update=update, verbose=verbose)
+        _ = view_schedule8_costs_by_datetime_location_reason(None, None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location_reason('Anglia', None, update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Wind', update, pickle_it, verbose)
+        _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Heat', update, pickle_it, verbose)
+
+        _ = fetch_incident_locations_from_nr_metex(None, None, start_and_end_elr=None, update=update, verbose=verbose)
+
+        if verbose:
+            print("\nUpdate finished.")
