@@ -1,9 +1,6 @@
-"""
+""" Historic delay attribution glossary
 
-Historic delay attribution glossary
-
-https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/our-information-and-data/
-
+Information provided by Network Rail – https://www.networkrail.co.uk/transparency/datasets/
 """
 
 import datetime
@@ -11,77 +8,138 @@ import itertools
 import os
 import urllib.request
 
+import fake_useragent
 import numpy as np
 import pandas as pd
 import requests
 from pyhelpers.dir import cdd
+from pyhelpers.ops import confirmed
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save_pickle
 
 pd_preferences()
 
 
-# Change directory to "Incidents\\Delay attribution\\Glossary\\Current\\..."
 def cdd_delay_attr_glossary(*directories):
-    path = cdd("Incidents\\Delay attribution\\Glossary\\Current")
+    """
+    Change directory to "..\\data\\incidents\\delay attribution\\glossary\\current\\" and sub-directories (or files)
+
+    :param directories: sub-directory name(s) or filename(s)
+    :type directories: str
+    :return: "..\\data\\incidents\\delay attribution\\glossary\\current\\..."
+
+    Testing::
+
+        import os
+
+        path_to_dag = cdd_delay_attr_glossary()
+
+        os.path.isdir(path_to_dag)  # True
+    """
+
+    path = cdd("incidents\\delay attribution\\glossary\\current")
     for directory in directories:
         path = os.path.join(path, directory)
     return path
 
 
-# Path to the original .xlsx file
 def path_to_original_file():
-    path_to_file = cdd_delay_attr_glossary("Delay attribution glossary.xlsx")
+    """
+    Path to the original .xlsx file
+
+    :return: "..\\data\\incidents\\delay attribution\\glossary\\current\\delay-attribution-glossary.xlsx"
+    :rtype: str
+
+    Test::
+
+        import os
+
+        path_to_file = path_to_original_file()
+        os.path.isfile(path_to_file)  # True
+    """
+
+    path_to_file = cdd_delay_attr_glossary("delay-attribution-glossary.xlsx")
     return path_to_file
 
 
-# ====================================================================================================================
-""" """
+def download_delay_attribution_glossary(confirmation_required=True, verbose=False):
+    """
+    Download delay attribution glossary
 
+    :param confirmation_required: defaults to ``True``
+    :param verbose: defaults to ``False``
 
-# Download delay attribution glossary
-def download_delay_attribution_glossary():
+    Testing::
+
+        verbose = True
+
+        confirmation_required = True
+        download_delay_attribution_glossary(confirmation_required, verbose)
+
+        confirmation_required = False
+        download_delay_attribution_glossary(confirmation_required, verbose)
+    """
+
+    def _download(user_agent_, filename_, file_dir_, verbose_):
+        if verbose_:
+            print("Downloading \"{}\" to \"{}\" ... ".format(filename_, file_dir_), end="")
+        try:
+            opener = urllib.request.build_opener()
+            opener.addheaders = [('User-Agent', user_agent_)]
+            urllib.request.install_opener(opener)
+            urllib.request.urlretrieve(url, path_to_file)
+            print("Successfully.") if verbose else ""
+        except Exception as e:
+            print("Failed to download \"{}\". {}".format(filename_, e))
+
     spreadsheet_filename = "Historic-Delay-Attribution-Glossary.xlsx"
 
     current_year = datetime.datetime.now().year
-    years = [str(x) for x in range(current_year, current_year + 1)]
+    years = [str(x) for x in range(current_year - 1, current_year + 1)]
     months = ['%.2d' % x for x in range(1, 13)]
 
     for y, m in list(itertools.product(years, months)):
-        url = 'https://cdn.networkrail.co.uk/wp-content/uploads/{}/{}'.format(y + '/' + m, spreadsheet_filename)
-        response = requests.get(url)
+        url = 'https://www.networkrail.co.uk/wp-content/uploads/{}/{}/{}'.format(y, m, spreadsheet_filename)
+        user_agent = fake_useragent.UserAgent().random
+        response = requests.get(url, headers={'User-Agent': user_agent})
         if response.ok:
-            path_to_file = cdd_delay_attr_glossary(
-                spreadsheet_filename.replace("-", " ").replace("Historic ", "").capitalize())
-            directory = cdd_delay_attr_glossary().replace(cdd(), '.\\Data')
-            print("Downloading \"{}\" to \"{}\" ... ".format(spreadsheet_filename, directory), end="")
-            try:
-                urllib.request.urlretrieve(url, path_to_file)
-                print("Successfully.")
-            except Exception as e:
-                print("Failed. {}".format(e))
-            break
+            filename = spreadsheet_filename.replace("Historic-", "").lower()
+            path_to_file = cdd_delay_attr_glossary(filename)
+            file_dir = "..\\" + os.path.relpath(cdd_delay_attr_glossary())
+            if os.path.isfile(path_to_file):
+                if confirmed("Replace the current version?", confirmation_required=confirmation_required):
+                    _download(user_agent, filename, file_dir, verbose)
+                    break
+            else:
+                _download(user_agent, filename, file_dir, verbose)
+                break
 
 
-# ====================================================================================================================
-""" """
-
-
-# Stanox Codes
 def get_stanox_codes(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get STANOX codes
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_stanox_codes(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_stanox_codes(update, hard_update, verbose)
     """
+
     pickle_filename = "stanox-codes.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -90,7 +148,7 @@ def get_stanox_codes(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             stanox_codes = pd.read_excel(path_to_original_file(), sheet_name="Stanox Codes", dtype={'STANOX NO.': str})
@@ -105,21 +163,31 @@ def get_stanox_codes(update=False, hard_update=False, verbose=False):
     return stanox_codes
 
 
-# Period Dates
 def get_period_dates(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get period dates
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_period_dates(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_period_dates(update, hard_update, verbose)
     """
+
     pickle_filename = "period-dates.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -128,7 +196,7 @@ def get_period_dates(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             raw = pd.read_excel(path_to_original_file(), sheet_name="Period Dates", skiprows=3)
@@ -167,21 +235,33 @@ def get_period_dates(update=False, hard_update=False, verbose=False):
     return period_dates
 
 
-# Incident Reason
 def get_incident_reason_metadata(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get incident reasons
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_incident_reason_metadata(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_incident_reason_metadata(update, hard_update, verbose)
     """
+
     pickle_filename = "incident-reason-metadata.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -190,7 +270,7 @@ def get_incident_reason_metadata(update=False, hard_update=False, verbose=False)
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             incident_reason_metadata = pd.read_excel(path_to_original_file(), sheet_name="Incident Reason")
@@ -207,21 +287,31 @@ def get_incident_reason_metadata(update=False, hard_update=False, verbose=False)
     return incident_reason_metadata
 
 
-# Responsible Manager
 def get_responsible_manager(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get responsible manager
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_responsible_manager(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_responsible_manager(update, hard_update, verbose)
     """
+
     pickle_filename = "responsible-manager.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -230,7 +320,7 @@ def get_responsible_manager(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             responsible_manager = pd.read_excel(path_to_original_file(), sheet_name="Responsible Manager")
@@ -245,21 +335,31 @@ def get_responsible_manager(update=False, hard_update=False, verbose=False):
     return responsible_manager
 
 
-# Reactionary Reason Code
 def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get reactionary reason code
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_reactionary_reason_code(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_reactionary_reason_code(update, hard_update, verbose)
     """
+
     pickle_filename = "reactionary-reason-code.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -268,7 +368,7 @@ def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             reactionary_reason_code = pd.read_excel(path_to_original_file(), sheet_name="Reactionary Reason Code")
@@ -282,21 +382,31 @@ def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
     return reactionary_reason_code
 
 
-# Performance Event Code
 def get_performance_event_code(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get performance event code
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_performance_event_code(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_performance_event_code(update, hard_update, verbose)
     """
+
     pickle_filename = "performance-event-code.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -305,7 +415,7 @@ def get_performance_event_code(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             performance_event_code = pd.read_excel(path_to_original_file(), sheet_name="Performance Event Code")
@@ -323,21 +433,31 @@ def get_performance_event_code(update=False, hard_update=False, verbose=False):
     return performance_event_code
 
 
-# Train Service Code
 def get_train_service_code(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get train service code
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_train_service_code(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_train_service_code(update, hard_update, verbose)
     """
+
     pickle_filename = "train-service-code.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -346,7 +466,7 @@ def get_train_service_code(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             train_service_code = pd.read_excel(path_to_original_file(), sheet_name="Train Service Code")
@@ -360,21 +480,31 @@ def get_train_service_code(update=False, hard_update=False, verbose=False):
     return train_service_code
 
 
-# Operator Name
 def get_operator_name(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get operator name
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_operator_name(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_operator_name(update, hard_update, verbose)
     """
+
     pickle_filename = "operator-name.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -383,7 +513,7 @@ def get_operator_name(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             operator_name = pd.read_excel(path_to_original_file(), sheet_name="Operator Name")
@@ -397,21 +527,31 @@ def get_operator_name(update=False, hard_update=False, verbose=False):
     return operator_name
 
 
-# Service Group Code
 def get_service_group_code(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get service group code
 
-    Testing e.g.
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
+        verbose = True
+
         update = False
         hard_update = False
-        verbose = False
+        get_service_group_code(update, hard_update, verbose)
 
+        update = True
+        hard_update = True
         get_service_group_code(update, hard_update, verbose)
     """
+
     pickle_filename = "service-group-code.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -420,7 +560,7 @@ def get_service_group_code(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             service_group_code = pd.read_excel(path_to_original_file(), sheet_name="Service Group Code")
@@ -434,21 +574,31 @@ def get_service_group_code(update=False, hard_update=False, verbose=False):
     return service_group_code
 
 
-# Historic delay attribution glossary
 def get_delay_attr_glossary(update=False, hard_update=False, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param hard_update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get historic delay attribution glossary
 
-    Testing e.g.
-        update = True
-        hard_update = True
+    :param update: defaults to ``False``
+    :type update: bool
+    :param hard_update: defaults to ``False``
+    :type update: bool
+    :param verbose: defaults to ``False``
+    :type verbose: bool
+    :return: pandas.DataFrame
+
+    Testing::
+
         verbose = True
 
+        update = False
+        hard_update = False
+        get_delay_attr_glossary(update, hard_update, verbose)
+
+        update = True
+        hard_update = True
         get_delay_attr_glossary(update, hard_update, verbose)
     """
+
     pickle_filename = "delay-attribution-glossary.pickle"
     path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
 
@@ -457,7 +607,7 @@ def get_delay_attr_glossary(update=False, hard_update=False, verbose=False):
 
     else:
         if not os.path.isfile(path_to_original_file()) or hard_update:
-            download_delay_attribution_glossary()
+            download_delay_attribution_glossary(confirmation_required=False, verbose=False)
 
         try:
             glossary = [get_stanox_codes(update, hard_update=False, verbose=verbose),
@@ -477,7 +627,7 @@ def get_delay_attr_glossary(update=False, hard_update=False, verbose=False):
             save_pickle(glossary, path_to_pickle, verbose=True)
 
         except Exception as e:
-            print("Failed to get \"Historic delay attribution glossary\". {}.".format(e))
+            print("Failed to get \"historic delay attribution glossary\". {}.".format(e))
             delay_attr_glossary = {None: None}
 
     return delay_attr_glossary
