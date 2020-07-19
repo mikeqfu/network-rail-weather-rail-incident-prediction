@@ -5,13 +5,19 @@ import numpy as np
 import pandas as pd
 
 
-# Set preferences for plotting
 def mpl_preferences(use_cambria=False, reset=False):
     """
+    Set preferences for plotting.
+
+    :param use_cambria: whether to use Cambria font, defaults to ``False``
+    :param reset: whether to reset to default settings, defaults to ``False``
+    :type reset: bool
+
     Get a list of supported file formats for matplotlib savefig() function
-      plt.gcf().canvas.get_supported_filetypes()  # Aside: "gcf" is short for "get current fig" manager
-      plt.gcf().canvas.get_supported_filetypes_grouped()
+        plt.gcf().canvas.get_supported_filetypes()  # Aside: "gcf" is short for "get current fig" manager
+        plt.gcf().canvas.get_supported_filetypes_grouped()
     """
+
     if not reset:
         if use_cambria:  # Use the font, 'Cambria'
             # Add 'Cambria' and 'Cambria Math' to the front of the 'font.serif' list
@@ -28,16 +34,28 @@ def mpl_preferences(use_cambria=False, reset=False):
         plt.style.use('classic')
 
 
-# Set preferences for displaying results
 def np_preferences(reset=False):
+    """
+    Set preferences for displaying results.
+
+    :param reset: whether to reset to default settings, defaults to ``False``
+    :type reset: bool
+    """
+
     if not reset:
         np.core.arrayprint._line_width = 120
     else:
         np.core.arrayprint._line_width = 80  # 75
 
 
-# Set preferences for displaying results
 def pd_preferences(reset=False):
+    """
+    Set preferences for displaying results.
+
+    :param reset: whether to reset to default settings, defaults to ``False``
+    :type reset: bool
+    """
+
     if not reset:
         pd.set_option('display.precision', 2)
         pd.set_option('expand_frame_repr', False)  # Set the representation of DataFrame NOT to wrap
