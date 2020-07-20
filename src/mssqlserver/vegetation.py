@@ -1,60 +1,87 @@
 """ Read and clean data of NR_Vegetation database """
 
+import datetime
 import os
 import re
 
+import numpy as np
 import pandas as pd
 from pyhelpers.geom import osgb36_to_wgs84
-from pyhelpers.misc import confirmed
+from pyhelpers.ops import confirmed
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save, save_pickle
-from pyhelpers.text import find_matched_str
-from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage
+from pyhelpers.text import find_similar_str
+from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
 from utils import cdd_vegetation, update_nr_route_names
 
 pd_preferences()
 
-# ====================================================================================================================
-""" Change directories """
+
+def vegetation_database_name():
+    return 'NR_Vegetation_20141031'
 
 
-# Change directory to "Data\\Vegetation\\Database"
-def cdd_veg_db(*sub_dir):
-    path = cdd_vegetation("Database")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+# == Change directories ===============================================================================
+
+def cdd_veg_db(*sub_dir, mkdir=False):
+    """
+    Change directory to ..\\data\\vegetation\\database\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\vegetation\\database\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_vegetation("database", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "Data\\Vegetation\\Database\\Tables"
-def cdd_veg_db_tables(*sub_dir):
-    path = cdd_veg_db("Tables")
-    os.makedirs(path, exist_ok=True)
-    for directory in sub_dir:
-        path = os.path.join(path, directory)
+def cdd_veg_db_tables(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\vegetation\\database\\tables\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\vegetation\\database\\tables\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_veg_db("tables", *sub_dir, mkdir=mkdir)
     return path
 
 
-# Change directory to "Data\\Vegetation\\Database\\Views"
-def cdd_veg_db_views(*sub_dir):
-    path = cdd_veg_db("Views")
-    os.makedirs(path, exist_ok=True)
-    for directory in sub_dir:
-        path = os.path.join(path, directory)
+def cdd_veg_db_views(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\vegetation\\database\\views\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\vegetation\\database\\views\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_veg_db("views", *sub_dir, mkdir=mkdir)
     return path
 
 
-# ====================================================================================================================
-""" Read table data from the database """
+# == Read table data from the database ================================================================
 
 
-# Read tables available in NR_Vegetation database
 def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=True, parse_dates=None, params=None,
                    schema='dbo', save_as=None, update=False):
     """
+    Read tables available in NR_Vegetation database.
+
     :param table_name: [str]
     :param index_col: [str; None (default)]
     :param route_name: [str; None (default)]
@@ -66,22 +93,27 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
     :param update: [bool] (default: False)
     :return: [pd.DataFrame]
 
-    Testing e.g.
+    **Example**::
+
+        from mssqlserver import vegetation
+
         table_name = 'AdverseWind'
         index_col = None
-        route_name = None
+        route_name = 'Anglia'
         coerce_float = True
         parse_dates = None
         params = None
         schema = 'dbo'
-        save_as = None
+        save_as = ".pickle"
         update = False
 
-        read_veg_table(table_name, index_col, route_name, coerce_float, parse_dates, params, schema, save_as, update)
+        data = vegetation.read_veg_table(table_name, index_col, route_name, coerce_float, parse_dates,
+                                         params, schema, save_as, update)
     """
+
     table = schema + '.' + table_name
     # Make a direct connection to the queried database
-    conn_veg = establish_mssql_connection(database_name='NR_Vegetation_20141031')
+    conn_veg = establish_mssql_connection(database_name=vegetation_database_name())
     if route_name is None:
         sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
     else:
@@ -93,45 +125,62 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
     conn_veg.close()
     # Save the DataFrame as a worksheet locally?
     if save_as:
-        path_to_file = cdd_veg_db("Tables_original", table_name + save_as)
+        path_to_file = cdd_veg_db_tables(table_name + save_as)
         if not os.path.isfile(path_to_file) or update:
             save(data, path_to_file, index=False if index_col is None else True)
     # Return the data frame of the queried table
     return data
 
 
-# Get primary keys of a table in database 'NR_Vegetation'
 def get_veg_table_pk(table_name):
     """
-    :param table_name: [str]
-    :return: [list]
+    Get primary keys of a table stored in database 'NR_Vegetation_20141031'.
 
-    Testing e.g.
+    :param table_name: name of a table stored in the database 'NR_Vegetation_20141031'
+    :type table_name: str
+    :return: a (list of) primary key(s)
+    :rtype: list
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         table_name = 'AdverseWind'
-        get_veg_table_pk(table_name)
+
+        pri_key = vegetation.get_veg_table_pk(table_name)
+        print(pri_key)
     """
-    pri_key = get_table_primary_keys(database_name='NR_Vegetation_20141031', table_name=table_name)
+
+    pri_key = get_table_primary_keys(database_name=vegetation_database_name(), table_name=table_name)
     return pri_key
 
 
-# ====================================================================================================================
-""" Get table data """
+# == Get table data ===================================================================================
 
 
-# Get AdverseWind
 def get_adverse_wind(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'AdverseWind'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'AdverseWind'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_adverse_wind(update, save_original_as, verbose)
+        adverse_wind = vegetation.get_adverse_wind(update, save_original_as, verbose)
+        print(adverse_wind)
     """
     table_name = 'AdverseWind'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
@@ -149,21 +198,31 @@ def get_adverse_wind(update=False, save_original_as=None, verbose=False):
     return adverse_wind
 
 
-# Get CuttingAngleClass
 def get_cutting_angle_class(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'CuttingAngleClass'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'CuttingAngleClass'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_cutting_angle_class(update, save_original_as, verbose)
+        cutting_angle = vegetation.get_cutting_angle_class(update, save_original_as, verbose)
+        print(cutting_angle)
     """
+
     table_name = 'CuttingAngleClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -179,21 +238,31 @@ def get_cutting_angle_class(update=False, save_original_as=None, verbose=False):
     return cutting_angle
 
 
-# Get CuttingDepthClass
 def get_cutting_depth_class(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'CuttingDepthClass'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'CuttingDepthClass'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_cutting_depth_class(update, save_original_as, verbose)
+        cutting_depth = vegetation.get_cutting_depth_class(update, save_original_as, verbose)
+        print(cutting_depth)
     """
+
     table_name = 'CuttingDepthClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -209,24 +278,38 @@ def get_cutting_depth_class(update=False, save_original_as=None, verbose=False):
     return cutting_depth
 
 
-# Get DUList
 def get_du_list(index=True, update=False, save_original_as=None, verbose=False):
     """
-    :param index: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'DUList'.
 
-    Testing e.g.
-        index = True
+    :param index: whether to set an index column
+    :type index: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'DUList'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_du_list(index, update, save_original_as, verbose)
-        get_du_list(False, update, save_original_as, verbose)
+        index = True
+        du_list = vegetation.get_du_list(index, update, save_original_as, verbose)
+        print(du_list)
+
+        index = False
+        du_list = vegetation.get_du_list(index, update, save_original_as, verbose)
+        print(du_list)
     """
+
     table_name = 'DUList'
     path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if index else "") + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -242,21 +325,31 @@ def get_du_list(index=True, update=False, save_original_as=None, verbose=False):
     return du_list
 
 
-# Get PathRoute
 def get_path_route(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'PathRoute'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'PathRoute'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_path_route(update, save_original_as, verbose)
+        path_route = vegetation.get_path_route(update, save_original_as, verbose)
+        print(path_route)
     """
+
     table_name = 'PathRoute'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -272,20 +365,29 @@ def get_path_route(update=False, save_original_as=None, verbose=False):
     return path_route
 
 
-# Get Routes
 def get_du_route(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Routes'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Routes'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_du_route(update, save_original_as, verbose)
+        routes = vegetation.get_du_route(update, save_original_as, verbose)
+        print(routes)
     """
     table_name = 'Routes'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
@@ -310,21 +412,31 @@ def get_du_route(update=False, save_original_as=None, verbose=False):
     return routes
 
 
-# Get S8Data
 def get_s8data(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'S8Data'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'S8Data'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_s8data(update, save_original_as, verbose)
+        s8data = vegetation.get_s8data(update, save_original_as, verbose)
+        print(s8data)
     """
+
     table_name = 'S8Data'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -341,21 +453,31 @@ def get_s8data(update=False, save_original_as=None, verbose=False):
     return s8data
 
 
-# Get TreeAgeClass
 def get_tree_age_class(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'TreeAgeClass'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'TreeAgeClass'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_tree_age_class(update, save_original_as, verbose)
+        tree_age_class = vegetation.get_tree_age_class(update, save_original_as, verbose)
+        print(tree_age_class)
     """
+
     table_name = 'TreeAgeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -371,21 +493,31 @@ def get_tree_age_class(update=False, save_original_as=None, verbose=False):
     return tree_age_class
 
 
-# Get TreeSizeClass
 def get_tree_size_class(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'TreeSizeClass'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'TreeSizeClass'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_tree_size_class(update, save_original_as, verbose)
+        tree_size_class = vegetation.get_tree_size_class(update, save_original_as, verbose)
+        print(tree_size_class)
     """
+
     table_name = 'TreeSizeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -401,21 +533,31 @@ def get_tree_size_class(update=False, save_original_as=None, verbose=False):
     return tree_size_class
 
 
-# Get TreeType
 def get_tree_type(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'TreeType'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'TreeType'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_tree_type(update, save_original_as, verbose)
+        tree_type = vegetation.get_tree_type(update, save_original_as, verbose)
+        print(tree_type)
     """
+
     table_name = 'TreeType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -431,21 +573,31 @@ def get_tree_type(update=False, save_original_as=None, verbose=False):
     return tree_type
 
 
-# Get FellingType
 def get_felling_type(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'FellingType'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'FellingType'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_felling_type(update, save_original_as, verbose)
+        felling_type = vegetation.get_felling_type(update, save_original_as, verbose)
+        print(felling_type)
     """
+
     table_name = 'FellingType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -461,21 +613,31 @@ def get_felling_type(update=False, save_original_as=None, verbose=False):
     return felling_type
 
 
-# Get AreaWorkType
 def get_area_work_type(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'AreaWorkType'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'AreaWorkType'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_area_work_type(update, save_original_as, verbose)
+        area_work_type = vegetation.get_area_work_type(update, save_original_as, verbose)
+        print(area_work_type)
     """
+
     table_name = 'AreaWorkType'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -491,21 +653,31 @@ def get_area_work_type(update=False, save_original_as=None, verbose=False):
     return area_work_type
 
 
-# Get ServiceDetail
 def get_service_detail(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'ServiceDetail'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'ServiceDetail'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_service_detail(update, save_original_as, verbose)
+        service_detail = vegetation.get_service_detail(update, save_original_as, verbose)
+        print(service_detail)
     """
+
     table_name = 'ServiceDetail'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -521,21 +693,31 @@ def get_service_detail(update=False, save_original_as=None, verbose=False):
     return service_detail
 
 
-# Get ServicePath
 def get_service_path(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'ServicePath'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'ServicePath'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_service_path(update, save_original_as, verbose)
+        service_path = vegetation.get_service_path(update, save_original_as, verbose)
+        print(service_path)
     """
+
     table_name = 'ServicePath'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -551,21 +733,31 @@ def get_service_path(update=False, save_original_as=None, verbose=False):
     return service_path
 
 
-# Get Supplier
 def get_supplier(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Supplier'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Supplier'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_supplier(update, save_original_as, verbose)
+        supplier = vegetation.get_supplier(update, save_original_as, verbose)
+        print(supplier)
     """
+
     table_name = 'Supplier'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -581,21 +773,31 @@ def get_supplier(update=False, save_original_as=None, verbose=False):
     return supplier
 
 
-# Get SupplierCosts
 def get_supplier_costs(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'SupplierCosts'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'SupplierCosts'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_supplier_costs(update, save_original_as, verbose)
+        supplier_costs = vegetation.get_supplier_costs(update, save_original_as, verbose)
+        print(supplier_costs)
     """
+
     table_name = 'SupplierCosts'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -612,21 +814,31 @@ def get_supplier_costs(update=False, save_original_as=None, verbose=False):
     return supplier_costs
 
 
-# Get SupplierCostsArea
 def get_supplier_costs_area(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'SupplierCostsArea'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'SupplierCostsArea'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_supplier_costs_area(update, save_original_as, verbose)
+        costs_area = vegetation.get_supplier_costs_area(update, save_original_as, verbose)
+        print(costs_area)
     """
+
     table_name = 'SupplierCostsArea'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -643,21 +855,31 @@ def get_supplier_costs_area(update=False, save_original_as=None, verbose=False):
     return costs_area
 
 
-# Get SupplierCostsSimple
 def get_supplier_cost_simple(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'SupplierCostsSimple'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'SupplierCostsSimple'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_supplier_cost_simple(update, save_original_as, verbose)
+        costs_simple = vegetation.get_supplier_cost_simple(update, save_original_as, verbose)
+        print(costs_simple)
     """
+
     table_name = 'SupplierCostsSimple'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -674,21 +896,31 @@ def get_supplier_cost_simple(update=False, save_original_as=None, verbose=False)
     return costs_simple
 
 
-# Get TreeActionFractions
 def get_tree_action_fractions(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'TreeActionFractions'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'TreeActionFractions'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_tree_action_fractions(update, save_original_as, verbose)
+        tree_action_fractions = vegetation.get_tree_action_fractions(update, save_original_as, verbose)
+        print(tree_action_fractions)
     """
+
     table_name = 'TreeActionFractions'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -704,21 +936,31 @@ def get_tree_action_fractions(update=False, save_original_as=None, verbose=False
     return tree_action_fractions
 
 
-# Get VegSurvTypeClass
 def get_veg_surv_type_class(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'VegSurvTypeClass'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'VegSurvTypeClass'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_veg_surv_type_class(update, save_original_as, verbose)
+        veg_surv_type_class = vegetation.get_veg_surv_type_class(update, save_original_as, verbose)
+        print(veg_surv_type_class)
     """
+
     table_name = 'VegSurvTypeClass'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -734,21 +976,31 @@ def get_veg_surv_type_class(update=False, save_original_as=None, verbose=False):
     return veg_surv_type_class
 
 
-# Get WBFactors
 def get_wb_factors(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'WBFactors'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'WBFactors'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_wb_factors(update, save_original_as, verbose)
+        wb_factors = vegetation.get_wb_factors(update, save_original_as, verbose)
+        print(wb_factors)
     """
+
     table_name = 'WBFactors'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -764,21 +1016,31 @@ def get_wb_factors(update=False, save_original_as=None, verbose=False):
     return wb_factors
 
 
-# Get Weedspray
 def get_weed_spray(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Weedspray'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Weedspray'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_weed_spray(update, save_original_as, verbose)
+        weed_spray = vegetation.get_weed_spray(update, save_original_as, verbose)
+        print(weed_spray)
     """
+
     table_name = 'Weedspray'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -795,21 +1057,31 @@ def get_weed_spray(update=False, save_original_as=None, verbose=False):
     return weed_spray
 
 
-# Get WorkHours
 def get_work_hours(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'WorkHours'.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'WorkHours'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_work_hours(update, save_original_as, verbose)
+        work_hours = vegetation.get_work_hours(update, save_original_as, verbose)
+        print(work_hours)
     """
+
     table_name = 'WorkHours'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -825,33 +1097,49 @@ def get_work_hours(update=False, save_original_as=None, verbose=False):
     return work_hours
 
 
-# Get FurlongData
 def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_original_as=None, verbose=False):
     """
-    :param set_index: [bool] (default: False)
-    :param pseudo_amendment: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'FurlongData'.
 
-    Testing e.g.
+    :param set_index: whether to set an index column, defaults to ``False``
+    :type set_index: bool
+    :param pseudo_amendment: whether to make an amendment with external data, defaults to ``True``
+    :type pseudo_amendment: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'FurlongData'
+    :rtype: pandas.DataFrame, None
+
+    .. note::
+
+        Equipment Class: VL ('VEGETATION - 1/8 MILE SECTION')
+        1/8 mile = 220 yards = 1 furlong
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         set_index = False
         pseudo_amendment = True
         update = True
         save_original_as = None
         verbose = True
 
-        get_furlong_data(set_index, pseudo_amendment, update, save_original_as, verbose)
-
-    Equipment Class: VL ('VEGETATION - 1/8 MILE SECTION')
-    1/8 mile = 220 yards = 1 furlong
+        furlong_data = vegetation.get_furlong_data(set_index, pseudo_amendment, update, save_original_as,
+                                                   verbose)
+        print(furlong_data)
     """
+
     table_name = 'FurlongData'
     path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if set_index else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         furlong_data = load_pickle(path_to_pickle)
+
     else:
         try:
             furlong_data = read_veg_table(table_name, index_col=None, coerce_float=False, save_as=save_original_as,
@@ -874,10 +1162,10 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
             # Edit the 'TEF' columns
             furlong_data.OtherVegScore.replace({-1: 0}, inplace=True)
             renamed_cols = list(renamed_cols_dict.values())
-            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(lambda x: 0 if pd.np.isnan(x) else x + 1)
+            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(lambda x: 0 if np.isnan(x) else x + 1)
             # Re-format date of measure
             furlong_data.DateOfMeasure = furlong_data.DateOfMeasure.map(
-                lambda x: pd.datetime.strptime(x, '%d/%m/%Y %H:%M'))
+                lambda x: datetime.datetime.strptime(x, '%d/%m/%Y %H:%M'))
             # Edit route data
             update_nr_route_names(furlong_data, route_col_name='Route')
 
@@ -909,14 +1197,14 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
                                 furlong_data.CoverPercentOther.loc[[i]] = 100.0
                             else:
                                 if errors.loc[i] > 0:
-                                    furlong_data.CoverPercentOther.loc[[i]] = pd.np.sum([
+                                    furlong_data.CoverPercentOther.loc[[i]] = np.sum([
                                         furlong_data.CoverPercentOther.loc[i], errors.loc[i]])
                                 else:  # errors.loc[i] < 0
-                                    furlong_data[feature].loc[[i]] = pd.np.sum([
+                                    furlong_data[feature].loc[[i]] = np.sum([
                                         furlong_data[feature].loc[i], errors.loc[i]])
                         else:  # len(nonzero_cols[i]) > 1
                             if 'CoverPercentOther' in features:
-                                err = pd.np.sum([furlong_data.CoverPercentOther.loc[i], errors.loc[i]])
+                                err = np.sum([furlong_data.CoverPercentOther.loc[i], errors.loc[i]])
                                 if err >= 0.0:
                                     furlong_data.CoverPercentOther.loc[[i]] = err
                                 else:
@@ -924,12 +1212,12 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
                                     furlong_data.CoverPercentOther.loc[[i]] = 0.0
                                     if len(features) == 1:
                                         feature = features[0]
-                                        furlong_data[feature].loc[[i]] = pd.np.sum([furlong_data[feature].loc[i], err])
+                                        furlong_data[feature].loc[[i]] = np.sum([furlong_data[feature].loc[i], err])
                                     else:
-                                        err = pd.np.divide(err, len(features))
+                                        err = np.divide(err, len(features))
                                         furlong_data.loc[i, features] += err
                             else:
-                                err = pd.np.divide(errors.loc[i], len(features))
+                                err = np.divide(errors.loc[i], len(features))
                                 furlong_data.loc[i, features] += err
 
             save_pickle(furlong_data, path_to_pickle, verbose=verbose)
@@ -941,30 +1229,45 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
     return furlong_data
 
 
-# Get FurlongLocation
 def get_furlong_location(relevant_columns_only=True, update=False, save_original_as=None, verbose=False):
     """
-    :param relevant_columns_only: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'FurlongLocation'.
 
-    Testing e.g.
+    :param relevant_columns_only: whether to return only the columns relevant to the project, defaults to ``True``
+    :type relevant_columns_only: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'FurlongLocation'
+    :rtype: pandas.DataFrame, None
+
+    .. note::
+
+        One set of ELR and mileage may have multiple 'FurlongID's.
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         relevant_columns_only = True
         update = True
         save_original_as = None
         verbose = True
 
-        get_furlong_location(relevant_columns_only, update, save_original_as, verbose)
-
-    Note: One ELR&mileage may have multiple 'FurlongID's.
+        furlong_location = vegetation.get_furlong_location(relevant_columns_only, update,
+                                                           save_original_as, verbose)
+        print(furlong_location)
     """
+
     table_name = 'FurlongLocation'
     path_to_pickle = cdd_veg_db_tables(table_name + ("-cut" if relevant_columns_only else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         furlong_location = load_pickle(path_to_pickle)
+
     else:
         try:
             # Read data from database
@@ -994,31 +1297,49 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
     return furlong_location
 
 
-# Get HazardTree
 def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbose=False):
     """
-    :param set_index: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'HazardTree'.
 
-    Testing e.g.
-        set_index = False
+    :param set_index: whether to set an index column, defaults to ``False``
+    :type set_index: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'HazardTree'
+    :rtype: pandas.DataFrame, None
+
+    .. note::
+
+        Error data exists in 'FurlongID'. They could be cancelled out when the 'hazard_tree' data set is being merged
+        with other data sets on the 'FurlongID'. Errors also exist in 'Easting' and 'Northing' columns.
+
+    **Examples**::
+
+        from mssqlserver import vegetation
+
         update = True
         save_original_as = None
         verbose = True
 
-        get_hazard_tree(set_index, update, save_original_as, verbose)
+        set_index = False
+        hazard_tree = vegetation.get_hazard_tree(set_index, update, save_original_as, verbose)
+        print(hazard_tree)
 
-    Note that error data exists in 'FurlongID'. They could be cancelled out when the 'hazard_tree' data set is being
-    merged with other data sets on the 'FurlongID'. Errors also exist in 'Easting' and 'Northing' columns.
+        set_index = True
+        hazard_tree = vegetation.get_hazard_tree(set_index, update, save_original_as, verbose)
+        print(hazard_tree)
     """
+
     table_name = 'HazardTree'
     path_to_pickle = cdd_veg_db_tables(table_name + ("-indexed" if set_index else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         hazard_tree = load_pickle(path_to_pickle)
+
     else:
         try:
             hazard_tree = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
@@ -1091,18 +1412,25 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
     return hazard_tree
 
 
-# Update the local pickle files for all tables
 def update_vegetation_table_pickles(update=True, verbose=True):
     """
-    :param update: [bool] (default: True)
-    :param verbose: [bool] (default: True)
+    Update the local pickle files for all tables.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``True``
+    :type verbose: bool, int
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         verbose = True
 
-        update_vegetation_table_pickles(update, verbose)
+        vegetation.update_vegetation_table_pickles(update, verbose)
     """
+
     if confirmed("To update the pickles of the NR_Vegetation Table data?"):
 
         _ = get_adverse_wind(update, verbose=verbose)
@@ -1140,24 +1468,43 @@ def update_vegetation_table_pickles(update=True, verbose=True):
             print("\nUpdate finished.")
 
 
-# ====================================================================================================================
-""" Get views based on the NR_Vegetation data """
+# == Get views based on the NR_Vegetation data ========================================================
 
 
-# Create a pickle filename
 def make_filename(base_name, route_name, *extra_suffixes, sep="-", save_as=".pickle"):
     """
-    :param base_name: [str; None]
-    :param route_name: [str; None]
-    :param extra_suffixes: [str; None]
-    :param sep: [str; None]
-    :param save_as: [str] (default: ".pickle")
-    :return: [str]
+    Make a filename as appropriate.
+
+    :param base_name: base name
+    :type base_name: str, None
+    :param route_name: name of a Route
+    :type route_name: str, None
+    :param extra_suffixes: extra suffixes to the filename
+    :type extra_suffixes: str, None
+    :param sep: a separator in the filename
+    :type sep: str, None
+    :param save_as: file extension, defaults to ".pickle"
+    :type save_as: str
+    :return: a filename
+    :rtype: str
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
+        base_name = "hazardous-trees"
+        route_name = "Anglia"
+        extra_suffixes = None
+        sep = "-"
+        save_as = ".pickle"
+
+        filename = vegetation.make_filename(base_name, route_name, sep=sep, save_as=save_as)
     """
+
     assert save_as.startswith("."), "\"save_as\" must be extension-like, such as \".pickle\"."
     base_name_ = "" if base_name is None else base_name
     route_name_ = "" if route_name is None \
-        else (sep if base_name_ else "") + find_matched_str(route_name, get_du_route().Route).replace(" ", "_")
+        else (sep if base_name_ else "") + find_similar_str(route_name, get_du_route().Route.unique()).replace(" ", "_")
     if extra_suffixes:
         suffix = ["{}".format(s) for s in extra_suffixes if s]
         suffix = (sep if any(x for x in (base_name_, route_name_)) else "") + sep.join(suffix) \
@@ -1168,23 +1515,35 @@ def make_filename(base_name, route_name, *extra_suffixes, sep="-", save_as=".pic
     return filename
 
 
-# View Vegetation data (75247, 45)
 def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    get a view of data of vegetation coverage per furlong (75247, 45).
 
-    Testing e.g.
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of vegetation coverage per furlong
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         route_name = None
         update = True
         pickle_it = True
         verbose = True
 
-        view_vegetation_coverage_per_furlong(route_name, update, pickle_it, verbose)
+        furlong_vegetation_coverage = vegetation.view_vegetation_coverage_per_furlong(route_name, update,
+                                                                                      pickle_it, verbose)
+        print(furlong_vegetation_coverage)
     """
+
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation-coverage-per-furlong", route_name))
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -1206,7 +1565,7 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
                      on='CuttingDepth', how='inner', lsuffix='_CuttingAngle', rsuffix='_CuttingDepth')
 
             if route_name is not None:
-                route_name = find_matched_str(route_name, get_du_route().Route)
+                route_name = find_similar_str(route_name, get_du_route().Route)
                 furlong_vegetation_coverage = furlong_vegetation_coverage[
                     furlong_vegetation_coverage.Route == route_name]
 
@@ -1233,24 +1592,38 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
     return furlong_vegetation_coverage
 
 
-# View data of hazardous tress (22180, 66)
 def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    get a view of data of hazardous tress (22180, 66)
 
-    Testing e.g.
-        route_name = None
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of hazardous tress
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import vegetation
+
         update = True
         pickle_it = True
         verbose = True
 
-        view_hazardous_trees(route_name, update, pickle_it, verbose)
-        view_hazardous_trees('Anglia', update, pickle_it, verbose)
+        route_name = None
+        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it, verbose)
+        print(hazardous_trees_data)
+
+        route_name = 'Anglia'
+        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it, verbose)
+        print(hazardous_trees_data)
     """
+
     path_to_pickle = cdd_veg_db_views(make_filename("hazardous-trees", route_name))
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -1273,7 +1646,7 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
                 drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
 
             if route_name is not None:
-                route_name = find_matched_str(route_name, get_du_route().Route)
+                route_name = find_similar_str(route_name, get_du_route().Route)
                 hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == route_name]
 
             # Edit the merged data
@@ -1297,23 +1670,35 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
     return hazardous_trees_data
 
 
-# View Vegetation data as well as hazardous trees information (75247, 58)
 def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    get a view of vegetation data combined with information of hazardous trees (75247, 58).
 
-    Testing e.g.
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: vegetation data combined with information of hazardous trees
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         route_name = None
         update = True
         pickle_it = True
         verbose = True
 
-        view_vegetation_condition_per_furlong(route_name, update, pickle_it, verbose)
+        furlong_vegetation_data =vegetation.view_vegetation_condition_per_furlong(route_name, update,
+                                                                                  pickle_it, verbose)
+        print(furlong_vegetation_data)
     """
+
     path_to_pickle = cdd_veg_db_views(make_filename("vegetation-condition-per-furlong", route_name))
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -1326,7 +1711,7 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
             group_cols = ['ELR', 'DU', 'Route', 'Furlong_StartMileage', 'Furlong_EndMileage']
             furlong_hazard_tree = hazardous_trees_data.groupby(group_cols).aggregate({
                 # 'AssetNumber': np.count_nonzero,
-                'Haztreeid': pd.np.count_nonzero,
+                'Haztreeid': np.count_nonzero,
                 'TreeheightM': [lambda x: tuple(x), min, max],
                 'TreediameterM': [lambda x: tuple(x), min, max],
                 'TreeproxrailM': [lambda x: tuple(x), min, max],
@@ -1345,7 +1730,7 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
             furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 58)
 
             if route_name is not None:
-                route_name = find_matched_str(route_name, get_du_route().Route)
+                route_name = find_similar_str(route_name, get_du_route().Route)
                 furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == route_name]
                 furlong_vegetation_data.index = range(len(furlong_vegetation_data))
 
@@ -1359,21 +1744,31 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
     return furlong_vegetation_data
 
 
-# ELR & mileage data of furlong locations
-def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False) -> pd.DataFrame:
+def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get a view of ELR and mileage data of furlong locations.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: vegetation data combined with information of hazardous trees
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         update = True
         pickle_it = True
         verbose = True
 
-        view_nr_vegetation_furlong_data(update, pickle_it, verbose)
+        nr_vegetation_furlong_data = vegetation.view_nr_vegetation_furlong_data(update, pickle_it, verbose)
+        print(nr_vegetation_furlong_data)
     """
+
     path_to_pickle = cdd_veg_db_views("vegetation-furlong-data.pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -1396,7 +1791,7 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
             # Create two new columns of mileage data (as float)
             num_mileage_colnames = ['StartMileage_num', 'EndMileage_num']
             nr_vegetation_furlong_data[num_mileage_colnames] = nr_vegetation_furlong_data[
-                str_mileage_colnames].applymap(str_to_num_mileage)
+                str_mileage_colnames].applymap(nr_mileage_str_to_num)
 
             # Sort the furlong data by ELR and mileage
             nr_vegetation_furlong_data.sort_values(['ELR'] + num_mileage_colnames, inplace=True)
@@ -1411,22 +1806,31 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
     return nr_vegetation_furlong_data
 
 
-# Update the local pickle files for all essential views
 def update_vegetation_view_pickles(route_name=None, update=True, pickle_it=True, verbose=True):
     """
-    :param route_name: [str; None (default)]
-    :param update: [bool] (default: True)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: True)
+    Update the local pickle files for all essential views.
 
-    Testing e.g.
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+
+    **Example**::
+
+        from mssqlserver import vegetation
+
         route_name = None
         update = True
         pickle_it = True
         verbose = True
 
-        update_vegetation_view_pickles(route_name, update, pickle_it, verbose)
+        vegetation.update_vegetation_view_pickles(route_name, update, pickle_it, verbose)
     """
+
     if confirmed("To update the View pickles of the NR_Vegetation data?"):
 
         _ = view_hazardous_trees(route_name, update, pickle_it, verbose)
