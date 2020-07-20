@@ -20,10 +20,10 @@ def get_schedule8_weather_thresholds(update=False, verbose=False):
     """
     Get threshold data available in ``workbook_filename``.
 
-    :param update: whether to retrieve the source data (in case it has been updated), defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
     :type update: bool
-    :param verbose: defaults to ``False``
-    :type verbose: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
     :return: data of weather thresholds
     :rtype: pandas.DataFrame, None
 
@@ -70,10 +70,10 @@ def get_metex_weather_thresholds(update=False, verbose=False):
     """
     Get threshold data available in ``html_filename``.
 
-    :param update: whether to retrieve the source data (in case it has been updated), defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
     :type update: bool
-    :param verbose: defaults to ``False``
-    :type verbose: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
     :return: data of weather thresholds
     :rtype: pandas.DataFrame
 
@@ -176,10 +176,10 @@ def get_metex_weather_thresholds(update=False, verbose=False):
 def get_weather_thresholds(update=False, verbose=False):
     """
 
-    :param update: whether to retrieve the source data (in case it has been updated), defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
     :type update: bool
-    :param verbose: defaults to ``False``
-    :type verbose: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
     :return: data of weather thresholds
     :rtype: pandas.DataFrame
 
