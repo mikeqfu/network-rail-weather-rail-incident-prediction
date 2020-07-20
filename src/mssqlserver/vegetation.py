@@ -1,4 +1,4 @@
-""" Read and clean data of NR_Vegetation database """
+""" Read and cleanse data of NR_Vegetation_* database. """
 
 import datetime
 import os
