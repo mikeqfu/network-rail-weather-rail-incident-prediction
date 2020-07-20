@@ -122,7 +122,7 @@ def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo
     else:
         sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given a specific Route
     # Create a pd.DataFrame of the queried table
-    data = pd.read_sql(sql=sql_query, con=conn_veg, **kwargs)
+    data = pd.read_sql(sql=sql_query, con=conn_veg, index_col=index_col, **kwargs)
     # Disconnect the database
     conn_veg.close()
     # Save the DataFrame as a worksheet locally?
