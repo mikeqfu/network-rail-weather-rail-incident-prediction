@@ -77,21 +77,28 @@ def cdd_veg_db_views(*sub_dir, mkdir=False):
 # == Read table data from the database ================================================================
 
 
-def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=True, parse_dates=None, params=None,
-                   schema='dbo', save_as=None, update=False):
+def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo', save_as=None, update=False,
+                   **kwargs):
     """
-    Read tables available in NR_Vegetation database.
+    Read tables stored in NR_Vegetation_* database.
 
-    :param table_name: [str]
-    :param index_col: [str; None (default)]
-    :param route_name: [str; None (default)]
-    :param coerce_float: [bool; None] (default: True)
-    :param parse_dates: [list; dict; None (default)]
-    :param params: [list; tuple; dict; None (default)]
-    :param schema: [str] (default: 'dbo')
-    :param save_as: [str; None (default)]
-    :param update: [bool] (default: False)
-    :return: [pd.DataFrame]
+    :param table_name: name of a table
+    :type table_name: str
+    :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
+    :type index_col: str, None
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param schema_name: name of schema, defaults to ``'dbo'``
+    :type schema_name: str
+    :param save_as: file extension, defaults to ``None``
+    :type save_as: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param kwargs: optional parameters of `pandas.read_sql`_
+    :return: data of the queried table stored in NR_Vegetation_* database
+    :rtype: pandas.DataFrame
+
+    .. _`pandas.read_sql`: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html
 
     **Example**::
 
@@ -100,18 +107,14 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
         table_name = 'AdverseWind'
         index_col = None
         route_name = 'Anglia'
-        coerce_float = True
-        parse_dates = None
-        params = None
         schema = 'dbo'
         save_as = ".pickle"
         update = False
 
-        data = vegetation.read_veg_table(table_name, index_col, route_name, coerce_float, parse_dates,
-                                         params, schema, save_as, update)
+        data = vegetation.read_veg_table(table_name, index_col, route_name, schema_name, save_as, update)
     """
 
-    table = schema + '.' + table_name
+    table = schema_name + '.' + table_name
     # Make a direct connection to the queried database
     conn_veg = establish_mssql_connection(database_name=vegetation_database_name())
     if route_name is None:
@@ -119,8 +122,7 @@ def read_veg_table(table_name, index_col=None, route_name=None, coerce_float=Tru
     else:
         sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given a specific Route
     # Create a pd.DataFrame of the queried table
-    data = pd.read_sql(sql=sql_query, con=conn_veg, index_col=index_col, coerce_float=coerce_float,
-                       parse_dates=parse_dates, params=params)
+    data = pd.read_sql(sql=sql_query, con=conn_veg, **kwargs)
     # Disconnect the database
     conn_veg.close()
     # Save the DataFrame as a worksheet locally?
@@ -182,6 +184,7 @@ def get_adverse_wind(update=False, save_original_as=None, verbose=False):
         adverse_wind = vegetation.get_adverse_wind(update, save_original_as, verbose)
         print(adverse_wind)
     """
+
     table_name = 'AdverseWind'
     path_to_pickle = cdd_veg_db_tables(table_name + ".pickle")
     if os.path.isfile(path_to_pickle) and not update:
@@ -1357,10 +1360,14 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
             # Integrate information from several features in a DataFrame
             def sum_up_selected_features(data, selected_features, new_feature):
                 """
-                :param data: [pd.DataFrame] original DataFrame
-                :param selected_features: [list] list of columns names
-                :param new_feature: [str] new column name
-                :return: [pd.DataFrame]
+                :param data: original data frame
+                :type data: pandas.DataFrame
+                :param selected_features: list of columns names
+                :type selected_features: list
+                :param new_feature: new column name
+                :type new_feature: str
+                :return: integrated data
+                :rtype: pandas.DataFrame
                 """
                 data.replace({True: 1, False: 0}, inplace=True)
                 data[new_feature] = data[selected_features].fillna(0).apply(sum, axis=1)
