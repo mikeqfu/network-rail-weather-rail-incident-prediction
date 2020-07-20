@@ -20,13 +20,14 @@ railway_coordinates = get_shp_coordinates('Great Britain', osm_layer='railways',
 
 def find_midpoint_of_each_incident_location(incident_data):
     """
-    Find the "midpoint" of each incident location
+    Find the "midpoint" of each incident location.
 
     :param incident_data: data of incident records, containing information of start/end location coordinates
     :type incident_data: pandas.DataFrame
     :return: midpoints in both (longitude, latitude) and (easting, northing)
     :rtype: pandas.DataFrame
     """
+
     assert isinstance(incident_data, pd.DataFrame)
     assert all(x in incident_data.columns for x in ['StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude'])
 
@@ -46,11 +47,13 @@ def find_midpoint_of_each_incident_location(incident_data):
     return data
 
 
-""" ================================================= 1st dataset ================================================= """
+# == 1st dataset ======================================================================================
 
 
 def prepare_stats_data(route_name=None, weather_category=None, update=False, verbose=True):
     """
+    Prepare data of statistics.
+
     :param route_name: name of Route, defaults to ``None``
     :type route_name: str, None
     :param weather_category: weather to which an incident is attributed, defaults to ``None``
@@ -60,7 +63,7 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False, ver
     :param verbose: defaults to ``False``
     :type verbose: bool
 
-    Test::
+    **Example**::
 
         route_name = None
         weather_category = None
@@ -69,6 +72,7 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False, ver
 
         prepare_stats_data(route_name, weather_category, update, verbose)
     """
+
     # Get data of Schedule 8 incident locations
     incident_locations = metex.view_schedule8_costs_by_location(route_name, weather_category, update, verbose=verbose)
 
@@ -88,11 +92,13 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False, ver
     print("\nCompleted.")
 
 
-""" ================================================= 2nd dataset ================================================= """
+# == 2nd dataset ======================================================================================
 
 
 def prepare_monthly_stats_data(route_name=None, weather_category=None, update=False, verbose=True):
     """
+    Prepare data of monthly statistics.
+
     :param route_name: name of Route, defaults to ``None``
     :type route_name: str, None
     :param weather_category: weather to which an incident is attributed, defaults to ``None``
@@ -102,13 +108,14 @@ def prepare_monthly_stats_data(route_name=None, weather_category=None, update=Fa
     :param verbose: defaults to ``False``
     :type verbose: bool
 
-    Test::
+    **Example**::
 
         route_name = None
         weather_category = None
         update = False
         verbose = True
     """
+
     # Get data of Schedule 8 incidents by datetime and location
     dat = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category, update, verbose=verbose)
 
