@@ -1,32 +1,27 @@
-import os
+""" Tools for manipulating weather data. """
 
 import pandas as pd
-from pyhelpers.dir import cdd
 
 
-# Change directory to "Weather"
-def cdd_weather(*sub_dir):
-    """
-    :param sub_dir:
-    :return:
-    """
-    path = cdd("Weather")
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-# Find coordinates for each corner of the Weather observation grid
 def create_grid(centre_point, side_length=5000, rotation=None):
     """
-    :param centre_point: (easting, northing)
-    :param side_length: [numeric]
-    :param rotation: [numeric; None (default)] e.g. rotation=90
-    :return: [tuple]
+    Find coordinates for each corner of the Weather observation grid.
 
-    Easting and northing coordinates are commonly measured in metres from the axes of some horizontal datum.
-    However, other units (e.g. survey feet) are also used.
+    :param centre_point: (easting, northing)
+    :type centre_point: tuple
+    :param side_length: side length
+    :type side_length: int, float
+    :param rotation: e.g. rotation=90; defaults to ``None``
+    :type rotation; int, float, None
+    :return: coordinates of four corners of the created grid
+    :rtype: tuple
+
+    .. note::
+
+        Easting and northing coordinates are commonly measured in metres from the axes of some horizontal datum.
+        However, other units (e.g. survey feet) are also used.
     """
+
     assert isinstance(centre_point, (tuple, list)) and len(centre_point) == 2
     x, y = centre_point
     if rotation:
