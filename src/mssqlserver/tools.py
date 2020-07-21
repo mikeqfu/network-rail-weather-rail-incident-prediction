@@ -1,4 +1,4 @@
-"""
+""" Tools for communicating with the databases of NR_METEX_* and NR_Vegetation_*.
 
 In order to connect to the database you use the connect method of the Connection object. To get connected:
 
@@ -9,10 +9,8 @@ In order to connect to the database you use the connect method of the Connection
     conn_string = 'mssql+pyodbc:///?odbc_connect=%s' % quote_plus(connect_string)
     engine = sqlalchemy.create_engine(conn_string)
     conn = engine.connect()
-
 """
 
-import collections.abc
 import functools
 import itertools
 import operator
@@ -20,96 +18,129 @@ import os
 import urllib.parse
 
 import pandas as pd
-import pyhelpers.store
 import pyodbc
 import shapely.wkt
 import sqlalchemy
-
-# ====================================================================================================================
-""" Functions to establish a connection to a database server """
+from pyhelpers.store import save
 
 
-# Windows authentication for reading data from the databases
-def use_windows_authentication() -> str:
+# == Functions to establish a connection to a database server =========================================
+
+def use_windows_authentication():
     """
+    Windows authentication for reading data from the databases.
+
     The trusted_connection setting indicates whether to use Windows Authentication Mode for login validation or not.
     'Trusted_Connection=yes' specifies the user used to establish this connection. In Microsoft implementations,
     this user account is a Windows user account.
+
+    :return: whether to use Windows authentication
+    :rtype: str
     """
+
     win_str = 'Trusted_Connection=yes;'
     return win_str
 
 
-# Database driver
-def specify_database_driver() -> str:
+def specify_database_driver():
     """
-    Ref: https://github.com/mkleehammer/pyodbc/wiki/Connecting-to-SQL-Server-from-Windows
+    Specify an ODBC driver.
 
-    Using an ODBC driver
+    .. note::
 
-    Microsoft have written and distributed multiple ODBC drivers for SQL Server:
+        Microsoft have written and distributed multiple ODBC drivers for SQL Server:
 
-    {SQL Server} - released with SQL Server 2000
-    {SQL Native Client} - released with SQL Server 2005 (also known as version 9.0)
-    {SQL Server Native Client 10.0} - released with SQL Server 2008
-    {SQL Server Native Client 11.0} - released with SQL Server 2012
-    {ODBC Driver 11 for SQL Server} - supports SQL Server 2005 through 2014
-    {ODBC Driver 13 for SQL Server} - supports SQL Server 2005 through 2016
-    {ODBC Driver 13.1 for SQL Server} - supports SQL Server 2008 through 2016
-    {ODBC Driver 17 for SQL Server} - supports SQL Server 2008 through 2017
+            - {SQL Server} - released with SQL Server 2000
+            - {SQL Native Client} - released with SQL Server 2005 (also known as version 9.0)
+            - {SQL Server Native Client 10.0} - released with SQL Server 2008
+            - {SQL Server Native Client 11.0} - released with SQL Server 2012
+            - {ODBC Driver 11 for SQL Server} - supports SQL Server 2005 through 2014
+            - {ODBC Driver 13 for SQL Server} - supports SQL Server 2005 through 2016
+            - {ODBC Driver 13.1 for SQL Server} - supports SQL Server 2008 through 2016
+            - {ODBC Driver 17 for SQL Server} - supports SQL Server 2008 through 2017
 
-    Note that the "SQL Server Native Client ..." and earlier drivers are deprecated and should not be used for new
-    development.
+        The "SQL Server Native Client ..." and earlier drivers are deprecated and should not be used for
+        new development.
+
+    .. seealso::
+
+        https://github.com/mkleehammer/pyodbc/wiki/Connecting-to-SQL-Server-from-Windows
     """
+
     dri_str = 'DRIVER={ODBC Driver 17 for SQL Server};'
     return dri_str
 
 
-# Database server name
-def specify_server_name() -> str:
+def specify_server_name():
     """
-    Alternative methods to get the computer name:
-    --- 1)
-    import platform
-    platform.node()
-    --- 2)
-    import socket
-    socket.gethostname()
+    Specify database server name.
+
+    .. note::
+
+        Alternative methods to get the computer name:
+
+        .. code-block: python
+
+            # method 1:
+            import platform
+            platform.node()
+
+            # method 2:
+            import socket
+            socket.gethostname()
     """
+
     server_name = os.environ['COMPUTERNAME']
     # server_name += '\\SQLEXPRESS'
     ser_str = 'SERVER={};'.format(server_name)
     return ser_str
 
 
-# Database name
-def specify_database_name(database_name) -> str:
+def specify_database_name(database_name):
     """
-    :param database_name: [str]
+    Specify database name.
+
+    :param database_name: name of a database
+    :type database_name: str
     """
+
     dbn_str = 'DATABASE={};'.format(database_name)
     return dbn_str
 
 
-# Create a SQLAlchemy connectable engine to MS SQL Server
-def create_mssql_connectable_engine(database_name) -> sqlalchemy.engine.Engine:
+def create_mssql_connectable_engine(database_name):
     """
-    :param database_name: [str]
+    Create a SQLAlchemy connectable engine to MS SQL Server.
 
     Connect string format: 'mssql+pyodbc://<username>:<password>@<dsn_name>'
+
+    :param database_name: name of a database
+    :type database_name: str
+    :return: a SQLAlchemy connectable engine to MS SQL Server
+    :rtype: sqlalchemy.engine.Engine
     """
-    conn_str = specify_database_driver() + specify_server_name() + specify_database_name(database_name) + \
+
+    conn_str = \
+        specify_database_driver() + \
+        specify_server_name() + \
+        specify_database_name(database_name) + \
         use_windows_authentication()
     db_engine = sqlalchemy.create_engine('mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(conn_str))
     return db_engine
 
 
-# Establish a SQLAlchemy connection to MS SQL Server
-def establish_mssql_connection(database_name, mode=None) -> sqlalchemy.engine.Connection:
+def establish_mssql_connection(database_name, mode=None):
     """
-    :param database_name: [str]
-    :param mode: [str; None (default)]
+    Establish a SQLAlchemy connection to MS SQL Server.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :param mode: defaults to ``None``
+    :type mode: str, None
+    :return: a SQLAlchemy connection to MS SQL Server
+    :rtype: sqlalchemy.engine.Connection
     """
+
     if not mode:  # (default)
         db_engine = create_mssql_connectable_engine(database_name)
         db_conn = db_engine.connect()
@@ -119,32 +150,42 @@ def establish_mssql_connection(database_name, mode=None) -> sqlalchemy.engine.Co
     return db_conn
 
 
-# Create a pyodbc cursor
-def create_mssql_db_cursor(database_name) -> pyodbc.Cursor:
+def create_mssql_db_cursor(database_name):
     """
-    :param database_name: [str]
+    Create a pyodbc cursor.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :return: a pyodbc cursor
+    :rtype: pyodbc.Cursor
     """
+
     db_conn = establish_mssql_connection(database_name, mode='pyodbc')
     db_cursor = db_conn.cursor()
     return db_cursor
 
 
-# ====================================================================================================================
-""" Functions to retrieve information """
+# == Functions to retrieve information ================================================================
 
 
-# Get a list of table names in a database
-def get_table_names(database_name, schema_name='dbo', table_type='TABLE') -> list:
+def get_table_names(database_name, schema_name='dbo', table_type='TABLE'):
     """
+    Get a list of table names in a database.
+
     This function gets a list of names of tables in a database, given a specific table type.
     The table types could include 'TABLE', 'VIEW', 'SYSTEM TABLE', 'ALIAS', 'GLOBAL TEMPORARY', 'SYNONYM',
-    'LOCAL TEMPORARY', or a data source-specific type name
+    'LOCAL TEMPORARY', or a data source-specific type name.
 
-    :param database_name: [str] name of the database queried (also the catalog name)
-    :param schema_name: [str] name of schema, e.g. 'dbo' (default), 'sys'
-    :param table_type: [str] table type (default: 'TABLE')
-    :return: [list] a list of names of the tables in the queried database
+    :param database_name: name of the database queried (also the catalog name)
+    :type database_name: str
+    :param schema_name: name of schema, e.g. ``'dbo'`` (default), ``'sys'``
+    :type schema_name: str
+    :param table_type: table type, defaults to ``'TABLE'``
+    :type table_type: str
+    :return: a list of names of the tables in the queried database
+    :rtype: list
     """
+
     # Create a cursor with a direct connection to the queried database
     db_cursor = create_mssql_db_cursor(database_name)
     # Get a results set of tables defined in the data source
@@ -155,28 +196,42 @@ def get_table_names(database_name, schema_name='dbo', table_type='TABLE') -> lis
     return table_list
 
 
-# Get a list of column names of a given table in a database
-def get_table_column_names(database_name, table_name, schema_name='dbo') -> list:
+def get_table_column_names(database_name, table_name, schema_name='dbo'):
     """
-    :param database_name: [str] name of a database
-    :param table_name: [str] name of a queried table from the given database
-    :param schema_name: [str] (default: 'dbo')
-    :return: [list] a list of column names
+    Get a list of column names of a given table in a database.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :param table_name: name of a queried table from the given database
+    :type table_name: str
+    :param schema_name: defaults to ``'dbo'``
+    :type schema_name: str
+    :return: a list of column names
+    :rtype: list
     """
+
     db_cursor = create_mssql_db_cursor(database_name)
     col_names = [x.column_name for x in db_cursor.columns(table_name, schema=schema_name)]
     db_cursor.close()
     return col_names
 
 
-# Get the primary keys of each table in a database
-def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', table_type='TABLE') -> list:
+def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', table_type='TABLE'):
     """
-    :param database_name: [str] name of a database
-    :param table_name: [str; None (default)] name of a queried table from the given database
-    :param schema_name: [str] (default: 'dbo')
-    :param table_type: [str] table type (default: 'TABLE')
+    Get the primary keys of each table in a database.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :param table_name: name of a queried table from the given database, defaults to ``None``
+    :type table_name: str, None
+    :param schema_name: defaults to ``'dbo'``
+    :type schema_name: str
+    :param table_type: table type, defaults to ``'TABLE'``
+    :type table_type: str
+    :return: a list of primary keys
+    :rtype: list
     """
+
     try:
         db_cursor = create_mssql_db_cursor(database_name)
         # Get all table names
@@ -195,59 +250,81 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
     return result_pks
 
 
-# ====================================================================================================================
-""" Functions to read table data """
+# == Functions to read table data =====================================================================
 
 
-# Get all data from a given table in a specific database (Function is limited.)
-def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=None, parse_dates=None, chunk_size=None,
-                       index_col=None, coerce_float=True, save_as=None, data_dir=None) -> pd.DataFrame:
+def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=None, chunk_size=None, index_col=None,
+                       save_as=None, data_dir=None, **kwargs):
     """
-    :param database_name: [str] name of a database
-    :param table_name: [str] name of a queried table from the given database
-    :param schema_name: [str] (default: 'dbo')
-    :param col_names: [list; None (default)]
-    :param parse_dates: [list; dict; None (default)]
-    :param chunk_size: [int; None (default)]
-    :param index_col: [str; list; None (default)]
-    :param coerce_float: [bool] (default: True)
-    :param save_as: [str; None (default)]
-    :param data_dir: [str; None (default)]
+    Get all data from a given table in a specific database.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :param table_name: name of a queried table from the given database
+    :type table_name: str
+    :param schema_name: defaults to ``'dbo'``
+    :type schema_name: str
+    :param col_names: defaults to ``None``
+    :type col_names: list, None
+    :param index_col: defaults to ``None``
+    :type index_col: str, list, None
+    :param chunk_size: defaults to ``None``
+    :type chunk_size: int, None
+    :param save_as: defaults to ``None``
+    :type save_as: str, None
+    :param data_dir: defaults to ``None``
+    :type data_dir: str, None
+    :param kwargs: optional parameters of
+        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+    :return: data of the queried table
+    :rtype: pandas.DataFrame
     """
+
     # Connect to the queried database
     db_conn = establish_mssql_connection(database_name)
     # Create a pandas.DataFrame of the queried table_name
     table_data = pd.read_sql_table(table_name=table_name, con=db_conn, schema=schema_name, columns=col_names,
-                                   chunksize=chunk_size, index_col=index_col, parse_dates=parse_dates,
-                                   coerce_float=coerce_float)
+                                   index_col=index_col, chunksize=chunk_size, **kwargs)
     # Disconnect the database
     db_conn.close()
 
     if save_as:
         path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
-        pyhelpers.store.save(table_data, path_to_file)
+        save(table_data, path_to_file)
 
     # Return the data frame of the queried table
     return table_data
 
 
-# Get data from a table in a specific database by SQL query
-def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=None, parse_dates=None, chunk_size=None,
-                        index_col=None, coerce_float=None, save_as=None, data_dir=None) -> pd.DataFrame:
+def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=None, index_col=None, chunk_size=None,
+                        save_as=None, data_dir=None, **kwargs):
     """
-    :param database_name: [str] name of a database
-    :param table_name: [str] name of a queried table from the given database
-    :param schema_name: [str] (default: 'dbo')
-    :param col_names: [list; None (default)] e.g. a list of column names to retrieve; 'None' for all columns
-    :param parse_dates: [list; dict; None (default)]
-    :param chunk_size: [int; None (default)]
-    :param index_col: [str; list; None (default)]
-    :param coerce_float: [bool] (default: True)
-    :param save_as: [str; None (default)]
-    :param data_dir: [str; None (default)]
+    Get data from a table in a specific database by SQL query.
+
+    :param database_name: name of a database
+    :type database_name: str
+    :param table_name: name of a queried table from the given database
+    :type table_name: str
+    :param schema_name: defaults to ``'dbo'``
+    :type schema_name: str
+    :param col_names: defaults to ``None``
+    :type col_names: iterable, None
+    :param index_col: defaults to ``None``
+    :type index_col: str, list, None
+    :param chunk_size: defaults to ``None``
+    :type chunk_size: int, None
+    :param save_as: defaults to ``None``
+    :type save_as: str, None
+    :param data_dir: defaults to ``None``
+    :type data_dir: str, None
+    :param kwargs: optional parameters of
+        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+    :return: data of the queried table
+    :rtype: pandas.DataFrame
     """
+
     if col_names is not None:
-        assert isinstance(col_names, collections.abc.Iterable) and all(isinstance(x, str) for x in col_names)
+        assert isinstance(col_names, (list, tuple)) and all(isinstance(x, str) for x in col_names)
     if save_as:
         assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
     if data_dir:
@@ -272,8 +349,8 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
     sql_query = 'SELECT {} FROM {}."{}"'.format(
         ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names), schema_name, table_name)
     # Read the queried table_name into a pandas.DataFrame
-    table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
-                             chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
+    table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, index_col=index_col, chunksize=chunk_size,
+                             **kwargs)
     if chunk_size:
         table_data = pd.concat([pd.DataFrame(tbl_dat) for tbl_dat in table_data], ignore_index=True)
 
@@ -285,7 +362,7 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
             geom_sql_query = 'SELECT {} FROM {}."{}"'.format(
                 ', '.join('"' + x + '".STAsText()' for x in geom_col_names), schema_name, table_name)
         # Read geom data chunks into a pandas.DataFrame
-        geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size)
+        geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size, **kwargs)
         if chunk_size:
             geom_data = pd.concat([pd.DataFrame(geom_dat).applymap(shapely.wkt.loads) for geom_dat in geom_data],
                                   ignore_index=True)
@@ -298,29 +375,41 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
 
     if save_as:
         path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
-        pyhelpers.store.save(table_data, path_to_file)
+        save(table_data, path_to_file)
 
     return table_data
 
 
-# Save a table chunk-wise from a database
-def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=None, parse_dates=None,
-                        chunk_size=1000000, index_col=None, coerce_float=None, save_as=".pickle", data_dir=None):
+def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=None, index_col=None,
+                        chunk_size=1000000, save_as=".pickle", data_dir=None, **kwargs):
     """
-    :param database_name: [str] name of a database to query
-    :param table_name: [str] name of a queried table from the given database
-    :param schema_name: [str] (default: 'dbo')
-    :param col_names: [list; None (default)] e.g. a list of column names to retrieve; 'None' for all columns
-    :param parse_dates: [list; dict; None (default)]
-    :param chunk_size: [int; None (default)]
-    :param index_col: [str; list; None (default)]
-    :param coerce_float: [bool] (default: True)
-    :param save_as: [str; None (default)]
-    :param data_dir: [str; None (default)]
+    Save a table chunk-wise from a database.
+
+    :param database_name: name of a database to query
+    :type database_name: str
+    :param table_name: name of a queried table from the given database
+    :type table_name: str
+    :param schema_name: defaults to ``'dbo'``
+    :type schema_name: str
+    :param col_names: e.g. a list of column names to retrieve; ``None`` (default) for all columns
+    :type col_names: list, None
+    :param index_col: defaults to ``None``
+    :type index_col: str, list, None
+    :param chunk_size: defaults to ``None``
+    :type chunk_size: int, None
+    :param save_as: defaults to ``None``
+    :type save_as: str, None
+    :param data_dir: defaults to ``None``
+    :type data_dir: str, None
+    :param kwargs: optional parameters of
+        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+    :return: data of the queried table
+    :rtype: pandas.DataFrame
     """
+
     assert isinstance(save_as, str) and save_as in (".pickle", ".csv", ".xlsx", ".txt")
     if col_names is not None:
-        assert isinstance(col_names, collections.abc.Iterable) and all(isinstance(x, str) for x in col_names)
+        assert isinstance(col_names, (list, tuple)) and all(isinstance(x, str) for x in col_names)
     if data_dir:
         assert isinstance(save_as, str)
 
@@ -347,15 +436,15 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     dat_dir = os.path.realpath(data_dir if data_dir else 'temp_dat')
     if not geom_col_names:
         # Read the queried table_name into a pandas.DataFrame
-        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
-                                 chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
+        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, index_col=index_col,
+                                 chunksize=chunk_size, **kwargs)
         for tbl_id, tbl_dat in enumerate(table_data):
             path_to_file = os.path.join(dat_dir, table_name + "_{}".format(tbl_id + 1) + save_as)
-            pyhelpers.store.save(tbl_dat, path_to_file, sheet_name="Sheet_{}".format(tbl_id + 1))
+            save(tbl_dat, path_to_file, sheet_name="Sheet_{}".format(tbl_id + 1))
     else:
         # Read the queried table_name into a pd.DataFrame
-        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, parse_dates=parse_dates,
-                                 chunksize=chunk_size, index_col=index_col, coerce_float=coerce_float)
+        table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, index_col=index_col,
+                                 chunksize=chunk_size, **kwargs)
         tbl_chunks = [tbl_dat for tbl_dat in table_data]
 
         if len(geom_col_names) == 1:
@@ -363,13 +452,14 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
         else:
             geom_sql_query = 'SELECT {} FROM {}."{}"'.format(
                 ', '.join('"' + x + '".STAsText()' for x in geom_col_names), schema_name, table_name)
-        geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size)
+        geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size, **kwargs)
         geom_chunks = [geom_dat.applymap(shapely.wkt.loads) for geom_dat in geom_data]
 
         counter = 0
+        # noinspection PyTypeChecker
         for tbl_dat, geom_dat in zip(tbl_chunks, geom_chunks):
             path_to_file = os.path.join(dat_dir, table_name + "_{}".format(counter + 1) + save_as)
-            pyhelpers.store.save(tbl_dat.join(geom_dat), path_to_file, sheet_name="Sheet_{}".format(counter + 1))
+            save(tbl_dat.join(geom_dat), path_to_file, sheet_name="Sheet_{}".format(counter + 1))
             counter += 1
 
     # Disconnect the database
