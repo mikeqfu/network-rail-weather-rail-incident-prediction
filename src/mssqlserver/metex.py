@@ -536,7 +536,6 @@ def get_weather_codes(as_dict=False, update=False, save_original_as=None, verbos
     return weather_codes
 
 
-# IncidentRecord and fill 'None' value with NaN
 def get_incident_record(update=False, save_original_as=None, use_amendment_csv=True, verbose=False):
     """
     Get data of the table 'IncidentRecord'.
