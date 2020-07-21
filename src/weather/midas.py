@@ -196,7 +196,6 @@ def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False
             # Save data as a pickle
             save_pickle(radtob, path_to_pickle, verbose=verbose)
 
-            del radtob
             gc.collect()
 
             return radtob
