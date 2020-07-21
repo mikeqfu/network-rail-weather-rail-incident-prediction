@@ -158,7 +158,7 @@ def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
     :type verbose: bool, int
-    :return:
+    :return: MIDAS RADTOB (Radiation data)
     :rtype: pandas.DataFrame
 
     **Example**::
