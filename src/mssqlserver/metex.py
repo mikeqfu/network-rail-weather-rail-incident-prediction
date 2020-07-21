@@ -1,11 +1,15 @@
-""" Read and cleanse data of the database 'NR_METEX'
+""" Read and cleanse data of NR_METEX_* database.
 
-    Schedule 4 compensates train operators for the impact of planned service disruption, and
-    Schedule 8 compensates train operators for the impact of unplanned service disruption.
+- Schedule 4 compensates train operators for the impact of planned service disruption, and
+- Schedule 8 compensates train operators for the impact of unplanned service disruption.
 
+.. todo::
+
+    view_schedule8_incident_location_tracks()
 """
 
 import copy
+import datetime
 import gc
 import os
 import string
@@ -17,123 +21,154 @@ import matplotlib.collections
 import matplotlib.patches
 import matplotlib.pyplot as plt
 import mpl_toolkits.basemap
+import networkx as nx
 import numpy as np
 import pandas as pd
 import shapely.geometry
+import shapely.ops
+import shapely.wkt
 from pyhelpers.dir import cd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
-from pyhelpers.misc import confirmed
-from pyhelpers.settings import pd_preferences
+from pyhelpers.ops import confirmed
+from pyhelpers.settings import mpl_preferences, pd_preferences
 from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
 from pyhelpers.text import find_similar_str
-from pyrcs.line_data import LineData
-from pyrcs.other_assets import OtherAssets
+from pyrcs.line_data import LocationIdentifiers
+from pyrcs.other_assets import Stations
 from pyrcs.utils import fetch_location_names_repl_dict
-from pyrcs.utils import nr_mileage_num_to_str, str_to_num_mileage, yards_to_nr_mileage
+from pyrcs.utils import mile_chain_to_nr_mileage, nr_mileage_to_yards, yards_to_nr_mileage
+from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage
 
 from misc.delay_attribution_glossary import get_incident_reason_metadata, get_performance_event_code
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
 from utils import cdd_metex, cdd_network, update_nr_route_names
 
 pd_preferences()
-
-# ====================================================================================================================
-""" Change directories """
+mpl_preferences()
 
 
-# Change directory to "Data\\METEX\\Database"
-def cdd_metex_db(*sub_dir):
+def metex_database_name():
+    return 'NR_METEX_20190203'
+
+
+# == Change directories ===============================================================================
+
+
+def cdd_metex_db(*sub_dir, mkdir=False):
     """
-    Testing e.g.
-        cdd_metex_db()
-        cdd_metex_db("test")
+    Change directory to ..\\data\\metex\\database\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\metex\\database\\" and sub-directories / a file
+    :rtype: str
     """
-    path = cdd_metex("Database")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+
+    path = cdd_metex("database", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Tables"
-def cdd_metex_db_tables(*sub_dir):
+def cdd_metex_db_tables(*sub_dir, mkdir=False):
     """
-    Testing e.g.
-        cdd_metex_db_tables()
-        cdd_metex_db_tables("test")
+    Change directory to "..\\data\\metex\\database\\tables\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\metex\\database\\tables\\" and sub-directories / a file
+    :rtype: str
     """
-    path = cdd_metex_db("Tables")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+
+    path = cdd_metex_db("tables", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "Data\\METEX\\Database\\Views"
-def cdd_metex_db_views(*sub_dir):
+def cdd_metex_db_views(*sub_dir, mkdir=False):
     """
-    Testing e.g.
-        cdd_metex_db_views()
-        cdd_metex_db_views("test")
+    Change directory to "..\\data\\metex\\database\\views\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\metex\\database\\views\\" and sub-directories / a file
+    :rtype: str
     """
-    path = cdd_metex_db("Views")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+
+    path = cdd_metex_db("views", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "METEX\\Figures"
-def cdd_metex_db_fig(*sub_dir):
+def cdd_metex_db_fig(*sub_dir, mkdir=False):
     """
-    Testing e.g.
-        cdd_metex_db_fig()
-        cdd_metex_db_fig("test")
+    Change directory to "..\\data\\metex\\database\\figures\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\metex\\database\\figures\\" and sub-directories / a file
+    :rtype: str
     """
-    path = cdd_metex_db("Figures")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+
+    path = cdd_metex_db("figures", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# ====================================================================================================================
-""" Read table data from the database """
+# == Functions to read table data from the database ===================================================
 
 
-# Read tables available in Database
-def read_metex_table(table_name, index_col=None, route_name=None, weather_category=None, coerce_float=True,
-                     parse_dates=None, chunk_size=None, params=None, schema_name='dbo', save_as=None, update=False):
+def read_metex_table(table_name, index_col=None, route_name=None, weather_category=None, schema_name='dbo',
+                     save_as=None, update=False, **kwargs):
     """
-    :param table_name: [str] name of a queried table from the database
-    :param index_col: [str; None (default)] name of a column that is set to be the index
-    :param route_name: [str; None (default)] name of the specific route
-    :param weather_category: [str; None (default)] name of the specific weather category
-    :param coerce_float: [bool] (default: True)
-    :param parse_dates: [list; None (default)]
-    :param chunk_size: [str; None (default)]
-    :param params: [list or tuple; dict; None (default)]
-    :param schema_name: [str] (default: 'dbo')
-    :param save_as: [str; None (default)]
-    :param update: [bool] (default: False)
-    :return: [pd.DataFrame] the queried data as a pd.DataFrame
+    Read tables stored in NR_METEX_* database.
 
-    Testing e.g.
-        table_name = 'IMDM'
-        index_col = None
-        route_name = None
+    :param table_name: name of a table
+    :type table_name: str
+    :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
+    :type index_col: str, None
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param weather_category: weather category; if ``None`` (default), all weather categories
+    :type weather_category: str, None
+    :param schema_name: name of schema, defaults to ``'dbo'``
+    :type schema_name: str
+    :param save_as: file extension, defaults to ``None``
+    :type save_as: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param kwargs: optional parameters of `pandas.read_sql`_
+    :return: data of the queried table stored in NR_METEX_* database
+    :rtype: pandas.DataFrame
+
+    .. _`pandas.read_sql`: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        table_name       = 'IMDM'
+        index_col        = None
+        route_name       = None
         weather_category = None
-        coerce_float = True
-        parse_dates = None
-        chunk_size = None
-        params = None
-        schema_name = 'dbo'
-        save_as = None
-        update = True
+        schema_name      = 'dbo'
+        save_as          = None
+        update           = True
+
+        data = metex.read_metex_table(table_name, index_col, route_name, weather_category, schema_name,
+                                      save_as, update)
     """
+
     table = '{}."{}"'.format(schema_name, table_name)
     # Connect to the queried database
-    conn_metex = establish_mssql_connection('NR_METEX_20190203')
+    conn_metex = establish_mssql_connection(database_name=metex_database_name())
     # Specify possible scenarios:
     if not route_name and not weather_category:
         sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
@@ -146,8 +181,7 @@ def read_metex_table(table_name, index_col=None, route_name=None, weather_catego
         sql_query = "SELECT * FROM {} WHERE Route = '{}' AND WeatherCategory = '{}'".format(
             table, route_name, weather_category)
     # Create a pd.DataFrame of the queried table
-    table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, coerce_float=coerce_float,
-                             parse_dates=parse_dates, chunksize=chunk_size, params=params)
+    table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, **kwargs)
     # Disconnect the database
     conn_metex.close()
     if save_as:
@@ -157,37 +191,60 @@ def read_metex_table(table_name, index_col=None, route_name=None, weather_catego
     return table_data
 
 
-# Get primary keys of a table in database
 def get_metex_table_pk(table_name):
     """
-    Testing e.g.
+    Get primary keys of a table stored in database 'NR_METEX_*'.
+
+    :param table_name: name of a table stored in the database 'NR_METEX_*'
+    :type table_name: str
+    :return: a (list of) primary key(s)
+    :rtype: list
+
+    **Example**::
+
+        from mssqlserver import metex
+
         table_name = 'IMDM'
+
+        pri_key = metex.get_metex_table_pk(table_name)
+        print(pri_key)
     """
-    pri_key = get_table_primary_keys('NR_METEX_20190203', table_name=table_name)
+
+    pri_key = get_table_primary_keys(metex_database_name(), table_name=table_name)
     return pri_key
 
 
-# ====================================================================================================================
-""" Get table data """
+# == Functions to get table data ======================================================================
 
 
-# Get IMDM
 def get_imdm(as_dict=False, update=False, save_original_as=None, verbose=False):
     """
-    :param as_dict: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)] e.g. ".csv"
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'IMDM'.
 
-    Testing e.g.
-        as_dict = False
-        update = True
+    :param as_dict: whether to return the data as a dictionary, defaults to ``False``
+    :type as_dict: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'IMDM'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        as_dict          = False
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_imdm(as_dict, update, save_original_as, verbose)
+        imdm = metex.get_imdm(as_dict, update, save_original_as, verbose)
+        print(imdm)
     """
+
     table_name = 'IMDM'
     path_to_file = cdd_metex_db_tables("".join([table_name, ".json" if as_dict else ".pickle"]))
 
@@ -206,6 +263,7 @@ def get_imdm(as_dict=False, update=False, save_original_as=None, verbose=False):
             # Add regions
             regions_and_routes = load_json(cdd_network("Regions", "routes.json"))
             regions_and_routes_list = [{x: k} for k, v in regions_and_routes.items() for x in v]
+            # noinspection PyTypeChecker
             regions_and_routes_dict = {k: v for d in regions_and_routes_list for k, v in d.items()}
             regions = pd.DataFrame.from_dict({'Region': regions_and_routes_dict})
             imdm = imdm.join(regions, on='Route')
@@ -225,27 +283,44 @@ def get_imdm(as_dict=False, update=False, save_original_as=None, verbose=False):
     return imdm
 
 
-# Get ImdmAlias
 def get_imdm_alias(as_dict=False, update=False, save_original_as=None, verbose=False):
     """
-    :param as_dict: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)] e.g. ".csv"
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'ImdmAlias'.
 
-    Testing e.g.
-        as_dict = False
-        update = True
+    :param as_dict: whether to return the data as a dictionary, defaults to ``False``
+    :type as_dict: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'ImdmAlias'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_imdm_alias(as_dict, update, save_original_as, verbose)
+        as_dict = False
+        imdm_alias = metex.get_imdm_alias(as_dict, update, save_original_as, verbose)
+        print(imdm_alias)
+
+        as_dict = True
+        imdm_alias = metex.get_imdm_alias(as_dict, update, save_original_as, verbose)
+        print(imdm_alias)
     """
+
     table_name = 'ImdmAlias'
     path_to_file = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
+
     if os.path.isfile(path_to_file) and not update:
         imdm_alias = load_json(path_to_file) if as_dict else load_pickle(path_to_file)
+
     else:
         try:
             imdm_alias = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
@@ -262,25 +337,52 @@ def get_imdm_alias(as_dict=False, update=False, save_original_as=None, verbose=F
     return imdm_alias
 
 
-# Get IMDMWeatherCellMap
 def get_imdm_weather_cell_map(route_info=True, grouped=False, update=False, save_original_as=None, verbose=False):
     """
-    :param route_info: [bool] (default: True)
-    :param grouped: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'IMDMWeatherCellMap'.
 
-    Testing e.g.
+    :param route_info: get the data that contains route information, defaults to ``True``
+    :type route_info: bool
+    :param grouped: whether to group the data by either ``'Route'`` or ``'WeatherCellId'``, defaults to ``False``
+    :type grouped: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'IMDMWeatherCellMap'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
+        save_original_as = None
+        verbose          = True
+
         route_info = True
         grouped = False
-        update = True
-        save_original_as = None
-        verbose = True
+        weather_cell_map = metex.get_imdm_weather_cell_map(route_info, grouped, update, save_original_as, verbose)
+        print(weather_cell_map)
 
-        get_imdm_weather_cell_map(route_info, grouped, update, save_original_as, verbose)
+        route_info = True
+        grouped = True
+        weather_cell_map = metex.get_imdm_weather_cell_map(route_info, grouped, update, save_original_as, verbose)
+        print(weather_cell_map)
+
+        route_info = False
+        grouped = True
+        weather_cell_map = metex.get_imdm_weather_cell_map(route_info, grouped, update, save_original_as, verbose)
+        print(weather_cell_map)
+
+        route_info = False
+        grouped = False
+        weather_cell_map = metex.get_imdm_weather_cell_map(route_info, grouped, update, save_original_as, verbose)
+        print(weather_cell_map)
     """
+
     table_name = 'IMDMWeatherCellMap_pc' if route_info else 'IMDMWeatherCellMap'
     path_to_pickle = cdd_metex_db_tables(table_name + ("-grouped.pickle" if grouped else ".pickle"))
 
@@ -314,27 +416,44 @@ def get_imdm_weather_cell_map(route_info=True, grouped=False, update=False, save
     return weather_cell_map
 
 
-# Get IncidentReasonInfo
 def get_incident_reason_info(plus=True, update=False, save_original_as=None, verbose=False):
     """
-    :param plus: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'IncidentReasonInfo'.
 
-    Testing e.g.
-        plus = True
-        update = True
+    :param plus: defaults to ``True``
+    :type plus: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'IncidentReasonInfo'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_incident_reason_info(plus, update, save_original_as, verbose)
+        plus = True
+        incident_reason_info = metex.get_incident_reason_info(plus, update, save_original_as, verbose)
+        print(incident_reason_info)
+
+        plus = False
+        incident_reason_info = metex.get_incident_reason_info(plus, update, save_original_as, verbose)
+        print(incident_reason_info)
     """
+
     table_name = 'IncidentReasonInfo'
     path_to_pickle = cdd_metex_db_tables(table_name + ("-plus.pickle" if plus else ".pickle"))
+
     if os.path.isfile(path_to_pickle) and not update:
         incident_reason_info = load_pickle(path_to_pickle)
+
     else:
         try:
             # Get data from the database
@@ -351,34 +470,54 @@ def get_incident_reason_info(plus=True, update=False, save_original_as=None, ver
                 incident_reason_metadata.columns = [x.replace('_', '') for x in incident_reason_metadata.columns]
                 incident_reason_info = incident_reason_info.join(incident_reason_metadata, rsuffix='_plus')
                 # incident_reason_info.dropna(axis=1, inplace=True)
+
             save_pickle(incident_reason_info, path_to_pickle, verbose=verbose)
+
         except Exception as e:
             print("Failed to get \"{}\"{}. {}.".format(table_name, " with extra information" if plus else "", e))
             incident_reason_info = None
+
     return incident_reason_info
 
 
-# Get WeatherCategoryLookup
 def get_weather_codes(as_dict=False, update=False, save_original_as=None, verbose=False):
     """
-    :param as_dict: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'WeatherCategoryLookup'.
 
-    Testing e.g.
-        as_dict = False
-        update = True
+    :param as_dict: whether to return the data as a dictionary, defaults to ``False``
+    :type as_dict: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'WeatherCategoryLookup'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_weather_codes(as_dict, update, save_original_as, verbose)
+        as_dict = False
+        weather_codes = metex.get_weather_codes(as_dict, update, save_original_as, verbose)
+        print(weather_codes)
+
+        as_dict = True
+        weather_codes = metex.get_weather_codes(as_dict, update, save_original_as, verbose)
+        print(weather_codes)
     """
+
     table_name = 'WeatherCodes'  # WeatherCodes
     path_to_file = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
+
     if os.path.isfile(path_to_file) and not update:
         weather_codes = load_json(path_to_file) if as_dict else load_pickle(path_to_file)
+
     else:
         try:
             weather_codes = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
@@ -389,32 +528,54 @@ def get_weather_codes(as_dict=False, update=False, save_original_as=None, verbos
                 weather_codes.set_index('WeatherCategoryCode', inplace=True)
                 weather_codes = weather_codes.to_dict()
             save(weather_codes, path_to_file, verbose=verbose)
+
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
             weather_codes = None
+
     return weather_codes
 
 
-# Get IncidentRecord and fill 'None' value with NaN
-def get_incident_record(update=False, save_original_as=None, use_corrected_csv=True, verbose=False):
+# IncidentRecord and fill 'None' value with NaN
+def get_incident_record(update=False, save_original_as=None, use_amendment_csv=True, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param use_corrected_csv: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'IncidentRecord'.
 
-    Testing e.g.
-        update = True
-        save_original_as = None
-        use_corrected_csv = True
-        verbose = True
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param use_amendment_csv: whether to use a supplementary .csv file to amend the original table data in the database,
+        defaults to ``True``
+    :type use_amendment_csv: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'IncidentRecord'
+    :rtype: pandas.DataFrame, None
 
-        get_incident_record(update, save_original_as, use_corrected_csv, verbose)
-        get_incident_record(True, save_original_as, use_corrected_csv, verbose)
+    .. note::
+
+        None values are filled with NaN.
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update            = True
+        save_original_as  = None
+        verbose           = True
+
+        use_amendment_csv = True
+        incident_record = metex.get_incident_record(update, save_original_as, use_amendment_csv, verbose)
+        print(incident_record)
+
+        use_amendment_csv = False
+        incident_record = metex.get_incident_record(update, save_original_as, use_amendment_csv, verbose)
+        print(incident_record)
     """
+
     table_name = 'IncidentRecord'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
+    path_to_pickle = cdd_metex_db_tables((table_name + "-amended" if use_amendment_csv else table_name) + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         incident_record = load_pickle(path_to_pickle)
@@ -424,14 +585,14 @@ def get_incident_record(update=False, save_original_as=None, use_corrected_csv=T
             incident_record = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                                save_as=save_original_as, update=update)
 
-            if use_corrected_csv:
-                corrected_csv = pd.read_csv(cdd_metex_db("Updates", table_name + ".zip"), index_col='Id',
+            if use_amendment_csv:
+                amendment_csv = pd.read_csv(cdd_metex_db("updates", table_name + ".zip"), index_col='Id',
                                             parse_dates=['CreateDate'], infer_datetime_format=True, dayfirst=True)
-                corrected_csv.columns = incident_record.columns
-                corrected_csv.loc[corrected_csv[corrected_csv.WeatherCategory.isna()].index, 'WeatherCategory'] = None
+                amendment_csv.columns = incident_record.columns
+                amendment_csv.loc[amendment_csv[amendment_csv.WeatherCategory.isna()].index, 'WeatherCategory'] = None
                 incident_record.drop(incident_record[incident_record.CreateDate >= pd.to_datetime('2018-01-01')].index,
                                      inplace=True)
-                incident_record = incident_record.append(corrected_csv)
+                incident_record = incident_record.append(amendment_csv)
 
             incident_record.index.rename(table_name + 'Id', inplace=True)  # Rename index name
             incident_record.rename(columns={'CreateDate': table_name + 'CreateDate', 'Reason': 'IncidentReasonCode'},
@@ -451,21 +612,31 @@ def get_incident_record(update=False, save_original_as=None, use_corrected_csv=T
     return incident_record
 
 
-# Get Location
 def get_location(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Location'.
 
-    Testing e.g.
-        update = True
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Location'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_location(update, save_original_as, verbose)
+        location = metex.get_location(update, save_original_as, verbose)
+        print(location)
     """
+
     table_name = 'Location'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
@@ -479,7 +650,7 @@ def get_location(update=False, save_original_as=None, verbose=False):
             location.index.rename('LocationId', inplace=True)
             location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
             location[['WeatherCell', 'SMDCell']] = location[['WeatherCell', 'SMDCell']].applymap(
-                lambda x: 0 if pd.np.isnan(x) else int(x))
+                lambda x: 0 if np.isnan(x) else int(x))
             # location.loc[610096, 0:4] = [-0.0751, 51.5461, -0.0751, 51.5461]
 
             save_pickle(location, path_to_pickle, verbose=verbose)
@@ -491,29 +662,56 @@ def get_location(update=False, save_original_as=None, verbose=False):
     return location
 
 
-# Get PfPI (Process for Performance Improvement)
-def get_pfpi(plus=True, update=False, save_original_as=None, use_corrected_csv=True, verbose=False):
+def get_pfpi(plus=True, update=False, save_original_as=None, use_amendment_csv=True, verbose=False):
     """
-    :param plus: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param use_corrected_csv: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'PfPI' (Process for Performance Improvement).
 
-    Testing e.g.
+    :param plus: defaults to ``True``
+    :type plus: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param use_amendment_csv: whether to use a supplementary .csv file to amend the original table data in the database,
+        defaults to ``True``
+    :type use_amendment_csv: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'PfPI'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update            = True
+        save_original_as  = None
+        verbose           = True
+
         plus = True
-        update = True
-        save_original_as = None
-        use_corrected_csv = True
-        verbose = True
+        use_amendment_csv = True
+        pfpi = metex.get_pfpi(plus, update, save_original_as, use_amendment_csv, verbose)
+        print(pfpi)
 
-        get_pfpi(plus, update, save_original_as, use_corrected_csv, verbose)
-        get_pfpi(False, True, save_original_as, use_corrected_csv, verbose)
-        get_pfpi(plus, True, save_original_as, use_corrected_csv, verbose)
+        plus = False
+        use_amendment_csv = True
+        pfpi = metex.get_pfpi(plus, update, save_original_as, use_amendment_csv, verbose)
+        print(pfpi)
+
+        plus = True
+        use_amendment_csv = False
+        pfpi = metex.get_pfpi(plus, update, save_original_as, use_amendment_csv, verbose)
+        print(pfpi)
+
+        plus = False
+        use_amendment_csv = False
+        pfpi = metex.get_pfpi(plus, update, save_original_as, use_amendment_csv, verbose)
+        print(pfpi)
     """
+
     table_name = 'PfPI'
-    path_to_pickle = cdd_metex_db_tables(table_name + ("-plus.pickle" if plus else ".pickle"))
+    path_to_pickle = cdd_metex_db_tables(
+        (table_name + "-plus" if plus else table_name) + ("-amended.pickle" if use_amendment_csv else ".pickle"))
 
     if os.path.isfile(path_to_pickle) and not update:
         pfpi = load_pickle(path_to_pickle)
@@ -523,11 +721,11 @@ def get_pfpi(plus=True, update=False, save_original_as=None, use_corrected_csv=T
             pfpi = read_metex_table(table_name, index_col=get_metex_table_pk(table_name), save_as=save_original_as,
                                     update=update)
 
-            if use_corrected_csv:
+            if use_amendment_csv:
                 incident_record = read_metex_table('IncidentRecord', index_col=get_metex_table_pk('IncidentRecord'))
                 min_id = incident_record[incident_record.CreateDate >= pd.to_datetime('2018-01-01')].index.min()
                 pfpi.drop(pfpi[pfpi.IncidentRecordId >= min_id].index, inplace=True)
-                pfpi = pfpi.append(pd.read_csv(cdd_metex_db("Updates", table_name + ".zip", ), index_col='Id'))
+                pfpi = pfpi.append(pd.read_csv(cdd_metex_db("updates", table_name + ".zip", ), index_col='Id'))
 
             pfpi.index.rename(table_name + pfpi.index.name, inplace=True)
 
@@ -547,23 +745,42 @@ def get_pfpi(plus=True, update=False, save_original_as=None, use_corrected_csv=T
     return pfpi
 
 
-# Get Route (Note that there is only one column in the original table)
 def get_route(as_dict=False, update=False, save_original_as=None, verbose=False):
     """
-    :param as_dict: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Route'.
 
-    Testing e.g.
-        as_dict = False
-        update = True
+    :param as_dict: whether to return the data as a dictionary, defaults to ``False``
+    :type as_dict: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Route'
+    :rtype: pandas.DataFrame, None
+
+    .. note::
+
+        There is only one column in the original table.
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_route(as_dict, update, save_original_as, verbose)
+        as_dict = False
+        route = metex.get_route(as_dict, update, save_original_as, verbose)
+        print(route)
+
+        as_dict = True
+        route = metex.get_route(as_dict, update, save_original_as, verbose)
+        print(route)
     """
+
     table_name = "Route"
     path_to_pickle = cdd_metex_db_tables(table_name + (".json" if as_dict else ".pickle"))
 
@@ -579,6 +796,7 @@ def get_route(as_dict=False, update=False, save_original_as=None, verbose=False)
             # Add regions
             regions_and_routes = load_json(cdd_network("Regions", "routes.json"))
             regions_and_routes_list = [{x: k} for k, v in regions_and_routes.items() for x in v]
+            # noinspection PyTypeChecker
             regions_and_routes_dict = {k: v for d in regions_and_routes_list for k, v in d.items()}
             regions = pd.DataFrame.from_dict({'Region': regions_and_routes_dict})
             route = route.join(regions, on='Route')
@@ -598,24 +816,38 @@ def get_route(as_dict=False, update=False, save_original_as=None, verbose=False)
     return route
 
 
-# Get StanoxLocation
 def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_as=None, verbose=False):
     """
-    :param use_nr_mileage_format: [bool] (default: True)
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'StanoxLocation'.
 
-    Testing e.g.
-        use_nr_mileage_format = True
-        update = True
+    :param use_nr_mileage_format: defaults to ``True``
+    :type use_nr_mileage_format: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'StanoxLocation'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_stanox_location(use_nr_mileage_format, update, save_original_as, verbose)
-        get_stanox_location(False, update, save_original_as, verbose)
+        use_nr_mileage_format = True
+        stanox_location = metex.get_stanox_location(use_nr_mileage_format, update, save_original_as, verbose)
+        print(stanox_location)
+
+        use_nr_mileage_format = False
+        stanox_location = metex.get_stanox_location(use_nr_mileage_format, update, save_original_as, verbose)
+        print(stanox_location)
     """
+
     table_name = 'StanoxLocation'
     path_to_pickle = cdd_metex_db_tables(table_name + ("-mileage.pickle" if use_nr_mileage_format else ".pickle"))
 
@@ -649,9 +881,9 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
 
                 dat.drop_duplicates(subset=['Stanox'], keep='last', inplace=True)
 
-                line_data = LineData()
-                location_codes = line_data.LocationIdentifiers.fetch_location_codes()
-                location_codes = location_codes['Location_codes']
+                lid = LocationIdentifiers()
+                location_codes = lid.fetch_location_codes()
+                location_codes = location_codes['Location codes']
 
                 #
                 for i, x in dat[dat.Description.isnull()].Stanox.items():
@@ -679,7 +911,8 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                         idx = temp.index
                     if len(idx) > 1:
                         # Choose the first instance, and print a warning message
-                        print("Warning: The STANOX \"{}\" at index \"{}\" is not unique.".format(x, i))
+                        print("Warning: The STANOX \"{}\" at index \"{}\" is not unique. "
+                              "The first instance is chosen.".format(x, i))
                     idx = idx[0]
                     dat.loc[i, 'Description'] = temp.Location.loc[idx]
                     dat.loc[i, 'Name'] = temp.STANME.loc[idx]
@@ -692,7 +925,7 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
                 dat.replace(fetch_location_names_repl_dict(k='Description', regex=True), inplace=True)
 
                 # Use STANOX dictionary
-                stanox_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
+                stanox_dict = lid.make_location_codes_dictionary('STANOX')
                 temp = dat.join(stanox_dict, on='Stanox')[['Description', 'Location']]
                 temp.loc[temp.Location.isnull(), 'Location'] = temp.loc[temp.Location.isnull(), 'Description']
                 dat.Description = temp.apply(
@@ -737,21 +970,31 @@ def get_stanox_location(use_nr_mileage_format=True, update=False, save_original_
     return stanox_location
 
 
-# Get StanoxSection
 def get_stanox_section(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'StanoxSection'.
 
-    Testing e.g.
-        update = True
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'StanoxSection'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_stanox_section(update, save_original_as, verbose)
+        stanox_section = metex.get_stanox_section(update, save_original_as, verbose)
+        print(stanox_section)
     """
+
     table_name = 'StanoxSection'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
@@ -764,10 +1007,10 @@ def get_stanox_section(update=False, save_original_as=None, verbose=False):
             stanox_section = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                               save_as=save_original_as, update=update)
             stanox_section.index.name = table_name + 'Id'
-            stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: '' if pd.np.isnan(x) else int(x))
+            stanox_section.LocationId = stanox_section.LocationId.apply(lambda x: '' if np.isnan(x) else int(x))
 
-            line_data = LineData()
-            stanox_dat = line_data.LocationIdentifiers.make_location_codes_dictionary('STANOX')
+            lid = LocationIdentifiers()
+            stanox_dat = lid.make_location_codes_dictionary('STANOX')
 
             # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
             for stanox_col_name in ['StartStanox', 'EndStanox']:
@@ -780,8 +1023,8 @@ def get_stanox_section(update=False, save_original_as=None, verbose=False):
                 stanox_section[tmp_col][tmp_idx] = tmp[tmp_idx]
                 stanox_section[tmp_col] = stanox_section[tmp_col].map(lambda x: x[0] if isinstance(x, list) else x)
 
-            stanme_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('STANME', as_dict=True)
-            tiploc_dict = line_data.LocationIdentifiers.make_location_codes_dictionary('TIPLOC', as_dict=True)
+            stanme_dict = lid.make_location_codes_dictionary('STANME', as_dict=True)
+            tiploc_dict = lid.make_location_codes_dictionary('TIPLOC', as_dict=True)
 
             # Secondly, process 'STANME' and 'TIPLOC'
             loc_name_replacement_dict = fetch_location_names_repl_dict()
@@ -828,33 +1071,54 @@ def get_stanox_section(update=False, save_original_as=None, verbose=False):
     return stanox_section
 
 
-# Get TrustIncident
-def get_trust_incident(start_year=2006, end_year=None, update=False, save_original_as=None, use_corrected_csv=True,
+def get_trust_incident(start_year=2006, end_year=None, update=False, save_original_as=None, use_amendment_csv=True,
                        verbose=False):
     """
-    :param start_year: [int; None] (default: 2006)
-    :param end_year: [int; None (default)]
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param use_corrected_csv: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'TrustIncident'.
 
-    Testing e.g.
-        start_year = 2006
-        end_year = None
-        update = True
-        save_original_as = None
-        use_corrected_csv = True
-        verbose = True
+    :param start_year: defaults to ``2006``
+    :type start_year: int, None
+    :param end_year: defaults to ``None``
+    :type end_year: int, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param use_amendment_csv: whether to use a supplementary .csv file to amend the original table data in the database,
+        defaults to ``True``
+    :type use_amendment_csv: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'TrustIncident'
+    :rtype: pandas.DataFrame, None
 
-        get_trust_incident(start_year, end_year, update, save_original_as, use_corrected_csv, verbose)
+    **Examples**::
+
+        from mssqlserver import metex
+
+        start_year        = 2006
+        end_year          = None
+        update            = True
+        save_original_as  = None
+        verbose           = True
+
+        use_amendment_csv = True
+        trust_incident = metex.get_trust_incident(start_year, end_year, update, save_original_as,
+                                                  use_amendment_csv, verbose)
+        print(trust_incident)
+
+        use_amendment_csv = False
+        trust_incident = metex.get_trust_incident(start_year, end_year, update, save_original_as,
+                                                  use_amendment_csv, verbose)
+        print(trust_incident)
     """
+
     table_name = 'TrustIncident'
-    suffix_ext = "{}.pickle".format(
-        "{}".format("-y{}".format(start_year) if start_year else "_up_to") +
+    suffix_ext = "{}".format(
+        "{}".format("-y{}".format(start_year) if start_year else "-up-to") +
         "{}".format("-y{}".format(2018 if not end_year or end_year >= 2019 else end_year)))
-    path_to_pickle = cdd_metex_db_tables(table_name + suffix_ext)
+    path_to_pickle = cdd_metex_db_tables(
+        table_name + suffix_ext + "{}.pickle".format("-amended" if use_amendment_csv else ""))
 
     if os.path.isfile(path_to_pickle) and not update:
         trust_incident = load_pickle(path_to_pickle)
@@ -863,8 +1127,8 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
         try:
             trust_incident = read_metex_table(table_name, index_col=get_metex_table_pk(table_name),
                                               save_as=save_original_as, update=update)
-            if use_corrected_csv:
-                zip_file = zipfile.ZipFile(cdd_metex_db("Updates", table_name + ".zip"))
+            if use_amendment_csv:
+                zip_file = zipfile.ZipFile(cdd_metex_db("updates", table_name + ".zip"))
                 corrected_csv = pd.concat(
                     [pd.read_csv(zip_file.open(f), index_col='Id', parse_dates=['StartDate', 'EndDate'],
                                  infer_datetime_format=True, dayfirst=True)
@@ -880,7 +1144,7 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
             # Extract a subset of data, in which the StartDateTime is between 'start_year' and 'end_year'?
             trust_incident = trust_incident[
                 (trust_incident.FinancialYear >= (start_year if start_year else 0)) &
-                (trust_incident.FinancialYear <= (end_year if end_year else pd.datetime.now().year))]
+                (trust_incident.FinancialYear <= (end_year if end_year else datetime.datetime.now().year))]
             # Convert float to int values for 'SourceLocationId'
             trust_incident.SourceLocationId = trust_incident.SourceLocationId.map(
                 lambda x: '' if pd.isna(x) else int(x))
@@ -894,117 +1158,187 @@ def get_trust_incident(start_year=2006, end_year=None, update=False, save_origin
     return trust_incident
 
 
-# Get Weather
-def get_weather():
-    conn_db = establish_mssql_connection('NR_METEX_20190203')
-    sql_query = "SELECT * FROM dbo.Weather"
-    #
-    chunks = pd.read_sql_query(sql_query, conn_db, index_col=None, parse_dates=['DateTime'], chunksize=1000000)
-    weather = pd.concat([pd.DataFrame(chunk) for chunk in chunks], ignore_index=True)
+def get_weather(verbose=False):
+    """
+    Get data of the table 'Weather'.
+
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Weather'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        verbose = True
+
+        weather = metex.get_weather(verbose)
+        print(weather)
+    """
+
+    table_name = 'Weather'
+    try:
+        conn_db = establish_mssql_connection(database_name=metex_database_name())
+        sql_query = "SELECT * FROM dbo.[{}]".format(table_name)
+        #
+        chunks = pd.read_sql_query(sql_query, conn_db, index_col=None, parse_dates=['DateTime'], chunksize=1000000)
+        weather = pd.concat([pd.DataFrame(chunk) for chunk in chunks], ignore_index=True, sort=False)
+    except Exception as e:
+        print("Failed to get \"{}\". {}.".format(table_name, e)) if verbose else None
+        weather = None
     return weather
 
 
-# Get Weather data by 'WeatherCell' and 'DateTime' (Query from the database)
-def fetch_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, pickle_it=True,
+def query_weather_by_id_datetime(weather_cell_id, start_dt=None, end_dt=None, postulate=False, pickle_it=True,
                                  dat_dir=None, update=False, verbose=False):
     """
-    :param weather_cell_id: [int]
-    :param start_dt: [datetime.datetime; str; None (default)]
-    :param end_dt: [datetime.datetime; None (default)]
-    :param postulate: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param dat_dir: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get weather data by ``'WeatherCell'`` and ``'DateTime'`` (Query from the database).
 
-    Testing e.g.
+    :param weather_cell_id: weather cell ID
+    :type weather_cell_id: int
+    :param start_dt: start date and time, defaults to ``None``
+    :type start_dt: datetime.datetime, str, None
+    :param end_dt: end date and time, defaults to ``None``
+    :type end_dt: datetime.datetime, str, None
+    :param postulate: whether to add postulated data, defaults to ``False``
+    :type postulate: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param dat_dir: directory where the queried data is saved, defaults to ``None``
+    :type dat_dir: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: weather data by ``'weather_cell_id'``, ``'start_dt'`` and ``'end_dt'``
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        import datetime
+        from mssqlserver import metex
+
         weather_cell_id = 2367
-        start_dt = pd.datetime(2018, 6, 1, 12)  # '2018-06-01 12:00:00'
-        end_dt = pd.datetime(2018, 6, 1, 12)  # '2018-06-01 12:00:00'
-        postulate = False
-        pickle_it = False
-        dat_dir = None
-        update = True
-        verbose = True
+        start_dt        = datetime.datetime(2018, 6, 1, 12)  # '2018-06-01 12:00:00'
+        postulate       = False
+        pickle_it       = False
+        dat_dir         = None
+        update          = True
+        verbose         = True
 
-        fetch_weather_by_id_datetime(weather_cell_id, start_dt, end_dt, postulate, pickle_it, dat_dir, update, verbose)
+        end_dt = datetime.datetime(2018, 6, 1, 13)  # '2018-06-01 13:00:00'
+        weather_dat = metex.query_weather_by_id_datetime(weather_cell_id, start_dt, end_dt, postulate,
+                                                         pickle_it, dat_dir, update, verbose)
+        print(weather_dat)
+
+        end_dt = datetime.datetime(2018, 6, 1, 12)  # '2018-06-01 12:00:00'
+        weather_dat = metex.query_weather_by_id_datetime(weather_cell_id, start_dt, end_dt, postulate,
+                                                         pickle_it, dat_dir, update, verbose)
+        print(weather_dat)
+
     """
-    # assert all(isinstance(x, pd.np.int64) for x in weather_cell_id)
-    assert isinstance(weather_cell_id, tuple) or isinstance(weather_cell_id, (int, pd.np.integer))
-    #
+
+    assert isinstance(weather_cell_id, (tuple, int, np.integer))
+
+    # Make a pickle filename
     pickle_filename = "{}{}{}.pickle".format(
-        "_".join(str(x) for x in list(weather_cell_id)) if isinstance(weather_cell_id, tuple) else weather_cell_id,
+        "-".join(str(x) for x in list(weather_cell_id)) if isinstance(weather_cell_id, tuple) else weather_cell_id,
         start_dt.strftime('_fr%Y%m%d%H%M') if start_dt else "",
         end_dt.strftime('_to%Y%m%d%H%M') if end_dt else "")
 
+    # Specify a directory/path to store the pickle file (if appropriate)
     dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_metex_db_views()
-    #
     path_to_pickle = cd(dat_dir, pickle_filename)
-    #
-    if not os.path.isfile(path_to_pickle) or update:
+
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+
+    else:
         try:
-            conn_metex = establish_mssql_connection('NR_METEX_20190203')
-            sql_query = \
-                "SELECT * FROM dbo.Weather WHERE WeatherCell {} {}{}{};".format(
-                    "=" if isinstance(weather_cell_id, (int, pd.np.integer)) else "IN",
-                    weather_cell_id,
-                    " AND DateTime >= '{}'".format(start_dt) if start_dt else "",
-                    " AND DateTime <= '{}'".format(end_dt) if end_dt else "")
-            weather = pd.read_sql(sql_query, conn_metex)
+            # Establish a connection to the MSSQL server
+            conn_metex = establish_mssql_connection(database_name=metex_database_name())
+            # Specify database sql query
+            sql_query = "SELECT * FROM dbo.[Weather] WHERE {}{}{} AND {} AND {};".format(
+                "[WeatherCell]", " IN " if isinstance(weather_cell_id, tuple) else " = ", weather_cell_id,
+                "[DateTime] >= '{}'".format(start_dt) if start_dt else "",
+                "[DateTime] <= '{}'".format(end_dt) if end_dt else "")
+            # Query the weather data
+            weather_dat = pd.read_sql(sql_query, conn_metex)
 
             if postulate:
-                def postulate_missing_hourly_precipitation(dat):
-                    i = 0
-                    snowfall, precipitation = dat.Snowfall.tolist(), dat.TotalPrecipitation.tolist()
-                    while i + 3 < len(dat):
-                        snowfall[i + 1: i + 3] = pd.np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
-                        precipitation[i + 1: i + 3] = pd.np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
-                        i += 3
-                    if i + 2 == len(dat):
-                        snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
-                    elif i + 3 == len(dat):
-                        snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
-                    dat.Snowfall = snowfall
-                    dat.TotalPrecipitation = precipitation
-
-                postulate_missing_hourly_precipitation(weather)
+                i = 0
+                snowfall, precipitation = weather_dat.Snowfall.tolist(), weather_dat.TotalPrecipitation.tolist()
+                while i + 3 < len(weather_dat):
+                    snowfall[i + 1: i + 3] = np.linspace(snowfall[i], snowfall[i + 3], 4)[1:3]
+                    precipitation[i + 1: i + 3] = np.linspace(precipitation[i], precipitation[i + 3], 4)[1:3]
+                    i += 3
+                if i + 2 == len(weather_dat):
+                    snowfall[-1:], precipitation[-1:] = snowfall[-2], precipitation[-2]
+                elif i + 3 == len(weather_dat):
+                    snowfall[-2:], precipitation[-2:] = [snowfall[-3]] * 2, [precipitation[-3]] * 2
+                weather_dat.Snowfall = snowfall
+                weather_dat.TotalPrecipitation = precipitation
 
             if pickle_it:
-                save_pickle(weather, path_to_pickle, verbose=verbose)
+                save_pickle(weather_dat, path_to_pickle, verbose=verbose)
 
-            return weather
+            return weather_dat
 
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
 
 
-# Get WeatherCell
-def get_weather_cell(update=False, save_original_as=None, show_map=False, projection='tmerc', save_map_as=None,
-                     dpi=None, verbose=False):
+def get_weather_cell(route_name=None, update=False, save_original_as=None, show_map=False, projection='tmerc',
+                     save_map_as=None, dpi=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param show_map: [bool] (default: False)
-    :param projection: [str] (default: 'tmerc')
-    :param save_map_as: [str; None (default)]
-    :param dpi: [int; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'WeatherCell'.
 
-    Testing e.g.
-        update = True
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param show_map: whether to show a map of the weather cells, defaults to ``False``
+    :type show_map: bool
+    :param projection: defaults to ``'tmerc'``
+    :type projection: str
+    :param save_map_as: whether to save the created map or what format the created map is saved as, defaults to ``None``
+    :type save_map_as: str, None
+    :param dpi: defaults to ``None``
+    :type dpi: int, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'WeatherCell'
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        show_map = True
-        projection = 'tmerc'
-        save_map_as = None
-        dpi = None
-        verbose = True
+        show_map         = True
+        projection       = 'tmerc'
+        save_map_as      = ".tif"
+        dpi              = None
+        verbose          = True
 
-        get_weather_cell(update, save_original_as, show_map, projection, save_map_as, dpi, verbose)
+        route_name = None
+        weather_cell = metex.get_weather_cell(route_name, update, save_original_as, show_map, projection,
+                                              save_map_as, dpi, verbose)
+        print(weather_cell)
+
+        route_name = 'Anglia'
+        weather_cell = metex.get_weather_cell(route_name, update, save_original_as, show_map, projection,
+                                              save_map_as, dpi, verbose)
+        print(weather_cell)
     """
+
     table_name = 'WeatherCell'
-    path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
+    pickle_filename = make_filename(table_name, route_name)
+    path_to_pickle = cdd_metex_db_tables(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         weather_cell = load_pickle(path_to_pickle)
@@ -1059,8 +1393,11 @@ def get_weather_cell(update=False, save_original_as=None, show_map=False, projec
 
             regions_and_routes = load_json(cdd_network("Regions", "routes.json"))
             regions_and_routes_list = [{x: k} for k, v in regions_and_routes.items() for x in v]
+            # noinspection PyTypeChecker
             regions_and_routes_dict = {k: v for d in regions_and_routes_list for k, v in d.items()}
             weather_cell['Region'] = weather_cell.Route.replace(regions_and_routes_dict)
+
+            weather_cell = get_subset(weather_cell, route_name)
 
             save_pickle(weather_cell, path_to_pickle, verbose=verbose)
 
@@ -1108,24 +1445,33 @@ def get_weather_cell(update=False, save_original_as=None, show_map=False, projec
         print("Done.")
 
         if save_map_as:
-            save_fig(cdd_metex_db_fig(table_name + save_map_as), dpi=dpi, verbose=verbose)
+            save_fig(cdd_metex_db_fig(pickle_filename.replace(".pickle", save_map_as)), dpi=dpi, verbose=verbose)
 
     return weather_cell
 
 
-# Get the lower-left and upper-right boundaries of weather cells
 def get_weather_cell_map_boundary(route_name=None, adjustment=(0.285, 0.255)):
     """
-    :param route_name: [str; None (default)]
-    :param adjustment: [tuple] (numbers.Number, numbers.Number) (default: (0.285, 0.255))
-    :return: [shapely.geometry.polygon.Polygon]
+    Get the lower-left and upper-right corners for a weather cell map.
 
-    Testing e.g.
+    :param route_name: name of a Route; if ``None`` (default), all Routes
+    :type route_name: str, None
+    :param adjustment: defaults to ``(0.285, 0.255)``
+    :type adjustment: tuple
+    :return: a boundary for a weather cell map
+    :rtype: shapely.geometry.polygon.Polygon
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         route_name = None
         adjustment = (0.285, 0.255)
 
-        get_weather_cell_map_boundary(route_name, adjustment)
+        boundary = metex.get_weather_cell_map_boundary(route_name, adjustment)
+        print(boundary)
     """
+
     weather_cell = get_weather_cell()  # Get Weather cell
 
     if route_name:  # For a specific Route
@@ -1136,7 +1482,7 @@ def get_weather_cell_map_boundary(route_name=None, adjustment=(0.285, 0.255)):
     ul = weather_cell.ul_Longitude.min(), weather_cell.ul_Latitude.max()
 
     if adjustment:  # Adjust the boundaries
-        adj_values = pd.np.array(adjustment)
+        adj_values = np.array(adjustment)
         ll -= adj_values
         lr += (adj_values, -adj_values)
         ur += adj_values
@@ -1147,21 +1493,31 @@ def get_weather_cell_map_boundary(route_name=None, adjustment=(0.285, 0.255)):
     return boundary
 
 
-# Track
 def get_track(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Track'.
 
-    Testing e.g.
-        update = True
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Track'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_track(update, save_original_as, verbose)
+        track = metex.get_track(update, save_original_as, verbose)
+        print(track)
     """
+
     table_name = 'Track'
     path_to_pickle = cdd_metex_db_tables(table_name + ".pickle")
 
@@ -1170,16 +1526,16 @@ def get_track(update=False, save_original_as=None, verbose=False):
 
     else:
         try:
-            track = read_table_by_query('NR_METEX_20190203', table_name, save_as=save_original_as)
+            track = read_table_by_query(metex_database_name(), table_name, save_as=save_original_as).drop_duplicates()
             track.rename(columns={'S_MILEAGE': 'StartMileage', 'F_MILEAGE': 'EndMileage',
-                                  'S_YARDAGE': 'StartYardage', 'F_YARDAGE': 'EndYardage',
+                                  'S_YARDAGE': 'StartYard', 'F_YARDAGE': 'EndYard',
                                   'MAINTAINER': 'Maintainer', 'ROUTE': 'Route', 'DELIVERY_U': 'IMDM',
                                   'StartEasti': 'StartEasting', 'StartNorth': 'StartNorthing',
                                   'EndNorthin': 'EndNorthing'},
                          inplace=True)
 
             # Mileage and Yardage
-            mileage_cols, yardage_cols = ['StartMileage', 'EndMileage'], ['StartYardage', 'EndYardage']
+            mileage_cols, yardage_cols = ['StartMileage', 'EndMileage'], ['StartYard', 'EndYard']
             track[mileage_cols] = track[mileage_cols].applymap(nr_mileage_num_to_str)
             track[yardage_cols] = track[yardage_cols].applymap(int)
 
@@ -1195,6 +1551,12 @@ def get_track(update=False, save_original_as=None, verbose=False):
             track['EndLongitude'], track['EndLatitude'] = osgb36_to_wgs84(
                 track.EndEasting.values, track.EndNorthing.values)
 
+            track[['StartMileage_num', 'EndMileage_num']] = track[
+                ['StartMileage', 'EndMileage']].applymap(nr_mileage_str_to_num)
+
+            track.sort_values(['ELR', 'StartYard', 'EndYard'], inplace=True)
+            track.index = range(len(track))
+
             save_pickle(track, path_to_pickle, verbose=verbose)
 
         except Exception as e:
@@ -1204,21 +1566,198 @@ def get_track(update=False, save_original_as=None, verbose=False):
     return track
 
 
-# Track Summary
+def create_track_geometric_graph(geom_objs, rotate_labels=None):
+    """
+    Create a graph to illustrate track geometry.
+
+    :param geom_objs: geometry objects
+    :type geom_objs: iterable of [WKT str, shapely.geometry.LineString, or shapely.geometry.MultiLineString]
+    :param rotate_labels: defaults to ``None``
+    :type rotate_labels: numbers.Number, None
+    :return: a graph demonstrating the tracks
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        track_data = metex.get_track()
+        geom_objs = track_data.geom[list(range(len(track_data[track_data.ELR == 'AAV'])))]
+
+        metex.create_track_geometric_graph(geom_objs)
+    """
+
+    g = nx.Graph()
+
+    fig, ax = plt.subplots()
+
+    max_node_id = 0
+    for geom_obj in geom_objs:
+
+        if isinstance(geom_obj, str):
+            geom_obj = shapely.wkt.loads(geom_obj)
+
+        geom_type, geom_pos = shapely.geometry.mapping(geom_obj).values()
+
+        if geom_type == 'MultiLineString':
+
+            # Sort line strings of the multi-line string
+            geom_pos_idx = list(range(len(geom_pos)))
+            pos_idx_sorted = []
+            while geom_pos_idx:
+                y = geom_pos_idx[0]
+                p1 = [i for i, x in enumerate([x[-1] for x in geom_pos]) if x == geom_pos[y][0]]
+                if p1 and p1[0] not in pos_idx_sorted:
+                    pos_idx_sorted = p1 + [y]
+                else:
+                    pos_idx_sorted = [y]
+
+                p2 = [i for i, x in enumerate([x[0] for x in geom_pos]) if x == geom_pos[y][-1]]
+                if p2:
+                    pos_idx_sorted += p2
+
+                geom_pos_idx = [a for a in geom_pos_idx if a not in pos_idx_sorted]
+
+                if len(geom_pos_idx) == 1:
+                    y = geom_pos_idx[0]
+                    p3 = [i for i, x in enumerate([x[-1] for x in geom_pos]) if x == geom_pos[y][0]]
+                    if p3 and p3[0] in pos_idx_sorted:
+                        pos_idx_sorted.insert(pos_idx_sorted.index(p3[0]) + 1, y)
+                        break
+
+                    p4 = [i for i, x in enumerate([x[0] for x in geom_pos]) if x == geom_pos[y][-1]]
+                    if p4 and p4[0] in pos_idx_sorted:
+                        pos_idx_sorted.insert(pos_idx_sorted.index(p4[0]), y)
+                        break
+
+            geom_pos = [geom_pos[i] for i in pos_idx_sorted]
+            geom_pos = [x[:-1] for x in geom_pos[:-1]] + [geom_pos[-1]]
+            geom_pos = [x for g_pos in geom_pos for x in g_pos]
+
+        # j = 0
+        # n = g.number_of_nodes()
+        # while j < len(geom_pos):
+        #     # Nodes
+        #     g_pos = geom_pos[j]
+        #     for i in range(len(g_pos)):
+        #         g.add_node(i + n + 1, pos=g_pos[i])
+        #     # Edges
+        #     current_max_node_id = g.number_of_nodes()
+        #     edges = [(x, x + 1) for x in range(n + 1, n + current_max_node_id) if x + 1 <= current_max_node_id]
+        #     g.add_edges_from(edges)
+        #     n = current_max_node_id
+        #     j += 1
+
+        # Nodes
+
+        for i in range(len(geom_pos)):
+            g.add_node(i + 1 + max_node_id, pos=geom_pos[i])
+
+        # Edges
+        number_of_nodes = g.number_of_nodes()
+        edges = [(i, i + 1) for i in range(1 + max_node_id, number_of_nodes + 1) if i + 1 <= number_of_nodes]
+        # edges = [(i, i + 1) for i in range(1, number_of_nodes + 1) if i + 1 <= number_of_nodes]
+        g.add_edges_from(edges)
+
+        # Plot
+        nx.draw_networkx(g, pos=nx.get_node_attributes(g, name='pos'), ax=ax, node_size=0, with_labels=False)
+
+        max_node_id = number_of_nodes
+
+    ax.tick_params(left=True, bottom=True, labelleft=True, labelbottom=True, gridOn=True, grid_linestyle='--')
+    ax.ticklabel_format(useOffset=False)
+    ax.set_aspect('equal')
+    font_dict = {'fontsize': 13, 'fontname': 'Times New Roman'}
+    ax.set_xlabel('Easting', fontname=font_dict['fontname'], fontsize=14)
+    ax.set_xticklabels([int(x) for x in ax.get_xticks()], font_dict)
+    ax.set_ylabel('Northing', fontname=font_dict['fontname'], fontsize=14)
+    ax.set_yticklabels([int(y) for y in ax.get_yticks()], font_dict)
+    if rotate_labels:
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(rotate_labels)
+    plt.tight_layout()
+
+
+def cleanse_track_summary(dat):
+    """
+    Preprocess data of the table 'TrackSummary'.
+
+    :param dat: data of the table 'TrackSummary'
+    :type dat: pandas.DataFrame
+    :return: preprocessed data frame of ``dat``
+    :rtype: pandas.DataFrame
+
+    **Example**::
+
+        dat = track_summary.copy()
+
+        cleanse_track_summary(dat)
+    """
+
+    # Change column names
+    rename_cols = {'GEOGIS Switch ID': 'GeoGISSwitchID',
+                   'TID': 'TrackID',
+                   'StartYards': 'StartYard',
+                   'EndYards': 'EndYard',
+                   'Sub-route': 'SubRoute',
+                   'CP6 criticality': 'CP6Criticality',
+                   'CP5 Start Route': 'CP5StartRoute',
+                   'Adjacent S&C': 'AdjacentS&C',
+                   'Rail cumulative EMGT': 'RailCumulativeEMGT',
+                   'Sleeper cumulative EMGT': 'SleeperCumulativeEMGT',
+                   'Ballast cumulative EMGT': 'BallastCumulativeEMGT'}
+    dat.rename(columns=rename_cols, inplace=True)
+    renamed_cols = list(rename_cols.values())
+    upper_columns = ['ID', 'SRS', 'ELR', 'IMDM', 'TME', 'TSM', 'MGTPA', 'EMGTPA', 'LTSF', 'IRJs']
+    dat.columns = [string.capwords(x).replace(' ', '') if x not in upper_columns + renamed_cols else x
+                   for x in dat.columns]
+
+    # IMDM
+    dat.IMDM = dat.IMDM.map(lambda x: 'IMDM ' + x)
+
+    # Route
+    route_names_changes = load_json(cdd_network("Routes", "name-changes.json"))
+    # noinspection PyTypeChecker
+    temp1 = pd.DataFrame.from_dict(route_names_changes, orient='index', columns=['Route'])
+    route_names_in_table = list(dat.SubRoute.unique())
+    route_alt = [find_similar_str(x, temp1.index) for x in route_names_in_table]
+
+    temp2 = pd.DataFrame.from_dict(dict(zip(route_names_in_table, route_alt)), 'index', columns=['RouteAlias'])
+    temp = temp2.join(temp1, on='RouteAlias').dropna()
+    route_names_changes_alt = dict(zip(temp.index, temp.Route))
+    dat['Route'] = dat.SubRoute.replace(route_names_changes_alt)
+
+    # Mileages
+    mileage_colnames, yard_colnames = ['StartMileage', 'EndMileage'], ['StartYards', 'EndYards']
+    dat[mileage_colnames] = dat[yard_colnames].applymap(yards_to_nr_mileage)
+
+    return dat
+
+
 def get_track_summary(update=False, save_original_as=None, verbose=False):
     """
-    :param update: [bool] (default: False)
-    :param save_original_as: [str; None (default)]
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get data of the table 'Track Summary'.
 
-    Testing e.g.
-        update = True
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param save_original_as: file extension for saving the original data, defaults to ``None``
+    :type save_original_as: str, None
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of the table 'Track Summary'
+    :rtype: pandas.DataFrame, None
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        update           = True
         save_original_as = None
-        verbose = True
+        verbose          = True
 
-        get_track_summary(update, save_original_as, verbose)
+        track_summary = metex.get_track_summary(update, save_original_as, verbose)
+        print(track_summary)
     """
+
     table_name = 'Track Summary'
     path_to_pickle = cdd_metex_db_tables(table_name.replace(' ', '') + ".pickle")
 
@@ -1227,37 +1766,9 @@ def get_track_summary(update=False, save_original_as=None, verbose=False):
 
     else:
         try:
-            track_summary = read_metex_table(table_name, save_as=save_original_as, update=update)
+            track_summary_raw = read_metex_table(table_name, save_as=save_original_as, update=update)
 
-            # Column names
-            rename_cols = {'Id': 'TrackId',
-                           'Sub-route': 'SubRoute',
-                           'CP6 criticality': 'CP6Criticality',
-                           'CP5 Start Route': 'CP5StartRoute',
-                           'Adjacent S&C': 'AdjacentS&C',
-                           'Rail cumulative EMGT': 'RailCumulativeEMGT',
-                           'Sleeper cumulative EMGT': 'SleeperCumulativeEMGT',
-                           'Ballast cumulative EMGT': 'BallastCumulativeEMGT'}
-            track_summary.rename(columns=rename_cols, inplace=True)
-            renamed_cols = list(rename_cols.values())
-            upper_columns = ['SRS', 'ELR', 'TID', 'IMDM', 'TME', 'TSM', 'MGTPA', 'EMGTPA', 'LTSF', 'IRJs']
-            track_summary.columns = [string.capwords(x).replace(' ', '') if x not in upper_columns + renamed_cols else x
-                                     for x in track_summary.columns]
-
-            # IMDM
-            track_summary.IMDM = track_summary.IMDM.map(lambda x: 'IMDM ' + x)
-
-            # Route
-            route_names_changes = load_json(cdd_network("Routes", "name-changes.json"))
-            temp1 = pd.DataFrame.from_dict(route_names_changes, orient='index', columns=['Route'])
-            route_names_in_table = list(track_summary.SubRoute.unique())
-            route_alt = [find_similar_str(x, temp1.index) for x in route_names_in_table]
-
-            temp2 = pd.DataFrame.from_dict(dict(zip(route_names_in_table, route_alt)), 'index', columns=['RouteAlias'])
-            temp = temp2.join(temp1, on='RouteAlias').dropna()
-            route_names_changes_alt = dict(zip(temp.index, temp.Route))
-
-            track_summary['Route'] = track_summary.SubRoute.replace(route_names_changes_alt)
+            track_summary = cleanse_track_summary(track_summary_raw)
 
             save_pickle(track_summary, path_to_pickle, verbose=verbose)
 
@@ -1268,17 +1779,101 @@ def get_track_summary(update=False, save_original_as=None, verbose=False):
     return track_summary
 
 
-# Update the local pickle files for all tables
+def query_track_summary(elr, track_id, start_yard=None, end_yard=None, pickle_it=True, dat_dir=None, update=False,
+                        verbose=False):
+    """
+    Get track summary data by ``'Track ID'`` and ``'Yard'`` (Query from the database).
+
+    :param elr: ELR
+    :type elr: str
+    :param track_id: TrackID
+    :type track_id: tuple, int
+    :param start_yard: start yard, defaults to ``None``
+    :type start_yard: int, None
+    :param end_yard: end yard, defaults to ``None``
+    :type end_yard: int, None
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param dat_dir: directory where the queried data is saved, defaults to ``None``
+    :type dat_dir: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of track summary queried by ``'elr'``, ``'track_id'``, ``'start_yard'`` and ``'end_yard'``
+    :rtype: pandas.DataFrame
+
+    **Example**::
+
+        from mssqlserver import metex
+
+        elr        = 'AAV'
+        track_id   = 1100
+        start_yard = 51150
+        end_yard   = 66220
+        pickle_it  = False
+        dat_dir    = None
+        update     = False
+        show       = False
+        verbose    = False
+
+        track_summary = metex.query_track_summary(elr, track_id, start_yard, end_yard, pickle_it,
+                                                  dat_dir, update, verbose)
+        print(track_summary)
+    """
+
+    assert isinstance(elr, str)
+    assert isinstance(track_id, (tuple, int, np.integer))
+
+    pickle_filename = "{}_{}_{}_{}.pickle".format(
+        "-".join(str(x) for x in list(elr)) if isinstance(elr, tuple) else elr,
+        "-".join(str(x) for x in list(track_id)) if isinstance(track_id, tuple) else track_id,
+        start_yard, end_yard)
+
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_metex_db_views()
+    path_to_pickle = cd(dat_dir, pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        return load_pickle(path_to_pickle)
+
+    else:
+        try:
+            conn_metex = establish_mssql_connection(database_name=metex_database_name())
+            sql_query = "SELECT * FROM dbo.[Track Summary] WHERE {}{}'{}' AND {}{}{} AND {} AND {};".format(
+                "[ELR]", " = " if isinstance(elr, str) else " IN ", elr,
+                "[TID]", " = " if isinstance(track_id, (int, np.integer)) else " IN ", track_id,
+                "[Start Yards] >= {}".format(start_yard) if start_yard else "",
+                "[End Yards] <= {}".format(end_yard) if end_yard else "")
+            track_summary_raw = pd.read_sql(sql_query, conn_metex)
+
+            track_summary = cleanse_track_summary(track_summary_raw)
+
+            if pickle_it:
+                save_pickle(track_summary, path_to_pickle, verbose=verbose)
+
+            return track_summary
+
+        except Exception as e:
+            print("Failed to get \"{}\". {}.".format(os.path.splitext(os.path.basename(path_to_pickle))[0], e))
+
+
 def update_metex_table_pickles(update=True, verbose=True):
     """
-    :param update: [bool] (default: True)
-    :param verbose: [bool] (default: True)
+    Update the local pickle files for all tables.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``True``
+    :type verbose: bool, int
+
+    **Examples**::
+
         update = True
         verbose = True
+
         update_metex_table_pickles(update, verbose)
     """
+
     if confirmed("To update the local pickles of the Table data of the NR_METEX database?"):
 
         _ = get_imdm(as_dict=False, update=update, save_original_as=None, verbose=verbose)
@@ -1302,12 +1897,12 @@ def update_metex_table_pickles(update=True, verbose=True):
         _ = get_weather_codes(as_dict=False, update=update, save_original_as=None, verbose=verbose)
         _ = get_weather_codes(as_dict=True, update=update, save_original_as=None, verbose=verbose)
 
-        _ = get_incident_record(update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
+        _ = get_incident_record(update=update, save_original_as=None, use_amendment_csv=True, verbose=verbose)
 
         _ = get_location(update=update, save_original_as=None, verbose=verbose)
 
-        _ = get_pfpi(plus=True, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
-        _ = get_pfpi(plus=False, update=update, save_original_as=None, use_corrected_csv=True, verbose=verbose)
+        _ = get_pfpi(plus=True, update=update, save_original_as=None, use_amendment_csv=True, verbose=verbose)
+        _ = get_pfpi(plus=False, update=update, save_original_as=None, use_amendment_csv=True, verbose=verbose)
 
         _ = get_route(as_dict=False, update=update, save_original_as=None, verbose=verbose)
         _ = get_route(as_dict=True, update=update, save_original_as=None, verbose=verbose)
@@ -1318,11 +1913,14 @@ def update_metex_table_pickles(update=True, verbose=True):
         _ = get_stanox_section(update=update, save_original_as=None, verbose=verbose)
 
         _ = get_trust_incident(start_year=2006, end_year=None, update=update, save_original_as=None,
-                               use_corrected_csv=True, verbose=verbose)
+                               use_amendment_csv=True, verbose=verbose)
+
         # _ = get_weather()
 
-        _ = get_weather_cell(update=update, save_original_as=None, show_map=True, projection='tmerc',
-                             save_map_as=".png", dpi=600, verbose=verbose)
+        _ = get_weather_cell(route_name=None, update=update, save_original_as=None, show_map=True, projection='tmerc',
+                             save_map_as=".tif", dpi=None, verbose=verbose)
+        _ = get_weather_cell('Anglia', update=update, save_original_as=None, show_map=True, projection='tmerc',
+                             save_map_as=".tif", dpi=None, verbose=verbose)
         # _ = get_weather_cell_map_boundary(route=None, adjustment=(0.285, 0.255))
 
         _ = get_track(update=update, save_original_as=None, verbose=verbose)
@@ -1333,64 +1931,105 @@ def update_metex_table_pickles(update=True, verbose=True):
             print("\nUpdate finished.")
 
 
-# ====================================================================================================================
-""" Tools """
+# == Tools to make information integration easier =====================================================
 
 
-# Create a filename
-def make_filename(base_name=None, route_name=None, weather_category=None, *extra_suffixes, sep="-", save_as=".pickle"):
+def make_filename(base_name=None, route_name=None, weather_category=None, extra_suffixes=None, sep="-",
+                  save_as=".pickle"):
     """
-    :param base_name: [str; None (default)]
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param extra_suffixes: [str; None (default)]
-    :param sep: [str] (default: "-")
-    :param save_as: [str] (default: ".pickle")
-    :return: [str]
+    Make a filename as appropriate.
 
-    Testing e.g.
+    :param base_name: base name, defaults to ``None``
+    :type base_name: str, None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param extra_suffixes: extra suffixes to the filename
+    :type extra_suffixes: str, None
+    :param sep: a separator in the filename, defaults to ``"-"``
+    :type sep: str, None
+    :param save_as: file extension, defaults to ``".pickle"``
+    :type save_as: str
+    :return: a filename
+    :rtype: str
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         base_name = "test"  # None
         route_name = None
         weather_category = None
         sep = "-"
         save_as = ".pickle"
 
-        make_filename(base_name, route_name, weather_category)
-        make_filename(None, route_name, weather_category, "test1", "test2")
-        make_filename(base_name, route_name, weather_category, "test1", "test2")
-        make_filename(base_name, 'Anglia', weather_category, "test1", "test2")
-        make_filename(base_name, 'North and East', 'Heat', "test1", "test2")
+        metex.make_filename(base_name, route_name, weather_category)
+        # test.pickle
+
+        metex.make_filename(None, route_name, weather_category, "test1")
+        # test1.pickle
+
+        metex.make_filename(base_name, route_name, weather_category, ["test1", "test2"])
+        # test-test1-test2.pickle
+
+        metex.make_filename(base_name, 'Anglia', weather_category, "test2")
+        # test-Anglia-test2.pickle
+
+        metex.make_filename(base_name, 'North and East', 'Heat', ["test1", "test2"])
+        # test-North_and_East-Heat-test1-test2.pickle
     """
+
     base_name_ = "" if base_name is None else base_name
-    route_name_ = "" if route_name is None \
-        else (sep if base_name_ else "") + find_similar_str(route_name, get_route().Route).replace(" ", "_")
-    weather_category_ = "" if weather_category is None \
-        else (sep if route_name_ else "") + find_similar_str(weather_category,
-                                                             get_weather_codes().WeatherCategory).replace(" ", "_")
+
+    if route_name is None:
+        route_name_ = ""
+    else:
+        rts = get_route().Route
+        route_name_ = (sep if base_name_ else "") + find_similar_str(route_name, rts).replace(" ", "_")
+
+    if weather_category is None:
+        weather_category_ = ""
+    else:
+        wcs = get_weather_codes().WeatherCategory
+        weather_category_ = (sep if route_name_ else "") + find_similar_str(weather_category, wcs).replace(" ", "_")
+
     if extra_suffixes:
-        suffix = ["{}".format(s) for s in extra_suffixes if s]
+        extra_suffixes_ = [extra_suffixes] if isinstance(extra_suffixes, str) else extra_suffixes
+        suffix = ["{}".format(s) for s in extra_suffixes_ if s]
         suffix = (sep if any(x for x in (base_name_, route_name_, weather_category_)) else "") + sep.join(suffix) \
-            if len(suffix) > 1 else sep + suffix[0]
+            if len(suffix) > 1 else (sep + suffix[0] if route_name_ or weather_category_ else suffix[0])
         filename = base_name_ + route_name_ + weather_category_ + suffix + save_as
     else:
         filename = base_name_ + route_name_ + weather_category_ + save_as
+
     return filename
 
 
-# Subset the required data given 'route' and 'weather category'
 def get_subset(data_set, route_name=None, weather_category=None, rearrange_index=False):
     """
-    :param data_set: [pd.DataFrame; None]
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param rearrange_index: [bool] (default: False)
-    :return: [pd.DataFrame; None]
+    Get a subset of the given data frame for the specified Route and weather category.
 
-    Testing e.g.
+    :param data_set: a given data frame
+    :type data_set: pandas.DataFrame, None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param rearrange_index: whether to rearrange the index of the subset, defaults to ``False``
+    :type rearrange_index: bool
+    :return: a subset for the given ``route_name`` and ``weather_category``
+    :rtype: pandas.DataFrame, None
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         route_name = 'Anglia'
         weather_category = None
         rearrange_index = False
     """
+
     if data_set is not None:
         assert isinstance(data_set, pd.DataFrame) and not data_set.empty
         data_subset = data_set.copy(deep=True)
@@ -1428,22 +2067,30 @@ def get_subset(data_set, route_name=None, weather_category=None, rearrange_index
     return data_subset
 
 
-# Calculate the DelayMinutes and DelayCosts for grouped data
 def calculate_pfpi_stats(data_set, selected_features, sort_by=None):
     """
-    :param data_set: [pd.DataFrame]
-    :param selected_features: [list]
-    :param sort_by: [str; list; None (default)]
-    :return: [pd.DataFrame]
+    Calculate the 'DelayMinutes' and 'DelayCosts' for grouped data.
 
-    Testing e.g.
+    :param data_set: a given data frame
+    :type data_set: pandas.DataFrame
+    :param selected_features: a list of selected features (column names)
+    :type selected_features: list
+    :param sort_by: a column or a list of columns by which the selected data is sorted, defaults to ``None``
+    :type sort_by: str, list, None
+    :return: pandas.DataFrame
+
+    **Example**::
+
         data_set = selected_data.copy()
+
+        calculate_pfpi_stats(data_set, selected_features, sort_by=None)
     """
+
     pfpi_stats = data_set.groupby(selected_features[1:-2]).aggregate({
         # 'IncidentId_and_CreateDate': {'IncidentCount': np.count_nonzero},
-        'PfPIId': pd.np.count_nonzero,
-        'PfPIMinutes': pd.np.sum,
-        'PfPICosts': pd.np.sum})
+        'PfPIId': np.count_nonzero,
+        'PfPIMinutes': np.sum,
+        'PfPICosts': np.sum})
 
     pfpi_stats.columns = ['IncidentCount', 'DelayMinutes', 'DelayCost']
     pfpi_stats.reset_index(inplace=True)  # Reset the grouped indexes to columns
@@ -1454,35 +2101,53 @@ def calculate_pfpi_stats(data_set, selected_features, sort_by=None):
     return pfpi_stats
 
 
-# ====================================================================================================================
-""" Get views """
+# == Functions to create views ========================================================================
 
 
-# View Schedule 8 details (TRUST data)
 def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=False, weather_attributed_only=False,
                         update=False, pickle_it=False, verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param rearrange_index: [bool] (default: False)
-    :param weather_attributed_only: [bool] (default: False)
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    View Schedule 8 details (TRUST data).
 
-    Testing e.g.
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param rearrange_index: whether to rearrange the index of the queried data, defaults to ``False``
+    :type rearrange_index: bool
+    :param weather_attributed_only: defaults to ``False``
+    :type weather_attributed_only: bool
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: data of Schedule 8 details
+    :rtype: pandas.DataFrame
+
+    **Example**::
+
+        from mssqlserver import metex
+
         route_name = None
         weather_category = None
         rearrange_index = True
-        weather_attributed_only = False
         update = True
-        pickle_it = False
+        pickle_it = True
         verbose = True
 
-        view_schedule8_data(route_name, weather_category, reset_index, weather_attributed_only,
-                            update, pickle_it, verbose)
+        weather_attributed_only = False
+        schedule8_data = metex.view_schedule8_data(route_name, weather_category, rearrange_index,
+                                                   weather_attributed_only, update, pickle_it, verbose)
+        print(schedule8_data)
+
+        weather_attributed_only = True
+        schedule8_data = metex.view_schedule8_data(route_name, weather_category, rearrange_index,
+                                                   weather_attributed_only, update, pickle_it, verbose)
+        print(schedule8_data)
     """
+
     filename = "Schedule8-data" + ("-weather-attributed" if weather_attributed_only else "")
     pickle_filename = make_filename(filename, route_name, weather_category, save_as=".pickle")
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -1531,6 +2196,8 @@ def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=
                          on='IncidentReasonCode', how='inner'). \
                     join(imdm, on='IMDM_Location', how='inner')  # (5024674, 60)
 
+                del pfpi, incident_record, trust_incident, stanox_section, location, stanox_location, \
+                    incident_reason_info, imdm
                 gc.collect()
 
                 # Note: There may be errors in e.g. IMDM data/column, location id, of the TrustIncident table.
@@ -1560,10 +2227,10 @@ def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=
                                       inplace=True)
 
                 # Use 'Station' data from Railway Codes website
-                other_assets = OtherAssets()
-                station_locations = other_assets.Stations.fetch_station_locations()
+                stn = Stations()
+                station_locations = stn.fetch_railway_station_data()['Railway station data']
 
-                station_locations = station_locations['Stations'][['Station', 'Degrees Longitude', 'Degrees Latitude']]
+                station_locations = station_locations[['Station', 'Degrees Longitude', 'Degrees Latitude']]
                 station_locations = station_locations.dropna().drop_duplicates('Station', keep='first')
                 station_locations.set_index('Station', inplace=True)
                 temp = schedule8_data[['StartLocation']].join(station_locations, on='StartLocation', how='left')
@@ -1590,7 +2257,7 @@ def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=
             schedule8_data = get_subset(schedule8_data, route_name, weather_category, rearrange_index)
 
             if pickle_it:
-                if path_to_pickle != path_to_merged:
+                if not os.path.isfile(path_to_merged) or path_to_pickle != path_to_merged:
                     save_pickle(schedule8_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
@@ -1600,25 +2267,37 @@ def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=
     return schedule8_data
 
 
-# Essential details about Incidents
 def view_schedule8_data_pfpi(route_name=None, weather_category=None, update=False, pickle_it=False, verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get a view of essential details about Schedule 8 incidents.
 
-    Testing e.g.
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: essential details about Schedule 8 incidents
+    :rtype: pandas.DataFrame
+
+    **Example**::
+
+        from mssqlserver import metex
+
         route_name = None
         weather_category = None
-        update = False
-        pickle_it = False
+        update = True
+        pickle_it = True
         verbose = True
 
-        view_schedule8_data_pfpi(route_name, weather_category, update, pickle_it, verbose)
+        data = metex.view_schedule8_data_pfpi(route_name, weather_category, update, pickle_it, verbose)
+        print(data)
     """
+
     filename = "Schedule8-details-pfpi"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -1669,34 +2348,63 @@ def view_schedule8_data_pfpi(route_name=None, weather_category=None, update=Fals
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 data by incident location and Weather category
-def view_schedule8_costs_by_location(route_name=None, weather_category=None, update=False,
-                                     pickle_it=True, verbose=False) -> pd.DataFrame:
+def view_schedule8_costs_by_location(route_name=None, weather_category=None, update=False, pickle_it=True,
+                                     verbose=False) -> pd.DataFrame:
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 data by incident location and Weather category.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 data by incident location and Weather category
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         update = True
         pickle_it = True
         verbose = True
 
-        view_schedule8_costs_by_location(route_name, weather_category, update, pickle_it, verbose)
-        view_schedule8_costs_by_location('Anglia', weather_category, update, pickle_it, verbose)
-        view_schedule8_costs_by_location('Anglia', 'Wind', update, pickle_it, verbose)
+        route_name = None
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_location(route_name, weather_category, update,
+                                                                pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_location(route_name, weather_category, update,
+                                                                pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Wind'
+        extracted_data = metex.view_schedule8_costs_by_location(route_name, weather_category, update,
+                                                                pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Heat'
+        extracted_data = metex.view_schedule8_costs_by_location(route_name, weather_category, update,
+                                                                pickle_it, verbose)
+        print(extracted_data)
     """
+
     filename = "Schedule8-costs-by-location"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        return load_pickle(path_to_pickle, verbose=verbose)
 
     else:
         try:
@@ -1727,33 +2435,63 @@ def view_schedule8_costs_by_location(route_name=None, weather_category=None, upd
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 data by datetime and location
-def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=None, update=False,
-                                              pickle_it=True, verbose=False) -> pd.DataFrame:
+def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=None, update=False, pickle_it=True,
+                                              verbose=False) -> pd.DataFrame:
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 data by datetime and location.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 data by datetime and location
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         update = True
         pickle_it = True
         verbose = True
 
-        view_schedule8_costs_by_datetime_location(route_name, weather_category, update, pickle_it, verbose)
-        view_schedule8_costs_by_datetime_location('Anglia', weather_category, update, pickle_it, verbose)
+        route_name = None
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category,
+                                                                         update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category,
+                                                                         update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Wind'
+        extracted_data = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category,
+                                                                         update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Heat'
+        extracted_data = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category,
+                                                                         update, pickle_it, verbose)
+        print(extracted_data)
     """
+
     filename = "Schedule8-costs-by-datetime-location"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        return load_pickle(path_to_pickle, verbose=verbose)
 
     else:
         try:
@@ -1792,35 +2530,63 @@ def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 costs by datetime, location and incident reason
 def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_category=None, update=False,
                                                      pickle_it=True, verbose=False) -> pd.DataFrame:
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 costs by datetime, location and incident reason.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 costs by datetime, location and incident reason
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         update = True
         pickle_it = True
         verbose = True
 
-        view_schedule8_costs_by_datetime_location_reason(route_name, weather_category, update, pickle_it, verbose)
-        view_schedule8_costs_by_datetime_location_reason('Anglia', weather_category, update, pickle_it, verbose)
-        view_schedule8_costs_by_datetime_location_reason('Anglia', 'Wind', update, pickle_it, verbose)
-        view_schedule8_costs_by_datetime_location_reason('Anglia', 'Heat', update, pickle_it, verbose)
+        route_name = None
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_datetime_location_reason(
+            route_name, weather_category, update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = None
+        extracted_data = metex.view_schedule8_costs_by_datetime_location_reason(
+            route_name, weather_category, update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Wind'
+        extracted_data = metex.view_schedule8_costs_by_datetime_location_reason(
+            route_name, weather_category, update, pickle_it, verbose)
+        print(extracted_data)
+
+        route_name = 'Anglia'
+        weather_category = 'Heat'
+        extracted_data = metex.view_schedule8_costs_by_datetime_location_reason(
+            route_name, weather_category, update, pickle_it, verbose)
+        print(extracted_data)
     """
+
     filename = "Schedule8-costs-by-datetime-location-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        return load_pickle(path_to_pickle, verbose=verbose)
 
     else:
         try:
@@ -1866,26 +2632,25 @@ def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_ca
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 data by datetime and Weather category
-def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, update=False,
-                                     pickle_it=False, verbose=False):
+def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, update=False, pickle_it=False,
+                                     verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 data by datetime and Weather category.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
-        update = True
-        pickle_it = False
-        verbose = True
-
-        view_schedule8_costs_by_datetime(route_name, weather_category, update, pickle_it, verbose)
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 data by datetime and Weather category
+    :rtype: pandas.DataFrame
     """
+
     filename = "Schedule8-costs-by-datetime"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -1924,26 +2689,25 @@ def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, upd
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 costs by incident reason
-def view_schedule8_costs_by_reason(route_name=None, weather_category=None, update=False,
-                                   pickle_it=False, verbose=False):
+def view_schedule8_costs_by_reason(route_name=None, weather_category=None, update=False, pickle_it=False,
+                                   verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 costs by incident reason.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
-        update = True
-        pickle_it = False
-        verbose = True
-
-        view_schedule8_costs_by_reason(route_name, weather_category, update, pickle_it, verbose)
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 costs by incident reason
+    :rtype: pandas.DataFrame
     """
+
     filename = "Schedule8-costs-by-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -1987,26 +2751,25 @@ def view_schedule8_costs_by_reason(route_name=None, weather_category=None, updat
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 costs by location and incident reason
-def view_schedule8_costs_by_location_reason(route_name=None, weather_category=None, update=False,
-                                            pickle_it=False, verbose=False):
+def view_schedule8_costs_by_location_reason(route_name=None, weather_category=None, update=False, pickle_it=False,
+                                            verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 costs by location and incident reason.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
-        update = True
-        pickle_it = False
-        verbose = True
-
-        view_schedule8_costs_by_location_reason(route_name, weather_category, update, pickle_it, verbose)
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 costs by location and incident reason
+    :rtype: pandas.DataFrame
     """
+
     filename = "Schedule8-costs-by-location-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -2055,26 +2818,25 @@ def view_schedule8_costs_by_location_reason(route_name=None, weather_category=No
             print("Failed to retrieve \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 costs by Weather category
-def view_schedule8_costs_by_weather_category(route_name=None, weather_category=None, update=False,
-                                             pickle_it=False, verbose=False):
+def view_schedule8_costs_by_weather_category(route_name=None, weather_category=None, update=False, pickle_it=False,
+                                             verbose=False):
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param update: [bool] (default: False)
-    :param pickle_it: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return: [pd.DataFrame]
+    Get Schedule 8 costs by weather category.
 
-    Testing e.g.
-        route_name = None
-        weather_category = None
-        update = True
-        pickle_it = False
-        verbose = True
-
-        view_schedule8_costs_by_weather_category(route_name, weather_category, update, pickle_it, verbose)
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``False``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 costs by weather category
+    :rtype: pandas.DataFrame
     """
+
     filename = "Schedule8-costs-by-weather_category"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
@@ -2106,30 +2868,63 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
             print("Failed to retrieve \"{}.\" \n{}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Get Schedule 8 costs (delay minutes & costs) aggregated for each STANOX section
-def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=None, start_and_end_elr=None,
-                                           update=False, verbose=False) -> pd.DataFrame:
+def view_metex_schedule8_incident_locations(route_name=None, weather_category=None, start_and_end_elr=None,
+                                            update=False, verbose=False) -> pd.DataFrame:
     """
-    :param route_name: [str; None (default)]
-    :param weather_category: [str; None (default)]
-    :param start_and_end_elr: [str; None (default)] 'same', 'diff'
-    :param update: [bool] (default: False)
-    :param verbose: [bool] (default: False)
-    :return:
+    Get Schedule 8 costs (delay minutes & costs) aggregated for each STANOX section.
 
-    Testing e.g.
-        route_name = None
+    :param route_name: name of a Route, defaults to ``None``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``None``
+    :type weather_category: str, None
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param start_and_end_elr: indicating if start ELR and end ELR are the same or not, defaults to ``False``
+    :type start_and_end_elr: str, bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: Schedule 8 costs (delay minutes & costs) aggregated for each STANOX section
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         weather_category = None
-        start_and_end_elr = None
         update = True
         verbose = True
 
-        fetch_incident_locations_from_nr_metex('Anglia', weather_category, start_and_end_elr, update, verbose)
+        route_name = None
+        start_and_end_elr = None
+        incident_locations = metex.view_metex_schedule8_incident_locations(
+            route_name, weather_category, start_and_end_elr, update, verbose)
+        print(incident_locations)
+
+        route_name = None
+        start_and_end_elr = 'same'
+        incident_locations = metex.view_metex_schedule8_incident_locations(
+            route_name, weather_category, start_and_end_elr, update, verbose)
+        print(incident_locations)
+
+        route_name = None
+        start_and_end_elr = 'diff'
+        incident_locations = metex.view_metex_schedule8_incident_locations(
+            route_name, weather_category, start_and_end_elr, update, verbose)
+        print(incident_locations)
+
+        route_name = 'Anglia'
+        start_and_end_elr = None
+        incident_locations = metex.view_metex_schedule8_incident_locations(
+            route_name, weather_category, start_and_end_elr, update, verbose)
+        print(incident_locations)
     """
+
     assert start_and_end_elr in (None, 'same', 'diff')
 
     filename = "Schedule8-incident-locations"
-    pickle_filename = make_filename(filename, route_name, weather_category)
+
+    start_and_end_elr_ = start_and_end_elr + 'ELR' if start_and_end_elr else start_and_end_elr
+    pickle_filename = make_filename(filename, route_name, weather_category, start_and_end_elr_)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
     try:
@@ -2142,14 +2937,43 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
             s8costs_by_location = s8costs_by_location.loc[:, 'Route':'EndLatitude']
             incident_locations = s8costs_by_location.drop_duplicates()
 
-            # Create two additional columns about data of mileages (convert str to num)
-            incident_locations[['StartMileage_num', 'EndMileage_num']] = \
-                incident_locations[['StartMileage', 'EndMileage']].applymap(str_to_num_mileage)
-
             # Remove records for which ELR information was missing
             incident_locations = incident_locations[
-                ~(incident_locations.StartELR.str.contains('^$')) &
-                ~(incident_locations.EndELR.str.contains('^$'))]
+                ~(incident_locations.StartELR.str.contains('^$')) & ~(incident_locations.EndELR.str.contains('^$'))]
+
+            # 'FJH'
+            idx = (incident_locations.StartLocation == 'Halton Junction') & (incident_locations.StartELR == 'FJH')
+            incident_locations.loc[idx, 'StartMileage'] = '0.0000'
+            idx = (incident_locations.EndLocation == 'Halton Junction') & (incident_locations.EndELR == 'FJH')
+            incident_locations.loc[idx, 'EndMileage'] = '0.0000'
+            # 'BNE'
+            idx = (incident_locations.StartLocation == 'Benton North Junction') & (incident_locations.StartELR == 'BNE')
+            incident_locations.loc[idx, 'StartMileage'] = '0.0000'
+            idx = (incident_locations.EndLocation == 'Benton North Junction') & (incident_locations.EndELR == 'BNE')
+            incident_locations.loc[idx, 'EndMileage'] = '0.0000'
+            # 'WCI'
+            idx = (incident_locations.StartLocation == 'Grangetown (Cleveland)') & \
+                  (incident_locations.StartELR == 'WCI')
+            incident_locations.loc[idx, ('StartELR', 'StartMileage')] = 'DSN2', mile_chain_to_nr_mileage('1.38')
+            idx = (incident_locations.EndLocation == 'Grangetown (Cleveland)') & (incident_locations.EndELR == 'WCI')
+            incident_locations.loc[idx, ('EndELR', 'EndMileage')] = 'DSN2', mile_chain_to_nr_mileage('1.38')
+            # 'SJD'
+            idx = (incident_locations.EndLocation == 'Skelton Junction [Manchester]') & \
+                  (incident_locations.EndELR == 'SJD')
+            incident_locations.loc[idx, 'EndMileage'] = '0.0000'
+            # 'HLK'
+            idx = (incident_locations.EndLocation == 'High Level Bridge Junction') & \
+                  (incident_locations.EndELR == 'HLK')
+            incident_locations.loc[idx, 'EndMileage'] = '0.0000'
+
+            # Create two additional columns about data of mileages (convert str to num)
+            incident_locations[['StartMileage_num', 'EndMileage_num']] = \
+                incident_locations[['StartMileage', 'EndMileage']].applymap(nr_mileage_str_to_num)
+
+            incident_locations['StartEasting'], incident_locations['StartNorthing'] = \
+                wgs84_to_osgb36(incident_locations.StartLongitude.values, incident_locations.StartLatitude.values)
+            incident_locations['EndEasting'], incident_locations['EndNorthing'] = \
+                wgs84_to_osgb36(incident_locations.EndLongitude.values, incident_locations.EndLatitude.values)
 
             save_pickle(incident_locations, path_to_pickle, verbose=verbose)
 
@@ -2167,20 +2991,74 @@ def fetch_incident_locations_from_nr_metex(route_name=None, weather_category=Non
         print("Failed to fetch \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# Update the local pickle files for all essential views
+# (Unfinished)
+def view_schedule8_incident_location_tracks(shift_yards=220):
+
+    incident_locations = view_metex_schedule8_incident_locations()
+
+    track = get_track()
+
+    track_summary = get_track_summary()
+
+    # Testing e.g.
+    elr = incident_locations.StartELR.loc[24133]
+    start_location = shapely.geometry.Point(incident_locations[['StartEasting', 'StartNorthing']].iloc[0].values)
+    end_location = shapely.geometry.Point(incident_locations[['EndEasting', 'EndNorthing']].iloc[0].values)
+    start_mileage_num = incident_locations.StartMileage_num.loc[24133]
+    start_yard = nr_mileage_to_yards(start_mileage_num)
+    end_mileage_num = incident_locations.EndMileage_num.loc[24133]
+    end_yard = nr_mileage_to_yards(end_mileage_num)
+
+    #
+    track_elr_mileages = track[track.ELR == elr]
+
+    # Call OSM railway data
+    import pydriosm as dri
+
+    # Download GB OSM data
+    dri.read_shp_zip('Great Britain', layer='railways', feature='rail', data_dir=cdd_network("OSM"), pickle_it=True,
+                     rm_extracts=True, rm_shp_zip=True)
+    # Import it into PostgreSQL
+
+    # Write a query to get track coordinates available in OSM data
+
+    if start_mileage_num <= end_mileage_num:
+
+        if start_mileage_num == end_mileage_num:
+            start_mileage_num = shift_num_nr_mileage(start_mileage_num, -shift_yards)
+            end_mileage_num = shift_num_nr_mileage(end_mileage_num, shift_yards)
+
+        # Get adjusted mileages of start and end locations
+        incident_track = track_elr_mileages[(start_mileage_num >= track_elr_mileages.StartMileage_num) &
+                                            (end_mileage_num <= track_elr_mileages.EndMileage_num)]
+
+    else:
+        incident_track = track_elr_mileages[(start_mileage_num <= track_elr_mileages.EndMileage_num) &
+                                            (end_mileage_num >= track_elr_mileages.StartMileage_num)]
+
+
 def update_metex_view_pickles(update=True, pickle_it=True, verbose=True):
     """
-    :param update: [bool] (default: True)
-    :param pickle_it: [bool] (default: True)
-    :param verbose: [bool] (default: True)
+    Update the local pickle files for all essential views.
 
-    Testing e.g.
+    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :type update: bool
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``True``
+    :type verbose: bool, int
+
+    **Examples**::
+
+        from mssqlserver import metex
+
         update = True
         pickle_it = True
         verbose = True
 
-        update_metex_view_pickles(update, pickle_it, verbose)
+        metex.update_metex_view_pickles(update, pickle_it, verbose)
     """
+
     if confirmed("To update the View pickles of the NR_METEX data?"):
 
         _ = view_schedule8_costs_by_location(None, None, update, pickle_it, verbose)
@@ -2198,7 +3076,7 @@ def update_metex_view_pickles(update=True, pickle_it=True, verbose=True):
         _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Wind', update, pickle_it, verbose)
         _ = view_schedule8_costs_by_datetime_location_reason('Anglia', 'Heat', update, pickle_it, verbose)
 
-        _ = fetch_incident_locations_from_nr_metex(None, None, start_and_end_elr=None, update=update, verbose=verbose)
+        _ = view_metex_schedule8_incident_locations(None, None, start_and_end_elr=None, update=update, verbose=verbose)
 
         if verbose:
             print("\nUpdate finished.")
