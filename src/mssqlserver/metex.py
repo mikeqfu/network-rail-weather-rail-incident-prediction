@@ -41,7 +41,7 @@ from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_
 
 from misc.dag import get_incident_reason_metadata, get_performance_event_code
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
-from utils import cdd_metex, cdd_network, make_filename, update_nr_route_names
+from utils import cdd_metex, cdd_network, get_subset, make_filename, update_nr_route_names
 
 pd_preferences()
 mpl_preferences()
@@ -1928,67 +1928,6 @@ def update_metex_table_pickles(update=True, verbose=True):
 
 
 # == Tools to make information integration easier =====================================================
-
-def get_subset(data_set, route_name=None, weather_category=None, rearrange_index=False):
-    """
-    Get a subset of the given data frame for the specified Route and weather category.
-
-    :param data_set: a given data frame
-    :type data_set: pandas.DataFrame, None
-    :param route_name: name of a Route, defaults to ``None``
-    :type route_name: str, None
-    :param weather_category: weather category, defaults to ``None``
-    :type weather_category: str, None
-    :param rearrange_index: whether to rearrange the index of the subset, defaults to ``False``
-    :type rearrange_index: bool
-    :return: a subset for the given ``route_name`` and ``weather_category``
-    :rtype: pandas.DataFrame, None
-
-    **Examples**::
-
-        from mssqlserver import metex
-
-        route_name = 'Anglia'
-        weather_category = None
-        rearrange_index = False
-    """
-
-    if data_set is not None:
-        assert isinstance(data_set, pd.DataFrame) and not data_set.empty
-        data_subset = data_set.copy(deep=True)
-
-        if route_name:
-            try:  # assert 'Route' in data_subset.columns
-                data_subset.Route = data_subset.Route.astype(str)
-                route_names = get_route()
-                route_lookup = list(set(route_names.Route)) + list(set(route_names.RouteAlias))
-                route_name_ = [
-                    fuzzywuzzy.process.extractOne(x, route_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
-                    for x in ([route_name] if isinstance(route_name, str) else list(route_name))]
-                data_subset = data_subset[data_subset.Route.isin(route_name_)]
-            except AttributeError:
-                print("Couldn't slice the data by \"Route\". The attribute may not exist in the 'data_set'.")
-                pass
-
-        if weather_category:
-            try:  # assert 'WeatherCategory' in data_subset.columns
-                data_subset.WeatherCategory = data_subset.WeatherCategory.astype(str)
-                weather_category_code = get_weather_codes()
-                weather_category_lookup = list(set(weather_category_code.WeatherCategory))
-                weather_category_ = [
-                    fuzzywuzzy.process.extractOne(x, weather_category_lookup, scorer=fuzzywuzzy.fuzz.ratio)[0]
-                    for x in ([weather_category] if isinstance(weather_category, str) else list(weather_category))]
-                data_subset = data_subset[data_subset.WeatherCategory.isin(weather_category_)]
-            except AttributeError:
-                print("Couldn't slice the data by \"WeatherCategory\". The attribute may not exist in the 'data_set'.")
-                pass
-
-        if rearrange_index:
-            data_subset.index = range(len(data_subset))  # NOT dat.reset_index(inplace=True)
-    else:
-        data_subset = None
-    return data_subset
-
 
 def calculate_pfpi_stats(data_set, selected_features, sort_by=None):
     """
