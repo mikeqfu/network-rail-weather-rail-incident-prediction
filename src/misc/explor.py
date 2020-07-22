@@ -2,6 +2,9 @@
 
 import itertools
 
+import matplotlib.cm
+import matplotlib.pyplot as plt
+import matplotlib.ticker
 import numpy as np
 import pandas as pd
 from pyhelpers.dir import cdd
@@ -11,10 +14,151 @@ from pyhelpers.store import save
 
 from models.prototype.plot_hotspots import get_shp_coordinates
 from mssqlserver import metex
+from utils import cdd_incidents
 
 pd_preferences()
 
-# Get a collection of coordinates of the railways in GB
+
+def calc_stats(s8weather_incidents):
+    """
+    Calculate statistics of different categories of weather-related incidents.
+
+    :param s8weather_incidents: data of weather-related incidents
+    :type s8weather_incidents: pandas.DataFrame
+    :return: statistics about frequencies of different categories of weather-related incidents and their total costs
+    :rtype: pandas.DataFrame
+    """
+    s8weather_incidents.rename(columns={'Minutes': 'DelayMinutes', 'Cost': 'DelayCost'}, inplace=True)
+    stats = s8weather_incidents.groupby('WeatherCategory').aggregate(
+        {'WeatherCategory': 'count', 'DelayMinutes': np.sum, 'DelayCost': np.sum})
+    stats.rename(columns={'WeatherCategory': 'Count'}, inplace=True)
+    stats['percentage'] = stats.Count / len(s8weather_incidents) * 100
+    # Sort stats in the ascending order of 'percentage'
+    stats.sort_values('percentage', ascending=False, inplace=True)
+    return stats
+
+
+def create_pie_plot_for_incident_proportions(s8weather_incidents, save_as=".png"):
+    """
+    Create a pie chart illustrating the proportions of different categories of weather-related incidents.
+
+    :param s8weather_incidents: data of Schedule 8 incidents
+    :type s8weather_incidents: pandas.DataFrame
+    :param save_as: whether to save the pie chart / what format the pie chart is saved as, defaults to ``".png"``
+    :type save_as: str, None
+
+    **Example**::
+
+        from spreadsheet.incidents import get_schedule8_weather_incidents_02062006_31032014
+        from misc.explor import create_pie_plot_for_incident_proportions
+
+        save_as = ".png"
+
+        s8weather_incidents = get_schedule8_weather_incidents_02062006_31032014()['Data']
+
+        create_pie_plot_for_incident_proportions(s8weather_incidents, save_as)
+    """
+
+    stats = calc_stats(s8weather_incidents).reset_index()
+    # Set colour array
+    colours = matplotlib.cm.get_cmap('Set3')(np.flip(np.linspace(0.0, 1.0, 9), 0))
+    # Specify labels
+    percentages = ['%1.1f%%' % round(x, 1) for x in stats['percentage']]
+    labels = stats.WeatherCategory + ': '
+    # labels = [a + b for a, b in zip(labels, total_costs_in_million)]
+    labels = [a + b for a, b in zip(labels, percentages)]
+    wind_label = ['', 'Most delays\n& Highest costs', '', '', '', '', '', '', '']
+    # Specify which part is exploded
+    explode_list = np.zeros(len(stats))
+    # explode_pos = stats.sort_values(by=['PfPIMinutes', 'percentage'], ascending=False).index[0]
+    explode_list[1] = 0.2
+
+    # Create a figure
+    plt.figure(figsize=(8, 6))
+    ax = plt.subplot2grid((1, 1), (0, 0), aspect='equal')
+    # ax.set_rasterization_zorder(1)
+    pie_collections = ax.pie(stats.percentage, labels=wind_label, startangle=70, colors=colours,
+                             explode=explode_list,
+                             labeldistance=0.7)
+
+    # Note that 'pie_collections' includes: patches, texts, autotexts
+    patches, texts = pie_collections
+    texts[1].set_fontsize(12)
+    texts[1].set_fontstyle('italic')
+    # texts[1].set_fontweight('bold')
+    legend = ax.legend(pie_collections[0], labels, loc='best', fontsize=14, frameon=True, shadow=True, fancybox=True,
+                       title='Weather category')
+    frame = legend.get_frame()
+    frame.set_edgecolor('black')
+    frame.set_facecolor('white')
+
+    # ax.set_title('Reasons for Weather-related Incidents\n', fontsize=14, weight='bold')
+
+    plt.subplots_adjust(left=0.0, bottom=0.0, right=1, top=0.95)
+
+    plt.show()
+
+    if save_as:
+        plt.savefig(cdd_incidents("exploration", "proportions" + save_as), dpi=600)
+
+
+def create_bar_plot_for_delay_cost(s8weather_incidents, save_as=".png"):
+    """
+    Plot total monetary cost incurred by weather-related incidents.
+
+    :param s8weather_incidents: data of Schedule 8 incidents
+    :type s8weather_incidents: pandas.DataFrame
+    :param save_as: whether to save the pie chart / what format the pie chart is saved as, defaults to ``".png"``
+    :type save_as: str, None
+
+    **Example**::
+
+        from spreadsheet.incidents import get_schedule8_weather_incidents_02062006_31032014
+        from misc.explor import create_bar_plot_for_delay_cost
+
+        save_as = ".png"
+
+        s8weather_incidents = get_schedule8_weather_incidents_02062006_31032014()['Data']
+
+        create_bar_plot_for_delay_cost(s8weather_incidents, save_as)
+    """
+
+    stats = calc_stats(s8weather_incidents).reset_index()
+    stats.sort_values(['DelayMinutes', 'DelayCost', 'Count'], inplace=True)
+    colour_array = np.sort(np.flip(np.linspace(0.0, 1.0, 9), 0)[stats.index])
+    stats.index = range(len(stats))
+    plt.figure(figsize=(8, 5))
+    ax1 = plt.subplot2grid((1, 2), (0, 0))
+    # formatter_minutes = FuncFormatter(lambda m, position: format(int(m), ','))
+    colours = matplotlib.cm.get_cmap('Set3')(colour_array)
+    ax1.barh(stats.index, stats.DelayMinutes, align='center', color=colours)
+    plt.yticks(stats.index, stats.WeatherCategory, fontsize=12, fontweight='bold')
+    plt.xticks(fontsize=12)
+    ax1.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
+    plt.xlabel('Minutes', fontsize=13, fontweight='bold')
+    # plt.ylabel('Weather category', fontsize=12)
+    plt.title('Delay', fontsize=15, fontweight='bold')
+    # ax1.set_axis_bgcolor('#808080')
+
+    ax2 = plt.subplot2grid((1, 2), (0, 1))
+    # plt.barh(range(0, len(stats)), stats['PfPICosts'], align='center', color=colours1)
+    plt.barh(stats.index, stats.DelayCost, align='center', color=colours, alpha=1.0, hatch='/')
+    plt.yticks(stats.index, [''] * len(stats))
+    plt.xticks(fontsize=12)
+    # Format labels
+    ax2.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda c, position: '%1.1f' % (c * 1e-7)))
+    plt.xlabel('£ millions', fontsize=13, fontweight='bold')
+    plt.title('Cost', fontsize=15, fontweight='bold')
+    # ax2.set_axis_bgcolor('#dddddd')
+
+    plt.tight_layout()  # plt.subplots_adjust(left=0.16, bottom=0.10, right=0.96, top=0.92, wspace=0.16)
+
+    if save_as:
+        plt.savefig(cdd_incidents("exploration", "delays-and-cost" + save_as), dpi=600)
+
+
+# == For the paper to Nature Communications ===========================================================
+
 railway_coordinates = get_shp_coordinates('Great Britain', osm_layer='railways', osm_feature='rail')
 
 
