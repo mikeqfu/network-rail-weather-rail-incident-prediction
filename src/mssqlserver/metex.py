@@ -41,7 +41,7 @@ from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_
 
 from misc.dag import get_incident_reason_metadata, get_performance_event_code
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
-from utils import cdd_metex, cdd_network, update_nr_route_names
+from utils import cdd_metex, cdd_network, make_filename, update_nr_route_names
 
 pd_preferences()
 mpl_preferences()
@@ -52,7 +52,6 @@ def metex_database_name():
 
 
 # == Change directories ===============================================================================
-
 
 def cdd_metex_db(*sub_dir, mkdir=False):
     """
@@ -123,7 +122,6 @@ def cdd_metex_db_fig(*sub_dir, mkdir=False):
 
 
 # == Functions to read table data from the database ===================================================
-
 
 def read_metex_table(table_name, index_col=None, route_name=None, weather_category=None, schema_name='dbo',
                      save_as=None, update=False, **kwargs):
@@ -215,7 +213,6 @@ def get_metex_table_pk(table_name):
 
 
 # == Functions to get table data ======================================================================
-
 
 def get_imdm(as_dict=False, update=False, save_original_as=None, verbose=False):
     """
@@ -1932,79 +1929,6 @@ def update_metex_table_pickles(update=True, verbose=True):
 
 # == Tools to make information integration easier =====================================================
 
-
-def make_filename(base_name=None, route_name=None, weather_category=None, extra_suffixes=None, sep="-",
-                  save_as=".pickle"):
-    """
-    Make a filename as appropriate.
-
-    :param base_name: base name, defaults to ``None``
-    :type base_name: str, None
-    :param route_name: name of a Route, defaults to ``None``
-    :type route_name: str, None
-    :param weather_category: weather category, defaults to ``None``
-    :type weather_category: str, None
-    :param extra_suffixes: extra suffixes to the filename
-    :type extra_suffixes: str, None
-    :param sep: a separator in the filename, defaults to ``"-"``
-    :type sep: str, None
-    :param save_as: file extension, defaults to ``".pickle"``
-    :type save_as: str
-    :return: a filename
-    :rtype: str
-
-    **Examples**::
-
-        from mssqlserver import metex
-
-        base_name = "test"  # None
-        route_name = None
-        weather_category = None
-        sep = "-"
-        save_as = ".pickle"
-
-        metex.make_filename(base_name, route_name, weather_category)
-        # test.pickle
-
-        metex.make_filename(None, route_name, weather_category, "test1")
-        # test1.pickle
-
-        metex.make_filename(base_name, route_name, weather_category, ["test1", "test2"])
-        # test-test1-test2.pickle
-
-        metex.make_filename(base_name, 'Anglia', weather_category, "test2")
-        # test-Anglia-test2.pickle
-
-        metex.make_filename(base_name, 'North and East', 'Heat', ["test1", "test2"])
-        # test-North_and_East-Heat-test1-test2.pickle
-    """
-
-    base_name_ = "" if base_name is None else base_name
-
-    if route_name is None:
-        route_name_ = ""
-    else:
-        rts = get_route().Route
-        route_name_ = (sep if base_name_ else "") + find_similar_str(route_name, rts).replace(" ", "_")
-
-    if weather_category is None:
-        weather_category_ = ""
-    else:
-        wcs = get_weather_codes().WeatherCategory
-        weather_category_ = (sep if route_name_ else "") + find_similar_str(weather_category, wcs).replace(" ", "_")
-
-    if extra_suffixes:
-        extra_suffixes_ = [extra_suffixes] if isinstance(extra_suffixes, str) else extra_suffixes
-        suffix = ["{}".format(s) for s in extra_suffixes_ if s]
-        suffix = (sep if any(x for x in (base_name_, route_name_, weather_category_)) else "") + sep.join(suffix) \
-            if len(suffix) > 1 else (sep + suffix[0] if route_name_ or weather_category_ else suffix[0])
-        filename = base_name_ + route_name_ + weather_category_ + suffix + save_as
-    else:
-        filename = base_name_ + route_name_ + weather_category_ + save_as
-
-    return filename
-
-
 def get_subset(data_set, route_name=None, weather_category=None, rearrange_index=False):
     """
     Get a subset of the given data frame for the specified Route and weather category.
@@ -2101,7 +2025,6 @@ def calculate_pfpi_stats(data_set, selected_features, sort_by=None):
 
 
 # == Functions to create views ========================================================================
-
 
 def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=False, weather_attributed_only=False,
                         update=False, pickle_it=False, verbose=False):

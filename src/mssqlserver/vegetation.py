@@ -14,7 +14,7 @@ from pyhelpers.text import find_similar_str
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
-from utils import cdd_vegetation, update_nr_route_names
+from utils import cdd_vegetation, make_filename, update_nr_route_names
 
 pd_preferences()
 
@@ -1476,50 +1476,6 @@ def update_vegetation_table_pickles(update=True, verbose=True):
 
 
 # == Get views based on the NR_Vegetation data ========================================================
-
-
-def make_filename(base_name, route_name, *extra_suffixes, sep="-", save_as=".pickle"):
-    """
-    Make a filename as appropriate.
-
-    :param base_name: base name
-    :type base_name: str, None
-    :param route_name: name of a Route
-    :type route_name: str, None
-    :param extra_suffixes: extra suffixes to the filename
-    :type extra_suffixes: str, None
-    :param sep: a separator in the filename
-    :type sep: str, None
-    :param save_as: file extension, defaults to ".pickle"
-    :type save_as: str
-    :return: a filename
-    :rtype: str
-
-    **Example**::
-
-        from mssqlserver import vegetation
-
-        base_name = "hazardous-trees"
-        route_name = "Anglia"
-        extra_suffixes = None
-        sep = "-"
-        save_as = ".pickle"
-
-        filename = vegetation.make_filename(base_name, route_name, sep=sep, save_as=save_as)
-    """
-
-    assert save_as.startswith("."), "\"save_as\" must be extension-like, such as \".pickle\"."
-    base_name_ = "" if base_name is None else base_name
-    route_name_ = "" if route_name is None \
-        else (sep if base_name_ else "") + find_similar_str(route_name, get_du_route().Route.unique()).replace(" ", "_")
-    if extra_suffixes:
-        suffix = ["{}".format(s) for s in extra_suffixes if s]
-        suffix = (sep if any(x for x in (base_name_, route_name_)) else "") + sep.join(suffix) \
-            if len(suffix) > 1 else sep + suffix[0]
-        filename = base_name_ + route_name_ + suffix + save_as
-    else:
-        filename = base_name_ + route_name_ + save_as
-    return filename
 
 
 def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
