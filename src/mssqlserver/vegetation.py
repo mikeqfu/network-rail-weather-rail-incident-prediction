@@ -1794,6 +1794,9 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
             elr_mileage_colnames = ['ELR'] + str_mileage_colnames
 
             nr_vegetation_furlong_data.drop_duplicates(elr_mileage_colnames, inplace=True)
+            empty_start_mileage_idx = nr_vegetation_furlong_data[nr_vegetation_furlong_data.StartMileage == ''].index
+            nr_vegetation_furlong_data.loc[empty_start_mileage_idx, 'StartMileage'] = [
+                nr_vegetation_furlong_data.StructuredPlantNumber.loc[i][11:17] for i in empty_start_mileage_idx]
 
             # Create two new columns of mileage data (as float)
             num_mileage_colnames = ['StartMileage_num', 'EndMileage_num']
