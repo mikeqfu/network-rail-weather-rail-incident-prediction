@@ -12,34 +12,37 @@ import fake_useragent
 import numpy as np
 import pandas as pd
 import requests
-from pyhelpers.dir import cdd
 from pyhelpers.ops import confirmed
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save_pickle
 
+from utils import cdd_incidents
+
 pd_preferences()
 
 
-def cdd_delay_attr_glossary(*directories):
+def cdd_dag(*sub_dir, mkdir=False):
     """
-    Change directory to "..\\data\\incidents\\delay attribution\\glossary\\current\\" and sub-directories (or files)
+    Change directory to "..\\data\\incidents\\delay attribution\\glossary\\current\\" and sub-directories (or files).
 
-    :param directories: sub-directory name(s) or filename(s)
-    :type directories: str
+    :param sub_dir: sub-directory name(s) or filename(s)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
     :return: "..\\data\\incidents\\delay attribution\\glossary\\current\\..."
+    :rtype: str
 
-    Testing::
+    **Testing**::
 
         import os
+        from misc.dag import cdd_dag
 
-        path_to_dag = cdd_delay_attr_glossary()
+        path_to_dag = cdd_dag()
 
         os.path.isdir(path_to_dag)  # True
     """
 
-    path = cdd("incidents\\delay attribution\\glossary\\current")
-    for directory in directories:
-        path = os.path.join(path, directory)
+    path = cdd_incidents("delay attribution\\glossary\\current", *sub_dir, mkdir=mkdir)
     return path
 
 
@@ -53,23 +56,26 @@ def path_to_original_file():
     Test::
 
         import os
+        from misc.dag import path_to_original_file
 
         path_to_file = path_to_original_file()
         os.path.isfile(path_to_file)  # True
     """
 
-    path_to_file = cdd_delay_attr_glossary("delay-attribution-glossary.xlsx")
+    path_to_file = cdd_dag("delay-attribution-glossary.xlsx")
     return path_to_file
 
 
 def download_delay_attribution_glossary(confirmation_required=True, verbose=False):
     """
-    Download delay attribution glossary
+    Download delay attribution glossary.
 
     :param confirmation_required: defaults to ``True``
     :param verbose: defaults to ``False``
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import download_delay_attribution_glossary
 
         verbose = True
 
@@ -104,8 +110,8 @@ def download_delay_attribution_glossary(confirmation_required=True, verbose=Fals
         response = requests.get(url, headers={'User-Agent': user_agent})
         if response.ok:
             filename = spreadsheet_filename.replace("Historic-", "").lower()
-            path_to_file = cdd_delay_attr_glossary(filename)
-            file_dir = "..\\" + os.path.relpath(cdd_delay_attr_glossary())
+            path_to_file = cdd_dag(filename)
+            file_dir = "..\\" + os.path.relpath(cdd_dag())
             if os.path.isfile(path_to_file):
                 if confirmed("Replace the current version?", confirmation_required=confirmation_required):
                     _download(user_agent, filename, file_dir, verbose)
@@ -117,7 +123,7 @@ def download_delay_attribution_glossary(confirmation_required=True, verbose=Fals
 
 def get_stanox_codes(update=False, hard_update=False, verbose=False):
     """
-    Get STANOX codes
+    Get STANOX codes.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -127,21 +133,23 @@ def get_stanox_codes(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_stanox_codes
 
         verbose = True
 
         update = False
         hard_update = False
-        get_stanox_codes(update, hard_update, verbose)
+        stanox_codes = get_stanox_codes(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_stanox_codes(update, hard_update, verbose)
+        stanox_codes = get_stanox_codes(update, hard_update, verbose)
     """
 
     pickle_filename = "stanox-codes.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         stanox_codes = load_pickle(path_to_pickle)
@@ -165,7 +173,7 @@ def get_stanox_codes(update=False, hard_update=False, verbose=False):
 
 def get_period_dates(update=False, hard_update=False, verbose=False):
     """
-    Get period dates
+    Get period dates.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -175,21 +183,23 @@ def get_period_dates(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_period_dates
 
         verbose = True
 
         update = False
         hard_update = False
-        get_period_dates(update, hard_update, verbose)
+        period_dates = get_period_dates(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_period_dates(update, hard_update, verbose)
+        period_dates = get_period_dates(update, hard_update, verbose)
     """
 
     pickle_filename = "period-dates.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         period_dates = load_pickle(path_to_pickle)
@@ -237,7 +247,7 @@ def get_period_dates(update=False, hard_update=False, verbose=False):
 
 def get_incident_reason_metadata(update=False, hard_update=False, verbose=False):
     """
-    Get incident reasons
+    Get incident reasons.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -247,23 +257,23 @@ def get_incident_reason_metadata(update=False, hard_update=False, verbose=False)
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
 
-    Testing::
+        from misc.dag import get_incident_reason_metadata
 
         verbose = True
 
         update = False
         hard_update = False
-        get_incident_reason_metadata(update, hard_update, verbose)
+        incident_reason_metadata = get_incident_reason_metadata(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_incident_reason_metadata(update, hard_update, verbose)
+        incident_reason_metadata = get_incident_reason_metadata(update, hard_update, verbose)
     """
 
     pickle_filename = "incident-reason-metadata.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         incident_reason_metadata = load_pickle(path_to_pickle)
@@ -289,7 +299,7 @@ def get_incident_reason_metadata(update=False, hard_update=False, verbose=False)
 
 def get_responsible_manager(update=False, hard_update=False, verbose=False):
     """
-    Get responsible manager
+    Get responsible manager.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -299,21 +309,23 @@ def get_responsible_manager(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_responsible_manager
 
         verbose = True
 
         update = False
         hard_update = False
-        get_responsible_manager(update, hard_update, verbose)
+        responsible_manager = get_responsible_manager(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_responsible_manager(update, hard_update, verbose)
+        responsible_manager = get_responsible_manager(update, hard_update, verbose)
     """
 
     pickle_filename = "responsible-manager.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         responsible_manager = load_pickle(path_to_pickle)
@@ -337,7 +349,7 @@ def get_responsible_manager(update=False, hard_update=False, verbose=False):
 
 def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
     """
-    Get reactionary reason code
+    Get reactionary reason code.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -347,21 +359,23 @@ def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_reactionary_reason_code
 
         verbose = True
 
         update = False
         hard_update = False
-        get_reactionary_reason_code(update, hard_update, verbose)
+        reactionary_reason_code = get_reactionary_reason_code(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_reactionary_reason_code(update, hard_update, verbose)
+        reactionary_reason_code = get_reactionary_reason_code(update, hard_update, verbose)
     """
 
     pickle_filename = "reactionary-reason-code.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         reactionary_reason_code = load_pickle(path_to_pickle)
@@ -384,7 +398,7 @@ def get_reactionary_reason_code(update=False, hard_update=False, verbose=False):
 
 def get_performance_event_code(update=False, hard_update=False, verbose=False):
     """
-    Get performance event code
+    Get performance event code.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -394,21 +408,23 @@ def get_performance_event_code(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_performance_event_code
 
         verbose = True
 
         update = False
         hard_update = False
-        get_performance_event_code(update, hard_update, verbose)
+        performance_event_code = get_performance_event_code(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_performance_event_code(update, hard_update, verbose)
+        performance_event_code = get_performance_event_code(update, hard_update, verbose)
     """
 
     pickle_filename = "performance-event-code.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         performance_event_code = load_pickle(path_to_pickle)
@@ -435,7 +451,7 @@ def get_performance_event_code(update=False, hard_update=False, verbose=False):
 
 def get_train_service_code(update=False, hard_update=False, verbose=False):
     """
-    Get train service code
+    Get train service code.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -445,21 +461,23 @@ def get_train_service_code(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_train_service_code
 
         verbose = True
 
         update = False
         hard_update = False
-        get_train_service_code(update, hard_update, verbose)
+        train_service_code = get_train_service_code(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_train_service_code(update, hard_update, verbose)
+        train_service_code = get_train_service_code(update, hard_update, verbose)
     """
 
     pickle_filename = "train-service-code.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         train_service_code = load_pickle(path_to_pickle)
@@ -482,7 +500,7 @@ def get_train_service_code(update=False, hard_update=False, verbose=False):
 
 def get_operator_name(update=False, hard_update=False, verbose=False):
     """
-    Get operator name
+    Get operator name.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -492,21 +510,23 @@ def get_operator_name(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_operator_name
 
         verbose = True
 
         update = False
         hard_update = False
-        get_operator_name(update, hard_update, verbose)
+        operator_name = get_operator_name(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_operator_name(update, hard_update, verbose)
+        operator_name = get_operator_name(update, hard_update, verbose)
     """
 
     pickle_filename = "operator-name.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         operator_name = load_pickle(path_to_pickle)
@@ -529,7 +549,7 @@ def get_operator_name(update=False, hard_update=False, verbose=False):
 
 def get_service_group_code(update=False, hard_update=False, verbose=False):
     """
-    Get service group code
+    Get service group code.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -539,21 +559,23 @@ def get_service_group_code(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_service_group_code
 
         verbose = True
 
         update = False
         hard_update = False
-        get_service_group_code(update, hard_update, verbose)
+        service_group_code = get_service_group_code(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_service_group_code(update, hard_update, verbose)
+        service_group_code = get_service_group_code(update, hard_update, verbose)
     """
 
     pickle_filename = "service-group-code.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         service_group_code = load_pickle(path_to_pickle)
@@ -576,7 +598,7 @@ def get_service_group_code(update=False, hard_update=False, verbose=False):
 
 def get_delay_attr_glossary(update=False, hard_update=False, verbose=False):
     """
-    Get historic delay attribution glossary
+    Get historic delay attribution glossary.
 
     :param update: defaults to ``False``
     :type update: bool
@@ -586,21 +608,23 @@ def get_delay_attr_glossary(update=False, hard_update=False, verbose=False):
     :type verbose: bool
     :return: pandas.DataFrame
 
-    Testing::
+    **Testing**::
+
+        from misc.dag import get_delay_attr_glossary
 
         verbose = True
 
         update = False
         hard_update = False
-        get_delay_attr_glossary(update, hard_update, verbose)
+        delay_attr_glossary = get_delay_attr_glossary(update, hard_update, verbose)
 
         update = True
         hard_update = True
-        get_delay_attr_glossary(update, hard_update, verbose)
+        delay_attr_glossary = get_delay_attr_glossary(update, hard_update, verbose)
     """
 
     pickle_filename = "delay-attribution-glossary.pickle"
-    path_to_pickle = cdd_delay_attr_glossary(pickle_filename)
+    path_to_pickle = cdd_dag(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         delay_attr_glossary = load_pickle(path_to_pickle)
