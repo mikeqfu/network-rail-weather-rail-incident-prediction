@@ -39,7 +39,7 @@ from pyrcs.utils import fetch_location_names_repl_dict
 from pyrcs.utils import mile_chain_to_nr_mileage, nr_mileage_to_yards, yards_to_nr_mileage
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage
 
-from misc.delay_attribution_glossary import get_incident_reason_metadata, get_performance_event_code
+from misc.dag import get_incident_reason_metadata, get_performance_event_code
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys, read_table_by_query
 from utils import cdd_metex, cdd_network, update_nr_route_names
 
