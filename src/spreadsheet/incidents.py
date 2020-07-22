@@ -14,7 +14,7 @@ from pyrcs.line_data import LocationIdentifiers
 from pyrcs.other_assets import Stations
 from pyrcs.utils import fetch_location_names_repl_dict
 
-from misc.delay_attribution_glossary import get_incident_reason_metadata
+from misc.dag import get_incident_reason_metadata
 from mssqlserver.metex import read_metex_table
 from utils import cdd_incidents, cdd_railway_codes, get_subset, make_filename
 
@@ -812,7 +812,7 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
 
     #
     def convert_to_point(x, h_col, v_col):
-        if pd.np.isnan(x[h_col]) or pd.np.isnan(x[v_col]):
+        if np.isnan(x[h_col]) or np.isnan(x[v_col]):
             p = shapely.geometry.Point()
         else:
             p = shapely.geometry.Point((x[h_col], x[v_col]))
