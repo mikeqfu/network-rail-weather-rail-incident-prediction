@@ -56,7 +56,7 @@ def metex_database_name():
 
 def cdd_metex_db(*sub_dir, mkdir=False):
     """
-    Change directory to ..\\data\\metex\\database\\" and sub-directories / a file.
+    Change directory to "..\\data\\metex\\database\\" and sub-directories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
