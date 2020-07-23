@@ -722,7 +722,8 @@ def logistic_regression_model(trial_id,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_prototype_heat_trial(trial_id, "ROC" + save_as), dpi=dpi)
+                save_fig(cdd_prototype_heat_trial(trial_id, "ROC" + save_as), dpi=dpi,
+                         verbose=verbose, conv_svg_to_emf=True)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -744,7 +745,8 @@ def logistic_regression_model(trial_id,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_prototype_heat_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+                save_fig(cdd_prototype_heat_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi,
+                         verbose=verbose, conv_svg_to_emf=True)
 
     except Exception as e:
         print(e)
