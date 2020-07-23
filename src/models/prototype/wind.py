@@ -10,95 +10,140 @@ import datetime_truncate
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import sklearn.metrics
-import sklearn.utils.extmath
-import statsmodels.discrete.discrete_model as sm
+import statsmodels.discrete.discrete_model as sm_dcm
 from pyhelpers.dir import cdd
-from pyhelpers.misc import get_variable_names
+from pyhelpers.ops import get_variable_names
 from pyhelpers.store import load_pickle, save_pickle, save_svg_as_emf
+from sklearn import metrics
+from sklearn.utils import extmath
 
-import models.prototype.furlong
-import models.tools
-import mssqlserver.metex
-import mssqlserver.vegetation
-import settings
+from models.prototype.furlong import get_furlongs_data, get_incident_location_furlongs
+from models.tools import calculate_prototype_weather_statistics, cd_prototype_fig_pub, cdd_prototype
+from models.tools import get_data_by_season_, get_weather_variable_names
+from mssqlserver import metex
+from settings import mpl_preferences, pd_preferences
+from utils import make_filename
 
-# Apply the preferences ==============================================================================================
-settings.mpl_preferences(use_cambria=True, reset=False)
-settings.pd_preferences(reset=False)
+# == Apply the preferences ============================================================================
 
-# ====================================================================================================================
-""" Change directory """
+mpl_preferences(use_cambria=True, reset=False)
+pd_preferences(reset=False)
 
 
-# Change directory to "Models\\prototype\\wind\\data" and sub-directories
-def cdd_prototype_wind(*sub_dir):
-    path = models.tools.cdd_prototype("wind", "data")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+# == Change directories ===============================================================================
+
+def cdd_prototype_wind_trial(trial_id, *sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\wind\\<``trial_id``>" and sub-directories / a file.
+
+    :param trial_id:
+    :type trial_id:
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\wind\\data\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("wind", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "Models\\prototype\\wind\\{}" and sub-directories
-def cdd_prototype_wind_mod(trial_id, *sub_dir):
-    path = models.tools.cdd_prototype("wind", "{}".format(trial_id))
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+def cdd_prototype_wind(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("wind", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# ====================================================================================================================
-""" Calculations for weather data """
+# == Calculations for weather data ====================================================================
 
-
-# Specify the statistics that need to be computed
 def specify_weather_stats_calculations():
+    """
+    Specify the weather statistics that need to be computed.
+
+    :return: a dictionary for calculations of weather statistics
+    :rtype: dict
+    """
+
     weather_stats_calculations = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
                                   'RelativeHumidity': np.nanmax,
                                   'WindSpeed': np.nanmax,
                                   'WindGust': np.nanmax,
                                   'Snowfall': np.nanmax,
                                   'TotalPrecipitation': np.nanmax}
+
     return weather_stats_calculations
 
 
-# Get TRUST data and the weather conditions for each incident location
 def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                                   ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
-                                  update=False):
+                                  update=False, verbose=False):
     """
-    :param route_name: [str] Route name
-    :param weather_category: [str] Weather category
-    :param ip_start_hrs: [int; float]
-    :param ip_end_hrs: [int; float]
-    :param nip_start_hrs: [int; float]
-    :param update: [bool]
-    :return: [DataFrame]
+    Get TRUST data and the weather conditions for each incident location.
 
-    e.g.
+    :param route_name: name of a Route, defaults to ``'Anglia'``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``'Wind'``
+    :type weather_category: str, None
+    :param ip_start_hrs:
+    :type ip_end_hrs: int, float
+    :param ip_end_hrs:
+    :type ip_end_hrs: int, float
+    :param nip_start_hrs:
+    :type nip_start_hrs: int, float
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return:
+    :rtype: pandas.DataFrame
 
-    route_name='Anglia'
-    weather_category='Wind'
-    ip_start_hrs=-12
-    ip_end_hrs=12
-    nip_start_hrs=-12
-    update=False
+    **Example**::
 
-    When offset the date and time data, an alternative function for "pd.DateOffset" is "datetime.timedelta"
+        from models.prototype.wind import get_incident_location_weather
+
+        route_name       = 'Anglia'
+        weather_category = 'Wind'
+        ip_start_hrs     = -12
+        ip_end_hrs       = 12
+        nip_start_hrs    = -12
+        update           = True
+        verbose          = True
+
+        incident_location_weather = get_incident_location_weather(route_name, weather_category,
+                                                                  ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                                                  update, verbose)
+
+    .. note::
+
+        When offset the date and time data, "datetime.timedelta()" can be an alternative to "pd.DateOffset()"
     """
 
-    pickle_filename = mssqlserver.metex.make_filename("incident_location_weather", route_name, weather_category,
-                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs, save_as=".pickle")
+    pickle_filename = make_filename("weather", route_name, weather_category,
+                                    ip_start_hrs, ip_end_hrs, nip_start_hrs, save_as=".pickle")
     path_to_pickle = cdd_prototype_wind(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        incident_location_weather = load_pickle(path_to_pickle)
+        return incident_location_weather
+
     else:
         try:
             # Getting Weather data for all incident locations
-            incidents = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason(
+            incidents = metex.view_schedule8_costs_by_datetime_location_reason(
                 route_name, weather_category, update)
             # Drop non-weather-related incident records
             incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
@@ -112,26 +157,27 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 
             weather_stats_calculations = specify_weather_stats_calculations()
 
-            # Processing Weather data for IP - Get data of Weather conditions which led to Incidents for each record
-            def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end) -> list:
+            def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end):
                 """
+                Processing Weather data for IP - Get data of Weather conditions which led to Incidents for each record.
+
                 :param weather_cell_id: [int] Weather Cell ID
                 :param ip_start: [Timestamp] start of "incident period"
                 :param ip_end: [Timestamp] end of "incident period"
                 :return: [list] a list of statistics
 
-                e.g.
+                **Example**::
 
-                weather_cell_id=incidents.WeatherCell[3819210]
-                ip_start=incidents.StartDateTime[3819210]
-                ip_end=incidents.EndDateTime[3819210]
-
+                    weather_cell_id = incidents.WeatherCell[1]
+                    ip_start = incidents.StartDateTime[1]
+                    ip_end = incidents.EndDateTime[1]
                 """
+
                 # Get Weather data about where and when the incident occurred
-                ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
-                                                                                pickle_it=False)
+                ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
+                                                                    pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats = models.tools.calculate_prototype_weather_statistics(
+                weather_stats = calculate_prototype_weather_statistics(
                     ip_weather_obs, weather_stats_calculations)
                 return weather_stats
 
@@ -140,8 +186,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
                 axis=1)
             ip_statistics = pd.DataFrame(ip_statistics.to_list(), index=ip_statistics.index,
-                                         columns=models.tools.get_weather_variable_names(weather_stats_calculations))
-            ip_statistics['Temperature_diff'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
+                                         columns=get_weather_variable_names(weather_stats_calculations))
+            ip_statistics['Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             #
             ip_data = incidents.join(ip_statistics.dropna(), how='inner')
@@ -163,7 +209,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 :return: [list] a list of statistics
                 """
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
+                non_ip_weather_obs = metex.query_weather_by_id_datetime(
                     weather_cell_id, nip_start, nip_end, pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
@@ -176,7 +222,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                         (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
                         (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
                 # Get the max/min/avg Weather parameters for those incident periods
-                non_ip_weather_stats = models.tools.calculate_prototype_weather_statistics(
+                non_ip_weather_stats = calculate_prototype_weather_statistics(
                     non_ip_weather_obs, weather_stats_calculations)
                 return non_ip_weather_stats
 
@@ -184,9 +230,9 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
             nip_stats = nip_data.apply(
                 lambda x: get_weather_stats_for_non_ip(
                     x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
-            nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index,
-                                          models.tools.get_weather_variable_names(weather_stats_calculations))
-            nip_statistics['Temperature_diff'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
+            nip_statistics = pd.DataFrame(nip_stats.tolist(), index=nip_stats.index,
+                                          columns=get_weather_variable_names(weather_stats_calculations))
+            nip_statistics['Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             #
             nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
@@ -195,7 +241,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
             # Merge "ip_data" and "nip_data" into one DataFrame
             incident_location_weather = pd.concat([nip_data, ip_data], axis=0, ignore_index=True)
 
-            save_pickle(incident_location_weather, path_to_pickle)
+            save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
 
             return incident_location_weather
 
@@ -203,12 +249,18 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# ====================================================================================================================
-""" Calculations for vegetation data """
+# == Calculations for vegetation data =================================================================
 
-
-# Specify the statistics that need to be computed
 def specify_vegetation_stats_calculations(features):
+    """
+    Specify the statistics that need to be computed.
+
+    :param features:
+    :type features:
+    :return:
+    :rtype:
+    """
+
     # "CoverPercent..."
     cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
     veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
@@ -237,41 +289,67 @@ def specify_vegetation_stats_calculations(features):
     return cover_percents, hazard_rest, veg_stats_calc
 
 
-# Get Vegetation conditions for incident locations
 def get_incident_location_vegetation(route_name='Anglia',
                                      shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
-                                     update=False):
+                                     update=False, verbose=False):
     """
-    Testing parameters:
-    e.g.
-        route_name='Anglia'
-        shift_yards_same_elr=220
-        shift_yards_diff_elr=220
-        hazard_pctl=50
-        update=False
+    Get Vegetation conditions for incident locations.
 
-    Note that the "CoverPercent..." in furlong_vegetation_data has been
-    amended when furlong_data was read. Check the function get_furlong_data().
+    :param route_name: name of a Route, defaults to ``'Anglia'``
+    :type route_name: str, None
+    :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
+        given that StartELR == EndELR, defaults to ``220``
+    :type shift_yards_same_elr: int, float
+    :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
+        given that StartELR != EndELR, defaults to ``220``
+    :param hazard_pctl:
+    :type hazard_pctl: defaults to ``50``
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return:
+
+    **Example**::
+
+        from models.prototype.wind import get_incident_location_vegetation
+
+        route_name           = 'Anglia'
+        shift_yards_same_elr = 220
+        shift_yards_diff_elr = 220
+        hazard_pctl          = 50
+        update               = True
+        verbose              = True
+
+    .. note::
+
+        Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended when furlong_data was read.
+        Check the function ``get_furlong_data()``.
     """
-    pickle_filename = mssqlserver.metex.make_filename("incident_location_vegetation", route_name, None,
-                                                      shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl,
-                                                      save_as=".pickle")
+
+    pickle_filename = make_filename("vegetation", route_name, None,
+                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl,
+                                    save_as=".pickle")
     path_to_pickle = cdd_prototype_wind(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        incident_location_vegetation = load_pickle(path_to_pickle)
+        return incident_location_vegetation
+
     else:
         try:
-            # # Get data of furlong Vegetation coverage and hazardous trees
-            # furlong_vegetation_data = mssqlserver.vegetation.view_vegetation_condition_per_furlong()
-            # furlong_vegetation_data.set_index('FurlongID', inplace=True)
+            """
+            # Get data of furlong Vegetation coverage and hazardous trees
+            from mssqlserver.vegetation import view_vegetation_condition_per_furlong
+            furlong_vegetation_data = view_vegetation_condition_per_furlong()
+            furlong_vegetation_data.set_index('FurlongID', inplace=True)
+            """
 
             # Get incident_location_furlongs
-            incident_furlongs = models.prototype.furlong.get_incident_furlongs(route_name, None, shift_yards_same_elr,
-                                                                               shift_yards_diff_elr)
+            furlongs_data = get_furlongs_data(route_name, None, shift_yards_same_elr, shift_yards_diff_elr)
 
             # Get all column names as features
-            features = incident_furlongs.columns
+            features = furlongs_data.columns
 
             # Specify the statistics that need to be computed
             cover_percents, hazard_rest, veg_stats_calc = specify_vegetation_stats_calculations(features)
@@ -280,7 +358,7 @@ def get_incident_location_vegetation(route_name='Anglia',
             fill_0 = [x for x in features if re.match('.*height', x)] + ['HazardTreeNumber']
             fill_inf = [x for x in features if re.match('^.*prox|.*diam', x)]
 
-            incident_location_furlongs = models.prototype.furlong.get_incident_location_furlongs(
+            incident_location_furlongs = get_incident_location_furlongs(
                 route_name, None, shift_yards_same_elr, shift_yards_diff_elr).dropna()
 
             # Define a function that computes Vegetation stats for each incident record
@@ -296,7 +374,7 @@ def get_incident_location_vegetation(route_name='Anglia',
                 Note: to get the n-th percentile may use percentile(n)
 
                 """
-                vegetation_data = incident_furlongs.loc[furlong_ids]
+                vegetation_data = furlongs_data.loc[furlong_ids]
 
                 veg_stats = vegetation_data.groupby('ELR').aggregate(veg_stats_calc)
                 veg_stats[cover_percents] = veg_stats[cover_percents].div(veg_stats.AssetNumber, axis=0).values
@@ -363,7 +441,7 @@ def get_incident_location_vegetation(route_name='Anglia',
 
             incident_location_vegetation = incident_location_furlongs.join(vegetation_statistics)
 
-            save_pickle(incident_location_vegetation, path_to_pickle)
+            save_pickle(incident_location_vegetation, path_to_pickle, verbose=verbose)
 
             return incident_location_vegetation
 
@@ -371,28 +449,61 @@ def get_incident_location_vegetation(route_name='Anglia',
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# ====================================================================================================================
-""" Integrate incident data with both the weather and vegetation data """
+# == Integrate incident data with both the weather and vegetation data ================================
 
-
-# Integrate the Weather and Vegetation conditions for incident locations
 def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_category='Wind',
                                                    ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                                                    shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
-                                                   update=False):
-    pickle_filename = mssqlserver.metex.make_filename("integrated_data", route_name, weather_category,
-                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                      shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+                                                   update=False, verbose=False):
+    """
+    Integrate the Weather and Vegetation conditions for incident locations.
+
+    :param route_name:
+    :param weather_category:
+    :param ip_start_hrs:
+    :param ip_end_hrs:
+    :param nip_start_hrs:
+    :param shift_yards_same_elr:
+    :param shift_yards_diff_elr:
+    :param hazard_pctl:
+    :param update:
+    :param verbose:
+    :return:
+
+    **Example**::
+
+        from models.prototype.wind import integrate_incident_with_weather_and_vegetation
+
+        route_name           = 'Anglia'
+        weather_category     = 'Wind'
+        ip_start_hrs         = -12
+        ip_end_hrs           = 12
+        nip_start_hrs        = -12
+        shift_yards_same_elr = 220
+        shift_yards_diff_elr = 220
+        hazard_pctl          = 50
+        update               = True
+        verbose              = True
+
+        integrated_data = integrate_incident_with_weather_and_vegetation(
+            route_name, weather_category, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+            shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl,
+            update, verbose)
+    """
+
+    pickle_filename = make_filename("dataset", route_name, weather_category,
+                                    ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     path_to_file = cdd_prototype_wind(pickle_filename)
 
     if os.path.isfile(path_to_file) and not update:
         integrated_data = load_pickle(path_to_file)
+
     else:
         try:
             # Get information of Schedule 8 incident and the relevant weather conditions
             incident_location_weather = get_incident_location_weather(route_name, weather_category,
-                                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                                      subset_weather_for_nip=False, update=update)
+                                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs)
             # Get information of vegetation conditions for the incident locations
             incident_location_vegetation = get_incident_location_vegetation(route_name,
                                                                             shift_yards_same_elr, shift_yards_diff_elr,
@@ -413,7 +524,7 @@ def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_
                 pd.DataFrame(wind_direction, columns=['WindDirection_avg_quadrant'])).join(
                 pd.get_dummies(wind_direction, prefix='WindDirection_avg'))
 
-            save_pickle(integrated_data, path_to_file)
+            save_pickle(integrated_data, path_to_file, verbose=verbose)
 
         except Exception as e:
             print("Failed to get \"{}\". {}".format(pickle_filename, e))
@@ -422,12 +533,16 @@ def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_
     return integrated_data
 
 
-# ====================================================================================================================
-""" Trials """
+# == Modelling trials =================================================================================
 
-
-# Specify the explanatory variables considered in this prototype model
 def specify_explanatory_variables():
+    """
+    Specify the explanatory variables considered in this prototype model.
+
+    :return: a list of names of explanatory variables
+    :rtype: list
+    """
+
     return [
         # 'WindSpeed_max',
         # 'WindSpeed_avg',
@@ -437,7 +552,7 @@ def specify_explanatory_variables():
         'WindDirection_avg_[90, 180)',  # [90°, 180°)
         'WindDirection_avg_[180, 270)',  # [180°, 270°)
         'WindDirection_avg_[270, 360)',  # [270°, 360°)
-        'Temperature_diff',
+        'Temperature_dif',
         # 'Temperature_avg',
         # 'Temperature_max',
         # 'Temperature_min',
@@ -480,8 +595,20 @@ def specify_explanatory_variables():
     ]
 
 
-# Describe basic statistics about the main explanatory variables
 def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
+    """
+    Describe basic statistics about the main explanatory variables.
+
+    :param mdata:
+    :param save_as:
+    :param dpi:
+    :return:
+
+    **Example**::
+
+        mdata = integrated_data.copy()
+    """
+
     fig = plt.figure(figsize=(12, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
@@ -501,7 +628,7 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax2.yaxis.set_label_coords(-0.1, 1.02)
 
     ax3 = fig.add_subplot(163)
-    mdata.Temperature_diff.plot.box(color=colour, ax=ax3, widths=0.5, fontsize=12)
+    mdata.Temperature_dif.plot.box(color=colour, ax=ax3, widths=0.5, fontsize=12)
     ax3.set_xticklabels('')
     plt.xlabel('Temp. Diff.', fontsize=13, labelpad=16)
     plt.ylabel('(°C)', fontsize=12, rotation=0)
@@ -529,10 +656,11 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax6.yaxis.set_label_coords(-0.1, 1.02)
 
     plt.tight_layout()
-    path_to_file_weather = cdd(models.tools.cd_prototype_fig_pub("Variables", "Weather" + save_as))
-    plt.savefig(path_to_file_weather, dpi=dpi)
-    if save_as == ".svg":
-        save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
+    if save_as:
+        path_to_file_weather = cdd(cd_prototype_fig_pub("Variables", "Weather" + save_as))
+        plt.savefig(path_to_file_weather, dpi=dpi)
+        if save_as == ".svg":
+            save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
 
     #
     fig_veg = plt.figure(figsize=(12, 5))
@@ -551,23 +679,13 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax.yaxis.set_label_coords(0, 1.02)
 
     plt.tight_layout()
-    path_to_file_veg = models.tools.cd_prototype_fig_pub("Variables", "Vegetation" + save_as)
-    plt.savefig(path_to_file_veg, dpi=dpi)
-    if save_as == ".svg":
-        save_svg_as_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
+    if save_as:
+        path_to_file_veg = cd_prototype_fig_pub("Variables", "Vegetation" + save_as)
+        plt.savefig(path_to_file_veg, dpi=dpi)
+        if save_as == ".svg":
+            save_svg_as_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
 
 
-"""
-def save_result_to_excel(result, writer):
-    result_file = dbm.make_filename("result", route, Weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    writer = pd.ExcelWriter(cdd_mod_wind(trial_id, result_file), engine='xlsxwriter')
-    info, estimates = pd.read_html(result.summary().as_html().replace(':', ''))
-    info_0, info_1 = info.iloc[:, :2].set_index(0), info.iloc[:, 2:].set_index(2)
-"""
-
-
-# A prototype model in the context of wind-related Incidents
 def logistic_regression_model(trial_id,
                               route_name='Anglia', weather_category='Wind',
                               ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -579,55 +697,57 @@ def logistic_regression_model(trial_id,
                               plot_roc=True, plot_pred_likelihood=True,
                               save_as=".tif", dpi=600,
                               # dig_deeper=False,
+                              update=False,
                               verbose=True):
     """
-    IncidentReason  IncidentReasonName    IncidentReasonDescription
+    Train/test a prototype model in the context of wind-related Incidents.
 
-    IQ              TRACK SIGN            Trackside sign blown down/light out etc.
-    IW              COLD                  Non severe - Snow/Ice/Frost affecting infrastructure equipment',
-                                          'Takeback Pumps'
-    OF              HEAT/WIND             Blanket speed restriction for extreme heat or high wind in accordance with
-                                          the Group Standards
-    Q1              TKB PUMPS             Takeback Pumps
-    X4              BLNK REST             Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER               Severe Weather not snow affecting infrastructure the responsibility of
-                                          Network Rail
-    XX              MISC OBS              Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IncidentReason | IncidentReasonName | IncidentReasonDescription
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
+    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, Takeback Pumps, ...
+    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind given Group Standards
+    Q1             |   TKB PUMPS        | Takeback Pumps
+    X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
+    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure the responsibility of NR
+    XX             |   MISC OBS         | Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    -------------- | ------------------ | ------------------------------------------------------------------------------
 
-    Parameters:
-    e.g.
+    **Example**::
 
-    trial_id=0
-    route_name='Anglia'
-    weather_category='Wind'
-    ip_start_hrs=-12
-    ip_end_hrs=12
-    nip_start_hrs=-12
-    shift_yards_same_elr=660
-    shift_yards_diff_elr=220
-    hazard_pctl=50
-    in_seasons=None
-    describe_var=False
-    outlier_pctl=99
-    add_const=True
-    seed=1
-    model='logit'
-    plot_roc=True
-    plot_pred_likelihood=True
-    save_as=".tif"
-    dpi=600
-    dig_deeper=False
-    verbose=True
-
+        trial_id             = 0
+        route_name           = 'Anglia'
+        weather_category     = 'Wind'
+        ip_start_hrs         = -12
+        ip_end_hrs           = 12
+        nip_start_hrs        = -12
+        shift_yards_same_elr = 220
+        shift_yards_diff_elr = 220
+        hazard_pctl          = 50
+        in_seasons           = None
+        describe_var         = False
+        outlier_pctl         = 99
+        add_const            = True
+        seed                 = 1
+        model                = 'logit'
+        plot_roc             = True
+        plot_pred_likelihood = True
+        save_as              = None
+        dpi                  = 600
+        dig_deeper           = False
+        update               = False
+        verbose              = True
     """
+
     # Get the mdata for modelling
     integrated_data = integrate_incident_with_weather_and_vegetation(route_name, weather_category,
                                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs,
                                                                      shift_yards_same_elr, shift_yards_diff_elr,
-                                                                     hazard_pctl)
+                                                                     hazard_pctl, update, verbose)
 
     # Select season data: 'Spring', 'Summer', 'Autumn', 'Winter'
-    integrated_data = models.tools.get_data_by_season(integrated_data, in_seasons, incident_datetime_col='StartDate')
+    integrated_data = get_data_by_season_(integrated_data, in_seasons, incident_datetime_col='StartDate')
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
@@ -677,9 +797,9 @@ def logistic_regression_model(trial_id,
     try:
         np.random.seed(seed)
         if model == 'logit':
-            mod = sm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
+            mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
         else:
-            mod = sm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
+            mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
         result_summary = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
 
         if verbose:
@@ -695,9 +815,9 @@ def logistic_regression_model(trial_id,
         test_set['incident_prob'] = result_summary.predict(test_set[explanatory_variables])
 
         # ROC  # False Positive Rate (FPR), True Positive Rate (TPR), Threshold
-        fpr, tpr, thr = sklearn.metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
+        fpr, tpr, thr = metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
         # Area under the curve (AUC)
-        auc = sklearn.metrics.auc(fpr, tpr)
+        auc = metrics.auc(fpr, tpr)
         ind = list(np.where((tpr + 1 - fpr) == np.max(tpr + np.ones(tpr.shape) - fpr))[0])
         threshold = np.min(thr[ind])
 
@@ -730,11 +850,12 @@ def logistic_regression_model(trial_id,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             # plt.subplots_adjust(left=0.10, bottom=0.1, right=0.96, top=0.96)
             plt.tight_layout()
-            plt.savefig(cdd_prototype_wind_mod(trial_id, "ROC" + save_as), dpi=dpi)
-            path_to_file_roc = model.prototype.tools.cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
-            plt.savefig(path_to_file_roc, dpi=dpi)
-            if save_as == ".svg":
-                save_svg_as_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
+            if save_as:
+                plt.savefig(cdd_prototype_wind_trial(trial_id, "ROC" + save_as), dpi=dpi)
+                path_to_file_roc = cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
+                plt.savefig(path_to_file_roc, dpi=dpi)
+                if save_as == ".svg":
+                    save_svg_as_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -754,11 +875,12 @@ def logistic_regression_model(trial_id,
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
-            plt.savefig(cdd_prototype_wind_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
-            path_to_file_pred = model.prototype.tools.cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
-            plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
-            if save_as == ".svg":
-                save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
+            if save_as:
+                plt.savefig(cdd_prototype_wind_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+                path_to_file_pred = cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
+                plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
+                if save_as == ".svg":
+                    save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
 
         # ===================================================================================
         # if dig_deeper:
@@ -813,27 +935,33 @@ def logistic_regression_model(trial_id,
     repo = locals()
     var_names = get_variable_names(integrated_data, train_set, test_set,
                                    result_summary, mod_accuracy, incid_accuracy, threshold)
-    resources = {k: repo[k] for k in var_names}
-    result_pickle = mssqlserver.metex.make_filename("result", route_name, weather_category,
-                                                    ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    save_pickle(resources, cdd_prototype_wind_mod(trial_id, result_pickle))
+    resources = {k: repo[k] for k in list(var_names)}
+    result_pickle = make_filename("result", route_name, weather_category,
+                                  ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                  shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    save_pickle(resources, cdd_prototype_wind_trial(trial_id, result_pickle), verbose=verbose)
 
     return integrated_data, train_set, test_set, result_summary, mod_accuracy, incid_accuracy, threshold
 
 
-# Evaluate the primer model for different settings
-def evaluate_prototype_model(season=None):
+def evaluate_prototype_model():
+    """
+    Evaluate the primer model given different settings.
+
+    :return:
+    :rtype:
+    """
+
     start_time = time.time()
 
-    expt = sklearn.utils.extmath.cartesian((range(-12, -11),
-                                            range(12, 13),
-                                            range(-12, -11),
-                                            # range(0, 440, 220),
-                                            range(220, 1100, 220),
-                                            # range(0, 440, 220),
-                                            range(220, 1100, 220),
-                                            range(25, 100, 25)))
+    expt = extmath.cartesian((range(-12, -11),
+                              range(12, 13),
+                              range(-12, -11),
+                              # range(0, 440, 220),
+                              range(220, 1100, 220),
+                              # range(0, 440, 220),
+                              range(220, 1100, 220),
+                              range(25, 100, 25)))
     # (range(-12, -11), range(12, 13), range(-24, -23), range(220, 221), range(220, 221), range(25, 26)))
     # ((range(-36, 0, 3), range(0, 15, 3), range(-36, 0, 3)))
     # ((range(-24, -11), range(6, 12), range(-12, -6)))
@@ -867,12 +995,13 @@ def evaluate_prototype_model(season=None):
             shift_yards_same_elr=int(shift_yards_same_elr),
             shift_yards_diff_elr=int(shift_yards_diff_elr),
             hazard_pctl=int(hazard_pctl),
-            in_seasons=season,
+            in_seasons=None,
             describe_var=False,
             outlier_pctl=99,
             add_const=True, seed=123, model='logit',
             plot_roc=False, plot_pred_likelihood=False,
             # dig_deeper=False,
+            update=False,
             verbose=False)
 
         data_sets.append(mdata)
@@ -883,7 +1012,7 @@ def evaluate_prototype_model(season=None):
         incid_accuracy.append(incid_acc)
         thresholds.append(threshold)
 
-        if isinstance(result, sm.BinaryResultsWrapper):
+        if isinstance(result, sm_dcm.BinaryResultsWrapper):
             nobs.append(result.nobs)
             mod_aic.append(result.aic)
             mod_bic.append(result.bic)
@@ -913,19 +1042,46 @@ def evaluate_prototype_model(season=None):
     return trial_summary
 
 
-# View data
-def view_trial_data(trial_id, route='Anglia', weather='Wind',
-                    ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
-                    shift_yards_same_elr=440, shift_yards_diff_elr=220, hazard_pctl=50):
-    result_pickle = mssqlserver.metex.make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-    path_to_pickle = cdd_prototype_wind_mod(trial_id, result_pickle)
+def view_trial_results(trial_id, route='Anglia', weather='Wind',
+                       ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
+                       shift_yards_same_elr=440, shift_yards_diff_elr=220, hazard_pctl=50):
+    """
+    View data.
+
+    :param trial_id:
+    :type trial_id:
+    :param route:
+    :type route:
+    :param weather:
+    :type weather:
+    :param ip_start_hrs:
+    :type ip_start_hrs:
+    :param ip_end_hrs:
+    :type ip_end_hrs:
+    :param nip_start_hrs:
+    :type nip_start_hrs:
+    :param shift_yards_same_elr:
+    :type shift_yards_same_elr:
+    :param shift_yards_diff_elr:
+    :type shift_yards_diff_elr:
+    :param hazard_pctl:
+    :type hazard_pctl:
+    :return:
+    :rtype:
+    """
+
+    result_pickle = make_filename("result", route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                  shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    path_to_pickle = cdd_prototype_wind_trial(trial_id, result_pickle)
+
     if os.path.isfile(path_to_pickle):
-        return load_pickle(path_to_pickle)
+        results = load_pickle(path_to_pickle)
+        return results
+
     else:
         try:
-            result = logistic_regression_model(trial_id, route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                               shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
-            return result
+            results = logistic_regression_model(trial_id, route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+                                                shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+            return results
         except Exception as e:
             print(e)
