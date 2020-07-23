@@ -143,8 +143,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
     else:
         try:
             # Getting Weather data for all incident locations
-            incidents = metex.view_schedule8_costs_by_datetime_location_reason(
-                route_name, weather_category, update)
+            incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
             # Drop non-weather-related incident records
             incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
             # Get data for the specified "Incident Periods"
