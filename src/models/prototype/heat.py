@@ -8,91 +8,133 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely.geometry
-import sklearn.metrics
-import sklearn.utils.extmath
 import statsmodels.discrete.discrete_model as sm
 from pyhelpers.store import load_pickle, save_fig, save_pickle
+from sklearn import metrics
 
-import models.prototype.wind
-import models.tools
-import mssqlserver.metex
-import settings
+from models.prototype.wind import get_incident_location_vegetation
+from models.tools import calculate_prototype_weather_statistics, categorise_track_orientations, cdd_prototype
+from models.tools import get_data_by_season, get_weather_variable_names
+from mssqlserver import metex
+from settings import mpl_preferences, pd_preferences
+from utils import make_filename
 
-# Apply the preferences ==============================================================================================
-settings.mpl_preferences(reset=False)
-settings.pd_preferences(reset=False)
+# == Apply the preferences ============================================================================
+
+mpl_preferences(reset=False)
+pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
-# ====================================================================================================================
-""" Change directory """
 
+# == Change directories ===============================================================================
 
-def cdd_prototype_heat(*sub_dir):
-    path = models.tools.cdd_prototype("heat", "data")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+def cdd_prototype_heat(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("heat", *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# Change directory to "Model\\prototype-Heat\\Trial_" and sub-directories
-def cdd_prototype_heat_mod(trial_id, *sub_dir):
-    path = models.tools.cdd_prototype("heat", "{}".format(trial_id))
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
+def cdd_prototype_heat_trial(trial_id, *sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\heat\\<``trial_id``>" and sub-directories / a file.
+
+    :param trial_id:
+    :type trial_id:
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\heat\\data\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("heat", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
+
     return path
 
 
-# ====================================================================================================================
-""" Calculations for weather data """
+# == Calculations for weather data ====================================================================
 
 
-# Specify the statistics that need to be computed
 def specify_weather_stats_calculations():
+    """
+    Specify the weather statistics that need to be computed.
+
+    :return: a dictionary for calculations of weather statistics
+    :rtype: dict
+    """
+
     weather_stats_calculations = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
                                   'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
                                   'WindSpeed': np.nanmax,
                                   'WindGust': np.nanmax,
                                   'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
                                   'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
+
     return weather_stats_calculations
 
 
-# Get TRUST and the relevant Weather data for each location
 def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                                   ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
-                                  update=False):
+                                  update=False, verbose=False):
     """
-    :param route_name: [str]
-    :param weather_category: [str]
-    :param ip_start_hrs: [int/float]
-    :param nip_ip_gap: [int/float]
-    :param nip_start_hrs: [int/float]
-    :param update: [bool]
-    :return: [pd.DataFrame]
+    Get TRUST data and the weather conditions for each incident location.
 
-    Testing parameters:
-    e.g.
-        route_name='Anglia'
-        weather_category='Heat'
-        ip_start_hrs=-24
-        nip_ip_gap=-5
-        nip_start_hrs=-24
-        update=False
+    :param route_name: name of a Route, defaults to ``'Anglia'``
+    :type route_name: str, None
+    :param weather_category: weather category, defaults to ``'Wind'``
+    :type weather_category: str, None
+    :param ip_start_hrs:
+    :type ip_start_hrs: int, float
+    :param nip_ip_gap:
+    :type nip_ip_gap: int, float
+    :param nip_start_hrs:
+    :type nip_start_hrs: int, float
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return:
+    :rtype: pandas.DataFrame
 
+    **Example**::
+
+        from models.prototype.heat import get_incident_location_weather
+
+        route_name       = 'Anglia'
+        weather_category = 'Heat'
+        ip_start_hrs     = -24
+        nip_ip_gap       = -5
+        nip_start_hrs    = -24
+        update           = True
+        verbose          = True
+
+        incident_location_weather = get_incident_location_weather(route_name, weather_category,
+                                                                  ip_start_hrs, nip_ip_gap, nip_start_hrs,
+                                                                  update, verbose)
     """
 
-    pickle_filename = mssqlserver.metex.make_filename("incident_location_weather", route_name, weather_category,
-                                                      ip_start_hrs, nip_ip_gap, nip_start_hrs)
+    pickle_filename = make_filename("weather", route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs)
     path_to_pickle = cdd_prototype_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
+
     else:
         try:
             # Getting incident data for all incident locations
-            incidents = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
+            incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
             # Drop non-Weather-related incident records
             incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
             # Get data for the specified "Incident Periods"
@@ -104,7 +146,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
 
             if incidents.WeatherCell.dtype != 'int64':
                 # Rectify the records for which Weather cell id is empty
-                weather_cell = mssqlserver.metex.get_weather_cell()
+                weather_cell = metex.get_weather_cell()
                 ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
                 ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_Longitude, weather_cell.ul_Latitude)]
                 ur = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
@@ -126,27 +168,26 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
 
             weather_stats_calculations = specify_weather_stats_calculations()
 
-            # Processing Weather data for IP - Get Weather conditions which led to Incidents for each record
-            def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end) -> list:
+            def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end):
                 """
+                Processing Weather data for IP - Get Weather conditions which led to Incidents for each record.
+
                 :param weather_cell_id: [int] Weather Cell ID
                 :param ip_start: [Timestamp] start of "incident period"
                 :param ip_end: [Timestamp] end of "incident period"
                 :return: [list] a list of statistics
 
-                Parameters: e.g.
+                **Example**::
 
-                weather_cell_id=incidents.WeatherCell[3819210]
-                ip_start=incidents.StartDateTime[3819210]
-                ip_end=incidents.EndDateTime[3819210]
-
+                    weather_cell_id = incidents.WeatherCell[1]
+                    ip_start = incidents.StartDateTime[1]
+                    ip_end = incidents.EndDateTime[1]
                 """
+
                 # Get Weather data about where and when the incident occurred
-                ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
-                                                                                pickle_it=False)
+                ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, ip_start, ip_end, pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats_data = models.tools.calculate_prototype_weather_statistics(
-                    ip_weather_obs, weather_stats_calculations)
+                weather_stats_data = calculate_prototype_weather_statistics(ip_weather_obs, weather_stats_calculations)
                 return weather_stats_data
 
             # Get data for the specified IP
@@ -155,8 +196,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 axis=1)
 
             ip_statistics = pd.DataFrame(ip_stats.to_list(), index=ip_stats.index,
-                                         columns=models.tools.get_weather_variable_names(weather_stats_calculations))
-            ip_statistics['Temperature_diff'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
+                                         columns=get_weather_variable_names(weather_stats_calculations))
+            ip_statistics['Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             ip_data = incidents.join(ip_statistics.dropna(), how='inner')
             ip_data['IncidentReported'] = 1
@@ -175,9 +216,10 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 :param stanox_section:
                 :return:
                 """
+
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = mssqlserver.metex.fetch_weather_by_id_datetime(
-                    weather_cell_id, nip_start, nip_end, pickle_it=False)
+                non_ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, nip_start, nip_end,
+                                                                        pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
                     (ip_data.StanoxSection == stanox_section) &
@@ -189,8 +231,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                         (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
                         (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
                 # Get the max/min/avg Weather parameters for those incident periods
-                non_ip_weather_stats = models.tools.calculate_prototype_weather_statistics(
-                    non_ip_weather_obs, weather_stats_calculations)
+                non_ip_weather_stats = calculate_prototype_weather_statistics(non_ip_weather_obs,
+                                                                              weather_stats_calculations)
                 return non_ip_weather_stats
 
             # Get stats data for the specified "Non-Incident Periods"
@@ -198,9 +240,9 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 lambda x: get_weather_stats_for_non_ip(
                     x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
 
-            nip_statistics = pd.DataFrame(nip_stats.tolist(), nip_stats.index,
-                                          models.tools.get_weather_variable_names(weather_stats_calculations))
-            nip_statistics['Temperature_diff'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
+            nip_statistics = pd.DataFrame(nip_stats.tolist(), index=nip_stats.index,
+                                          columns=get_weather_variable_names(weather_stats_calculations))
+            nip_statistics['Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
             nip_data['IncidentReported'] = 0
@@ -216,9 +258,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 pd.get_dummies(wind_direction, prefix='WindDirection_avg'))
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
-            track_orientation = models.tools.categorise_track_orientations(incident_location_weather)
-            incident_location_weather = incident_location_weather.join(track_orientation).join(
-                pd.get_dummies(track_orientation, prefix='Track_Orientation'))
+            track_orientation = categorise_track_orientations(incident_location_weather)
+            incident_location_weather = incident_location_weather.join(track_orientation)
 
             # Categorise temperature: < 24, = 24, 25, 26, 27, 28, 29, >= 30
             labels = ['Temperature_max < 24°C'] + \
@@ -230,7 +271,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 pd.DataFrame(temperature_category, columns=['Temperature_Category'])).join(
                 pd.get_dummies(temperature_category))
 
-            save_pickle(incident_location_weather, path_to_pickle)
+            save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
 
             return incident_location_weather
 
@@ -238,26 +279,32 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=True, update=False,
+def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=True, update=False, verbose=False,
                                save_as=".tif", dpi=None):
     """
-    Testing parameters:
-    e.g.
-        route_name='Anglia'
-        nip_ip_gap=-14
-        add_err_bar=True
-        update=False
-        save_as=".tif"
-        dpi=None
+    **Example**::
+
+        from models.prototype.heat import plot_temperature_deviation
+
+        route_name  = 'Anglia'
+        nip_ip_gap  = -14
+        add_err_bar = True
+        update      = False
+        verbose     = True
+        save_as     = None  # ".tif"
+        dpi         = None  # 600
     """
+
     gap = np.abs(nip_ip_gap)
 
-    incident_location_weather = [get_incident_location_weather(route_name, nip_ip_gap=-d, update=update)
-                                 for d in range(1, gap + 1)]
+    incident_location_weather = [
+        get_incident_location_weather(route_name, nip_ip_gap=-d, update=update, verbose=verbose)
+        for d in range(1, gap + 1)]
 
     time_and_iloc = ['StartDateTime', 'EndDateTime', 'StanoxSection', 'IncidentDescription']
     selected_cols, data = time_and_iloc + ['Temperature_max'], incident_location_weather[0]
     ip_temperature_max = data[data.IncidentReported == 1][selected_cols]
+
     diff_means, diff_std = [], []
     for i in range(0, gap):
         data = incident_location_weather[i]
@@ -284,55 +331,63 @@ def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=
     plt.tight_layout()
 
     if save_as:
-        save_fig(cdd_prototype_heat_mod(0, "Temp deviation" + save_as), dpi=dpi)
+        path_to_fig = cdd_prototype_heat_trial(0, "Temp deviation" + save_as)
+        save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
-# ====================================================================================================================
-""" Integrate both the Weather and Vegetation data """
+# == Integrate incident data with the weather and vegetation data =====================================
 
-
-# Integrate the Weather and Vegetation conditions for incident locations
-def get_incident_data_with_weather_and_vegetation(route_name='Anglia', weather_category='Heat',
+def get_incident_locations_weather_and_vegetation(route_name='Anglia', weather_category='Heat',
                                                   ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
-                                                  update=False):
+                                                  update=False, verbose=False):
     """
-    Testing parameters:
-    e.g.
-        route_name='Anglia'
-        weather_category='Heat'
-        ip_start_hrs=-24
-        nip_ip_gap=-5
-        nip_start_hrs=-24
-        shift_yards_same_elr=220
-        shift_yards_diff_elr=220
-        hazard_pctl=50
-        update=False
+    Integrate the Weather and Vegetation conditions for incident locations.
 
+    **Example**::
+
+        from models.prototype.heat import get_incident_locations_weather_and_vegetation
+
+        route_name           = 'Anglia'
+        weather_category     = 'Heat'
+        ip_start_hrs         = -24
+        nip_ip_gap           = -5
+        nip_start_hrs        = -24
+        shift_yards_same_elr = 220
+        shift_yards_diff_elr = 220
+        hazard_pctl          = 50
+        update               = True
+        verbose              = True
+
+        integrated_data = get_incident_locations_weather_and_vegetation(
+            route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs,
+            shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl, update, verbose)
     """
 
-    pickle_filename = mssqlserver.metex.make_filename("integrated_data", route_name, weather_category,
-                                                      ip_start_hrs, nip_ip_gap, nip_start_hrs,
-                                                      shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    pickle_filename = make_filename("dataset", route_name, weather_category,
+                                    ip_start_hrs, nip_ip_gap, nip_start_hrs,
+                                    shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
     path_to_pickle = cdd_prototype_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        integrated_data = load_pickle(path_to_pickle)
+        return integrated_data
+
     else:
         try:
             # Get Schedule 8 incident and Weather data for locations
             incident_location_weather = get_incident_location_weather(
-                route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs)
+                route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs, verbose=verbose)
             # Get Vegetation conditions for the locations
-            incident_location_vegetation = models.prototype.wind.get_incident_location_vegetation(
-                route_name, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+            incident_location_vegetation = get_incident_location_vegetation(
+                route_name, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl, verbose=verbose)
 
             # Merge the above two data sets
             common_features = list(set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
             integrated_data = pd.merge(incident_location_weather, incident_location_vegetation,
                                        how='inner', on=common_features)
 
-            save_pickle(integrated_data, path_to_pickle)
+            save_pickle(integrated_data, path_to_pickle, verbose=verbose)
 
             return integrated_data
 
@@ -340,17 +395,20 @@ def get_incident_data_with_weather_and_vegetation(route_name='Anglia', weather_c
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# ====================================================================================================================
-""" Model trials """
+# == Modelling trials =================================================================================
 
-
-# Specify the explanatory variables considered in this prototype model
 def specify_explanatory_variables_for_model_1():
+    """
+    Specify the explanatory variables considered in this prototype model - Version 1.
+
+    :return:
+    """
+
     return [
         # 'Temperature_min',
         # 'Temperature_avg',
         # 'Temperature_max',
-        'Temperature_diff',
+        'Temperature_dif',
         # 'Temperature_max < 24°C',
         'Temperature_max = 24°C',
         'Temperature_max = 25°C',
@@ -381,11 +439,17 @@ def specify_explanatory_variables_for_model_1():
 
 
 def specify_explanatory_variables_for_model_2():
+    """
+    Specify the explanatory variables considered in this prototype model - Version 2.
+
+    :return:
+    """
+
     return [
         # 'Temperature_min',
         # 'Temperature_avg',
         # 'Temperature_max',
-        'Temperature_diff',
+        'Temperature_dif',
         # 'Temperature_max < 24°C',
         'Temperature_max = 24°C',
         'Temperature_max = 25°C',
@@ -447,13 +511,26 @@ def specify_explanatory_variables_for_model_2():
     ]
 
 
-# Describe basic statistics about the main explanatory variables
-def describe_explanatory_variables(train_set, save_as=".tif", dpi=None):
+def describe_explanatory_variables(train_set, save_as=".tif", dpi=None, verbose=False):
+    """
+    Describe basic statistics about the main explanatory variables.
+
+    :param train_set:
+    :param save_as:
+    :param dpi:
+    :param verbose:
+    :return:
+
+    **Example**::
+
+        train_set = integrated_data.copy()
+    """
+
     plt.figure(figsize=(14, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
     ax1 = plt.subplot2grid((1, 8), (0, 0))
-    train_set.Temperature_diff.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
+    train_set.Temperature_dif.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
     ax1.set_xticklabels('')
     plt.xlabel('Temp. Diff.', fontsize=13, labelpad=39)
     plt.ylabel('(°C)', fontsize=12, rotation=0)
@@ -507,11 +584,10 @@ def describe_explanatory_variables(train_set, save_as=".tif", dpi=None):
     plt.tight_layout()
 
     if save_as:
-        path_to_file_weather = cdd_prototype_heat_mod(0, "Variables" + save_as)
-        save_fig(path_to_file_weather, dpi=dpi)
+        path_to_file_weather = cdd_prototype_heat_trial(0, "Variables" + save_as)
+        save_fig(path_to_file_weather, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
-# A prototype model in the context of wind-related Incidents
 def logistic_regression_model(trial_id,
                               route_name='Anglia', weather_category='Heat',
                               ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
@@ -522,51 +598,55 @@ def logistic_regression_model(trial_id,
                               add_const=True, seed=0, model='logit',
                               plot_roc=False, plot_predicted_likelihood=False,
                               save_as=".tif", dpi=None,
-                              verbose=True):
+                              update=False, verbose=True):
     """
-    Testing parameters:
-    e.g.
-        trial_id=0,
-        route_name='Anglia'
-        weather_category='Heat'
-        ip_start_hrs=-24
-        nip_ip_gap=-5
-        nip_start_hrs=-24
-        shift_yards_same_elr=220
-        shift_yards_diff_elr=220
-        hazard_pctl=50
-        season='summer'
-        describe_var=False
-        outlier_pctl=100
-        add_const=True
-        seed=0
-        model='logit'
-        plot_roc=False
-        plot_predicted_likelihood=False
-        save_as=".tif"
-        dpi=None
-        verbose=True
+    Train/test a prototype model in the context of heat-related incidents.
 
-    IncidentReason  IncidentReasonName  IncidentReasonDescription
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IncidentReason | IncidentReasonName | IncidentReasonDescription
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
+    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, Takeback Pumps, ...
+    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind given Group Standards
+    Q1             |   TKB PUMPS        | Takeback Pumps
+    X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
+    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure the responsibility of NR
+    XX             |   MISC OBS         | Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    -------------- | ------------------ | ------------------------------------------------------------------------------
 
-    IQ              TRACK SIGN          Trackside sign blown down/light out etc.
-    IW              COLD                Non severe - Snow/Ice/Frost affecting infrastructure equipment',
-                                        'Takeback Pumps'
-    OF              HEAT/WIND           Blanket speed restriction for extreme heat or high wind in accordance with
-                                        the Group Standards
-    Q1              TKB PUMPS           Takeback Pumps
-    X4              BLNK REST           Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER             Severe Weather not snow affecting infrastructure the responsibility of NR
-    XX              MISC OBS            Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    **Example**::
 
+        trial_id             = 0
+        route_name           = 'Anglia'
+        weather_category     = 'Heat'
+        ip_start_hrs         = -24
+        nip_ip_gap           = -5
+        nip_start_hrs        = -24
+        shift_yards_same_elr = 220
+        shift_yards_diff_elr = 220
+        hazard_pctl          = 50
+        season               = 'summer'
+        describe_var         = False
+        outlier_pctl         = 99
+        add_const            = True
+        seed                 = trial_id
+        model                = 'logit'
+        plot_roc             = True
+        plot_pred_likelihood = True
+        save_as              = None
+        dpi                  = None
+        update               = False
+        verbose              = True
     """
+
     # Get the m_data for Model
-    integrated_data = get_incident_data_with_weather_and_vegetation(
-        route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs,
-        shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
+    integrated_data = get_incident_locations_weather_and_vegetation(route_name, weather_category,
+                                                                    ip_start_hrs, nip_ip_gap, nip_start_hrs,
+                                                                    shift_yards_same_elr, shift_yards_diff_elr,
+                                                                    hazard_pctl, update, verbose)
 
     # Select season data: 'spring', 'summer', 'autumn', 'winter'
-    integrated_data = model.prototype.tools.get_data_by_season(integrated_data, season)
+    integrated_data = get_data_by_season(integrated_data, season)
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
@@ -609,9 +689,9 @@ def logistic_regression_model(trial_id,
         test_set['incident_prob'] = result.predict(test_set[explanatory_variables])
 
         # ROC  # False Positive Rate (FPR), True Positive Rate (TPR), Threshold
-        fpr, tpr, thr = sklearn.metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
+        fpr, tpr, thr = metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
         # Area under the curve (AUC)
-        auc = sklearn.metrics.auc(fpr, tpr)
+        auc = metrics.auc(fpr, tpr)
         ind = list(np.where((tpr + 1 - fpr) == np.max(tpr + np.ones(tpr.shape) - fpr))[0])
         threshold = np.min(thr[ind])
 
@@ -642,7 +722,7 @@ def logistic_regression_model(trial_id,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_prototype_heat_mod(trial_id, "ROC" + save_as), dpi=dpi)
+                save_fig(cdd_prototype_heat_trial(trial_id, "ROC" + save_as), dpi=dpi)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -664,7 +744,7 @@ def logistic_regression_model(trial_id,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_prototype_heat_mod(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+                save_fig(cdd_prototype_heat_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
 
     except Exception as e:
         print(e)
