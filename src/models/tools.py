@@ -471,7 +471,8 @@ def categorise_wind_directions(degree):
         return 4
 
 
-def categorise_track_orientations(data, start_lon_colname, start_lat_colname, end_lon_colname, end_lat_colname):
+def categorise_track_orientations(data, start_lon_colname='StartLongitude', start_lat_colname='StartLatitude',
+                                  end_lon_colname='EndLongitude', end_lat_colname='EndLatitude'):
     """
     Categorise track orientations.
 
