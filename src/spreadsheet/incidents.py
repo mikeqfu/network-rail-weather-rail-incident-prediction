@@ -893,7 +893,7 @@ def get_schedule8_weather_incidents(route_name=None, weather_category=None, upda
             s8weather_incidents = cleanse_geographical_coordinates(s8weather_incidents)
 
             # Retain data for specific Route and Weather category
-            s8weather_incidents = get_subset(s8weather_incidents, route_name, weather_category, reset_index=False)
+            s8weather_incidents = get_subset(s8weather_incidents, route_name, weather_category, rearrange_index=False)
 
             save_pickle(s8weather_incidents, path_to_pickle, verbose=verbose)
 
@@ -995,7 +995,7 @@ def get_schedule8_weather_incidents_02062006_31032014(route_name=None, weather_c
             incident_records = cleanse_geographical_coordinates(incident_records)
 
             # Retain data for specific Route and Weather category
-            incident_records = get_subset(incident_records, route_name, weather_category, reset_index=False)
+            incident_records = get_subset(incident_records, route_name, weather_category, rearrange_index=False)
 
             # Weather'CategoryLookup' -------------------------------------------
             weather_category_lookup = workbook.parse(sheet_name='CategoryLookup')
