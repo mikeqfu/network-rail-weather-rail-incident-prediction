@@ -600,12 +600,16 @@ def categorise_temperatures(attr_dat, column_name='Temperature_max'):
 
 # == Calculations =====================================================================================
 
-def get_weather_variable_names(weather_stats_calculations):
+def get_weather_variable_names(weather_stats_calculations, temperature_dif=False, supplement=None):
     """
     Get weather variable names.
 
     :param weather_stats_calculations:
     :type weather_stats_calculations: dict
+    :param temperature_dif: whether to include 'Temperature_dif', defaults to ``False``
+    :type temperature_dif: bool
+    :param supplement: e.g. 'Hottest_Heretofore'
+    :type supplement: str, list, None
     :return: a list of names of weather variables
     :rtype: list
     """
@@ -619,8 +623,16 @@ def get_weather_variable_names(weather_stats_calculations):
         else:
             weather_variable_names.append('_'.join(
                 [k, v.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
-    weather_variable_names.insert(weather_variable_names.index('Temperature_min') + 1, 'Temperature_dif')
-    wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg', 'Hottest_Heretofore']
+    if temperature_dif:
+        weather_variable_names.insert(weather_variable_names.index('Temperature_min') + 1, 'Temperature_dif')
+
+    if supplement:
+        if isinstance(supplement, str):
+            supplement = [supplement]
+        wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg'] + supplement
+    else:
+        wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg']
+
     return wind_variable_names_
 
 
