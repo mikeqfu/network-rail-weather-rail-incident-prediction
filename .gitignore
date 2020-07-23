@@ -134,8 +134,6 @@ dmypy.json
 .pyre/
 
 # Personal
-.idea/
-*__pycache__/
-Data/
-Paperwork/
-Code/test/
+data/
+docs/
+src/tests/
