@@ -1,5 +1,6 @@
 """ Tools for modelling. """
 
+import datetime
 import functools
 
 import datetime_truncate
@@ -374,9 +375,9 @@ def get_data_by_season(incident_data, season='summer'):
         for y in pd.unique(incident_data.FinancialYear):
             y_dat = incident_data[incident_data.FinancialYear == y]
             # Get data for spring -----------------------------------
-            spring_start1 = pd.datetime(year=y, month=4, day=1)
+            spring_start1 = datetime.datetime(year=y, month=4, day=1)
             spring_end1 = spring_start1 + pd.DateOffset(months=2)
-            spring_start2 = pd.datetime(year=y + 1, month=3, day=1)
+            spring_start2 = datetime.datetime(year=y + 1, month=3, day=1)
             spring_end2 = spring_start2 + pd.DateOffset(months=1)
             spring_dates1 = pd.date_range(spring_start1, spring_start1 + pd.DateOffset(months=2))
             spring_dates2 = pd.date_range(spring_start2, spring_start2 + pd.DateOffset(months=2))
@@ -387,17 +388,17 @@ def get_data_by_season(incident_data, season='summer'):
                           ((y_dat.StartDateTime >= spring_start2) & (y_dat.StartDateTime < spring_end2))
             spring_data = pd.concat([spring_data, y_dat.loc[spring_time]])
             # Get data for summer ----------------------------------
-            summer_start = pd.datetime(year=y, month=6, day=1)
+            summer_start = datetime.datetime(year=y, month=6, day=1)
             summer_end = summer_start + pd.DateOffset(months=3)
             summer = (y_dat.StartDateTime >= summer_start) & (y_dat.StartDateTime < summer_end)
             summer_data = pd.concat([summer_data, y_dat.loc[summer]])
             # Get data for autumn ----------------------------------
-            autumn_start = pd.datetime(year=y, month=9, day=1)
+            autumn_start = datetime.datetime(year=y, month=9, day=1)
             autumn_end = autumn_start + pd.DateOffset(months=3)
             autumn = (y_dat.StartDateTime >= autumn_start) & (y_dat.StartDateTime < autumn_end)
             autumn_data = pd.concat([autumn_data, y_dat.loc[autumn]])
             # Get data for winter -----------------------------------
-            winter_start = pd.datetime(year=y, month=12, day=1)
+            winter_start = datetime.datetime(year=y, month=12, day=1)
             winter_end = winter_start + pd.DateOffset(months=3)
             winter = (y_dat.StartDateTime >= winter_start) & (y_dat.StartDateTime < winter_end)
             winter_data = pd.concat([winter_data, y_dat.loc[winter]])
@@ -438,11 +439,12 @@ def get_data_by_season_(mod_data, in_seasons, incident_datetime_col):
             # (incident_datetime.dt.month % 12 + 3) // 3
             """
             y = incident_dt.year
-            seasons_dt = [('Winter', (pd.datetime(y, 1, 1), pd.datetime(y, 3, 20) + pd.DateOffset(days=1))),
-                          ('Spring', (pd.datetime(y, 3, 21), pd.datetime(y, 6, 20) + pd.DateOffset(days=1))),
-                          ('Summer', (pd.datetime(y, 6, 21), pd.datetime(y, 9, 22) + pd.DateOffset(days=1))),
-                          ('Autumn', (pd.datetime(y, 9, 23), pd.datetime(y, 12, 20) + pd.DateOffset(days=1))),
-                          ('Winter', (pd.datetime(y, 12, 21), pd.datetime(y, 12, 31) + pd.DateOffset(days=1)))]
+            seasons_dt = [
+                ('Winter', (datetime.datetime(y, 1, 1), datetime.datetime(y, 3, 20) + pd.DateOffset(days=1))),
+                ('Spring', (datetime.datetime(y, 3, 21), datetime.datetime(y, 6, 20) + pd.DateOffset(days=1))),
+                ('Summer', (datetime.datetime(y, 6, 21), datetime.datetime(y, 9, 22) + pd.DateOffset(days=1))),
+                ('Autumn', (datetime.datetime(y, 9, 23), datetime.datetime(y, 12, 20) + pd.DateOffset(days=1))),
+                ('Winter', (datetime.datetime(y, 12, 21), datetime.datetime(y, 12, 31) + pd.DateOffset(days=1)))]
             return next(season for season, (start, end) in seasons_dt if start <= incident_dt < end)
 
         mod_data_seasons = mod_data[incident_datetime_col].map(identify_season)
