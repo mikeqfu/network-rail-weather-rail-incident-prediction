@@ -32,6 +32,23 @@ pd_preferences(reset=False)
 
 # == Change directories ===============================================================================
 
+def cdd_prototype_wind(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("wind", *sub_dir, mkdir=mkdir)
+
+    return path
+
+
 def cdd_prototype_wind_trial(trial_id, *sub_dir, mkdir=False):
     """
     Change directory to "..\\data\\models\\prototype\\wind\\<``trial_id``>" and sub-directories / a file.
@@ -47,23 +64,6 @@ def cdd_prototype_wind_trial(trial_id, *sub_dir, mkdir=False):
     """
 
     path = cdd_prototype("wind", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
-
-    return path
-
-
-def cdd_prototype_wind(*sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file.
-
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file
-    :rtype: str
-    """
-
-    path = cdd_prototype("wind", *sub_dir, mkdir=mkdir)
 
     return path
 
