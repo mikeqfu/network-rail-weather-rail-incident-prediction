@@ -184,7 +184,10 @@ def make_filename(base_name, route_name=None, weather_category=None, *extra_suff
     if extra_suffixes:
         extra_suffixes_ = [extra_suffixes] if isinstance(extra_suffixes, str) else extra_suffixes
         suffix_ = ["{}".format(s) for s in extra_suffixes_ if s]
-        suffix = sep + sep.join(suffix_) if len(suffix_) > 1 else sep + suffix_[0]
+        try:
+            suffix = sep + sep.join(suffix_) if len(suffix_) > 1 else sep + suffix_[0]
+        except IndexError:
+            suffix = ""
         filename = base_name_ + route_name_ + weather_category_ + suffix + save_as
 
     else:
