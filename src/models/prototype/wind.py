@@ -1,4 +1,4 @@
-""" A prototype model in the context of wind-related Incidents """
+""" A prototype prediction model of wind-related rail incidents. """
 
 import datetime
 import itertools

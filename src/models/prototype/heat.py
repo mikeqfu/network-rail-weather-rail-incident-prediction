@@ -1,4 +1,4 @@
-""" A prototype model in the context of heat-related Incidents """
+""" A prototype prediction model of heat-related rail incidents. """
 
 import datetime
 import os
