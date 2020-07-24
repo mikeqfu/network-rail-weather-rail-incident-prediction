@@ -6,6 +6,7 @@ import re
 import shutil
 
 import PIL.Image
+import mapclassify
 import matplotlib
 import matplotlib.font_manager
 import matplotlib.patches
@@ -14,77 +15,108 @@ import mpl_toolkits.basemap
 import numpy as np
 import pandas as pd
 import pydriosm as dri
-import pysal.viz.mapclassify.classifiers
 import scipy.spatial
 import shapely.geometry
 import shapely.ops
 from pyhelpers.dir import cd
-from pyhelpers.misc import colour_bar_index, confirmed
-from pyhelpers.settings import mpl_preferences
+from pyhelpers.ops import colour_bar_index, confirmed
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 
 from models.tools import cd_prototype_fig_pub
-from mssqlserver.metex import cdd_metex_db_views, get_subset, get_weather_cell, make_filename
-from mssqlserver.metex import view_schedule8_costs_by_datetime_location, view_schedule8_costs_by_location
-from mssqlserver.vegetation import view_hazardous_trees
-from utils import cdd_network
+from mssqlserver import metex, vegetation
+from settings import mpl_preferences, pd_preferences
+from utils import cdd_network, get_subset, make_filename
 
 matplotlib.use('TkAgg')
 mpl_preferences()
+pd_preferences()
 
 
-# ====================================================================================================================
-""" Preparation """
+# == Preparation ======================================================================================
 
-
-# Make Shapefile ready
 def prepare_shp_layer_files(osm_subregion, relevant_osm_layers=('railways', 'landuse', 'natural'), rm_shp_zip=True):
     """
+    Get shape file ready.
+
     :param osm_subregion: [str]
-    :param relevant_osm_layers: [tuple] (default: ('railways', 'landuse', 'natural'))
+    :param relevant_osm_layers: [tuple; list; iterable] (default: ('railways', 'landuse', 'natural'))
     :param rm_shp_zip: [bool] (default: True)
     :return: [tuple] (directory path of OSM files, directory name of .shp file)
 
-    Testing e.g.
-        osm_subregion = 'england'  # case-insensitive
+    **Example**::
 
-        prep_shp_layer_files(osm_subregion)
+        from models.prototype.hotspots_vis import prepare_shp_layer_files
+
+        osm_subregion = 'England'  # case-insensitive
+        relevant_osm_layers = ('railways', 'landuse', 'natural')
+        rm_shp_zip = True
+
+        osm_dir, shp_file_dir_name = prepare_shp_layer_files(osm_subregion)
+
+        print(osm_dir)
+
+        print(shp_file_dir_name)
     """
-    osm_dir, osm_subregion = cdd_network("OSM"), osm_subregion.lower()
+
+    osm_dir, osm_subregion_, file_format = cdd_network("osm"), osm_subregion.lower(), ".shp.zip"
     osm_file_list = os.listdir(osm_dir)
-    shp_file_dir_name = [x for x in osm_file_list if x.startswith(osm_subregion) and not x.endswith(".zip")]
-    if len(shp_file_dir_name) == 0:
-        shp_zip_file = [x for x in osm_file_list if x.startswith(osm_subregion) and x.endswith(".zip")]
-        if len(shp_zip_file) == 0:
-            dri.download_subregion_osm_file(osm_subregion, osm_file_format=".shp.zip", download_dir=osm_dir)
-            shp_zip_filename = [x for x in os.listdir(osm_dir) if x.startswith(osm_subregion.lower())][0]
+
+    # Look for the folder that may contains the extracted data
+    shp_file_dir_name = [x for x in osm_file_list
+                         if x.startswith(osm_subregion_.replace(" ", "-")) and not x.endswith(file_format)]
+
+    if len(shp_file_dir_name) == 0:  # There is not any folder that contains the extracted data
+        # Check if the raw .shp.zip files exist
+        shp_zip_file = [x for x in osm_file_list if x.startswith(osm_subregion_) and x.endswith(file_format)]
+
+        if len(shp_zip_file) == 0:  # The raw .shp.zip files do not exist
+            # Try to download .shp.zip from the server
+            dri.download_subregion_osm_file(osm_subregion_, osm_file_format=file_format, download_dir=osm_dir)
+            # Find out the raw .shp.zip filename
+            shp_zip_filename = [x for x in os.listdir(osm_dir) if x.startswith(osm_subregion_)]
+            if len(shp_zip_filename) == 0:  # Possibly .shp.zip file of 'osm_subregion' is unavailable from the server
+                # Try to prepare the shp layer files of the subregions of 'osm_subregion'
+                shp_file_dir_name = osm_subregion_.replace(" ", "-") + ".shp"
+                osm_dir_ = cd(osm_dir, shp_file_dir_name)
+                sub_subregions = dri.retrieve_names_of_subregions_of(osm_subregion_, deep=False)
+                for layer in relevant_osm_layers:
+                    dri.merge_multi_shp(sub_subregions, layer=layer, data_dir=osm_dir_, rm_shp_parts=True)
+                # Remove the files for each subregion
+                for f in os.listdir(osm_dir_):
+                    if f.endswith(".shp"):
+                        shutil.rmtree(cd(osm_dir_, f))
+                    elif f.endswith(".shp.zip"):
+                        os.remove(cd(osm_dir_, f))
         else:
             shp_zip_filename = shp_zip_file[0]
-        path_to_shp_zip = cd(osm_dir, shp_zip_filename)
-        dri.extract_shp_zip(path_to_shp_zip, clustered=True)
-        shp_file_dir_name = os.path.splitext(shp_zip_filename)[0]
-        if rm_shp_zip:
-            os.remove(path_to_shp_zip)
+            path_to_shp_zip = cd(osm_dir, shp_zip_filename)
+            dri.extract_shp_zip(path_to_shp_zip, clustered=True)
+            shp_file_dir_name = os.path.splitext(shp_zip_filename)[0]
+
+            if rm_shp_zip:
+                os.remove(path_to_shp_zip)
+
     else:
         shp_file_dir_name = shp_file_dir_name[0]
 
-    # Delete all other files which are not wanted
-    shp_file_dir = cd(osm_dir, shp_file_dir_name)
-    for f in os.listdir(shp_file_dir):
-        if f not in relevant_osm_layers:
-            x = cd(shp_file_dir, f)
-            try:
-                shutil.rmtree(x)
-            except NotADirectoryError:
-                os.remove(x)
+        # Delete all other files which are not wanted
+        shp_file_dir = cd(osm_dir, shp_file_dir_name)
+        for f in os.listdir(shp_file_dir):
+            if f not in relevant_osm_layers:
+                x = cd(shp_file_dir, f)
+                try:
+                    shutil.rmtree(x)
+                except NotADirectoryError:
+                    os.remove(x)
 
     return osm_dir, shp_file_dir_name
 
 
-# Get the path to .shp file for basemap loading
 def get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature=None, boundary_polygon=None,
                                   sub_area_name=None, rm_other_feat=False, update=False):
     """
+    Get the path to .shp file for basemap loading.
+
     :param osm_subregion: [str] e.g. osm_subregion='England'
     :param osm_layer: [str] e.g. osm_layer='railways'
     :param osm_feature: [str; None (default)] e.g. osm_feature='rail'
@@ -94,32 +126,39 @@ def get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature=None, bo
     :param update: [bool]
     :return: [str] path to osm layer (feature)
 
-    Testing e.g.
+    **Examples**::
+
+        from models.prototype.hotspots_vis import get_shp_file_path_for_basemap
+
         osm_subregion = 'England'
         osm_layer = 'railways'
+        boundary_polygon = None
+        rm_other_feat = False
+        update = False
+
         osm_feature = None
-        boundary_polygon = None
         sub_area_name = None
-        rm_other_feat = False
-        update = False
+        shp_file_path_for_basemap = get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature,
+                                                                  boundary_polygon, sub_area_name,
+                                                                  rm_other_feat, update)
+        print(shp_file_path_for_basemap)
+        # ..\\data\\network\\osm\\england-latest-free.shp\\railways\\gis_osm_railways_free_1'
 
-        osm_subregion = 'England'
-        osm_layer = 'railways'
         osm_feature = 'rail'
-        boundary_polygon = None
         sub_area_name = 'anglia'
-        rm_other_feat = False
-        update = False
-
-        get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature, boundary_polygon, sub_area_name,
-                                      rm_other_feat, update)
+        shp_file_path_for_basemap = get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature,
+                                                                  boundary_polygon, sub_area_name,
+                                                                  rm_other_feat, update)
+        print(shp_file_path_for_basemap)
+        # ..\\data\\network\\osm\\england-latest-free.shp\\railways\\gis_osm_railways_rail_free_1-anglia
     """
+
     osm_dir, shp_file_dir_name = prepare_shp_layer_files(osm_subregion)
 
     shp_file_dir = cd(osm_dir, shp_file_dir_name, osm_layer)
 
     shp_filename = [f for f in os.listdir(shp_file_dir)
-                    if re.match(r"gis_osm_{}(_a)?_free_1\.shp".format(osm_layer), f)][0]
+                    if re.match(r"gis_osm_{}(_a)?(_free)?(_1)?\.shp".format(osm_layer), f)][0]
 
     try:
         path_to_shp_file = dri.find_osm_shp_file(osm_subregion, osm_layer, osm_feature, shp_file_dir)[0]
@@ -127,15 +166,15 @@ def get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature=None, bo
     except IndexError:
         if osm_feature is not None:
             assert isinstance(osm_feature, str)
-            shp_feat_name = "{}-{}".format(osm_layer, osm_feature)
+            shp_f_name, ext = os.path.splitext(shp_filename)
+            shp_feat_name = shp_f_name + "_" + osm_feature
 
             path_to_shp_file = cd(shp_file_dir, shp_filename)
             if shp_feat_name not in path_to_shp_file:
                 shp_data = dri.read_shp(path_to_shp_file, mode='geopandas')
                 shp_data_feat = shp_data[shp_data.fclass == osm_feature]
                 shp_data_feat.crs = {'no_defs': True, 'ellps': 'WGS84', 'datum': 'WGS84', 'proj': 'longlat'}
-                shp_data_feat.to_file(cd(shp_file_dir, shp_filename.replace(osm_layer, shp_feat_name)),
-                                      driver='ESRI Shapefile', encoding='UTF-8')
+                shp_data_feat.to_file(cd(shp_file_dir, shp_feat_name + ".shp"), driver='ESRI Shapefile')
                 if rm_other_feat:
                     for f in os.listdir(shp_file_dir):
                         if shp_feat_name not in f:
@@ -146,12 +185,9 @@ def get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature=None, bo
     if boundary_polygon is not None:
         #
         shp_filename = os.path.basename(path_to_shp_file)
-        suffix = "-" + sub_area_name.lower() if sub_area_name else "-sub-area"
-        if suffix in shp_filename:
-            sub_shp_filename = shp_filename
-        else:
-            sub_shp_filename = shp_filename.replace(".shp", "") + suffix + ".shp"
-        path_to_sub_shp_file = cd(shp_file_dir, sub_shp_filename)
+        suffix = "_" + re.sub(r"[ \-]", "", sub_area_name.lower()) if sub_area_name else "_partial"
+        sub_shp_fn = shp_filename if suffix in shp_filename else shp_filename.replace(".shp", "") + suffix + ".shp"
+        path_to_sub_shp_file = cd(shp_file_dir, sub_shp_fn)
         #
         if not os.path.isfile(path_to_sub_shp_file) or update:
             try:
@@ -171,15 +207,14 @@ def get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature=None, bo
     return shp_file_path_for_basemap
 
 
-# ====================================================================================================================
-""" Save output figures """
+# == Save outputs =====================================================================================
 
-
-# A function for saving the plots
 def save_prototype_hotpots_fig(fig, keyword, category,
                                show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
                                save_as, dpi, verbose):
     """
+    Save a figure.
+
     :param fig: [matplotlib.figure.Figure]
     :param keyword: [str] a keyword for specifying the filename
     :param category: [str]
@@ -190,35 +225,39 @@ def save_prototype_hotpots_fig(fig, keyword, category,
     :param dpi: [int; None]
     :param verbose: [bool]
     """
-    if save_as is not None:
-        if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
-            suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
-                         ['weather-grid', 'vegetation', 'hazard-trees'])
-            filename = '-'.join([keyword] + [v for s, v in suffix if s is True])
-            path_to_file = cd_prototype_fig_pub(category, filename + save_as)
-            save_fig(path_to_file, dpi=dpi, verbose=verbose)
+
+    if save_as.lstrip('.') in fig.canvas.get_supported_filetypes():
+        suffix = zip([show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees],
+                     ['weather-grid', 'vegetation', 'hazard-trees'])
+        filename = '-'.join([keyword] + [v for s, v in suffix if s is True])
+        path_to_file = cd_prototype_fig_pub(category, filename + save_as)
+        save_fig(path_to_file, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
-# ====================================================================================================================
-""" Prep base maps """
+# == Prepare base maps ================================================================================
 
-
-# Make the basemap ready
 def plot_base_map(projection='tmerc', railway_line_color='#3D3D3D', legend_loc=(1.05, 0.85)):
     """
+    Create a base map.
+
     :param projection: [str] (default: 'tmerc')
     :param railway_line_color: [str] (default: '#3D3D3D')
     :param legend_loc: [tuple] (default: (1.05, 0.85))
     :return: [tuple] (matplotlib.figure.Figure, mpl_toolkits.basemap.Basemap)
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_base_map
+
         projection = 'tmerc'
         railway_line_color = '#3D3D3D'
         legend_loc = (1.05, 0.85)
 
         plot_base_map(projection, railway_line_color, legend_loc)
     """
+
     print("Plotting the base map ... ", end="")
+
     plt.style.use('ggplot')  # Default, 'classic'; matplotlib.style.available gives the list of available styles
     fig = plt.figure(figsize=(11, 9))  # fig = plt.subplots(figsize=(11, 9))
     plt.subplots_adjust(left=0.001, bottom=0.000, right=0.6035, top=1.000)
@@ -266,15 +305,19 @@ def plot_base_map(projection='tmerc', railway_line_color='#3D3D3D', legend_loc=(
     return fig, base_map
 
 
-# Show Weather cells on the map
 def plot_weather_cells(base_map=None, update=False, weather_cell_colour='#D5EAFF', legend_loc=(1.05, 0.85)):
     """
+    Show weather cells on the base map.
+
     :param base_map: [mpl_toolkits.basemap.Basemap; None (default)] basemap object
     :param update: [bool] (default: False)
     :param weather_cell_colour: [str] '#add6ff' (default), '#99ccff', '#fff68f
     :param legend_loc: [tuple] (default: (1.05, 0.85))
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_weather_cells
+
         base_map = None
         update = False
         route_name = None
@@ -283,13 +326,14 @@ def plot_weather_cells(base_map=None, update=False, weather_cell_colour='#D5EAFF
 
         plot_weather_cells(base_map, update, weather_cell_colour, legend_loc)
     """
+
     if base_map is None:
         _, base_map = plot_base_map()
 
     print("Plotting the Weather cells ... ", end="")
 
     # Get Weather cell data
-    data = get_weather_cell(update=update)
+    data = metex.get_weather_cell(update=update)
     data = get_subset(data, route_name='Anglia')
     # Drop duplicated Weather cell data
     unhashable_cols = ('Polygon_WGS84', 'Polygon_OSGB36', 'IMDM', 'Route')
@@ -316,17 +360,21 @@ def plot_weather_cells(base_map=None, update=False, weather_cell_colour='#D5EAFF
     print("Done.")
 
 
-# Demonstrate the OSM natural forest on the map
 def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e', fill_forest_patches=False,
                              add_osm_natural_tree=False, legend_loc=(1.05, 0.85)):
     """
+    Show the OSM natural forest on the base map.
+
     :param base_map: [mpl_toolkits.basemap.Basemap; None (default)] basemap object
     :param osm_landuse_forest_colour: [str] '#7f987b' (default), '#8ea989', '#72946c', '#72946c'
     :param add_osm_natural_tree: [bool] (default: False)
     :param fill_forest_patches: [bool] (default: False)
     :param legend_loc: [tuple] (default: (1.05, 0.85))
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_osm_forest_and_tree
+
         base_map = None
         osm_landuse_forest_colour = '#72886e'
         fill_forest_patches = False
@@ -336,6 +384,7 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
         plot_osm_forest_and_tree(base_map, osm_landuse_forest_colour, fill_forest_patches,
                                  add_osm_natural_tree, legend_loc)
     """
+
     if base_map is None:
         _, base_map = plot_base_map()
 
@@ -388,14 +437,18 @@ def plot_osm_forest_and_tree(base_map=None, osm_landuse_forest_colour='#72886e',
     print("Done.")
 
 
-# Show hazardous trees on the map
 def plot_hazardous_trees(base_map=None, hazardous_tree_colour='#ab790a', legend_loc=(1.05, 0.85)):
     """
+    Show hazardous trees on the base map.
+
     :param base_map: [mpl_toolkits.basemap.Basemap; None (default)] basemap object
     :param hazardous_tree_colour: [str] '#ab790a' (default), '#886008', '#6e376e', '#5a7b6c'
     :param legend_loc: [tuple] (default: (1.05, 0.85))
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hazardous_trees
+
         base_map = None
         route_name = None
         hazardous_tree_colour = '#ab790a'
@@ -403,12 +456,13 @@ def plot_hazardous_trees(base_map=None, hazardous_tree_colour='#ab790a', legend_
 
         plot_hazardous_trees(base_map, hazardous_tree_colour, legend_loc)
     """
+
     if base_map is None:
         _, base_map = plot_base_map()
 
     print("Plotting the hazardous trees ... ", end="")
 
-    hazardous_trees = view_hazardous_trees()
+    hazardous_trees = vegetation.view_hazardous_trees()
 
     map_points = [shapely.geometry.Point(base_map(long, lat))
                   for long, lat in zip(hazardous_trees.Longitude, hazardous_trees.Latitude)]
@@ -427,10 +481,11 @@ def plot_hazardous_trees(base_map=None, hazardous_tree_colour='#ab790a', legend_
     print("Done.")
 
 
-# Plot base map and associated features
 def plot_base_map_plus(show_metex_weather_cells=True, show_osm_landuse_forest=True, add_osm_natural_tree=False,
-                       show_nr_hazardous_trees=True, legend_loc=(1.05, 0.85), save_as=None, dpi=None):
+                       show_nr_hazardous_trees=True, legend_loc=(1.05, 0.85), save_as=None, dpi=None, verbose=False):
     """
+    Illustrate weather cell and associated natural features (incl. forest and hazardous trees) with the base map.
+
     :param show_metex_weather_cells: [bool] (default: True)
     :param show_osm_landuse_forest: [bool] (default: True)
     :param add_osm_natural_tree: [bool] (default: False)
@@ -438,19 +493,24 @@ def plot_base_map_plus(show_metex_weather_cells=True, show_osm_landuse_forest=Tr
     :param legend_loc: [tuple] (default: (1.05, 0.85))
     :param save_as: [str; None (default)]
     :param dpi: [int; None (default)]
+    :param verbose:
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_base_map_plus
+
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         add_osm_natural_tree = False
         show_nr_hazardous_trees = True
         legend_loc = (1.05, 0.85)
-        save_as= ".tif"
+        save_as= None  # ".tif"
         dpi = None
 
         plot_base_map_plus(show_metex_weather_cells, show_osm_landuse_forest, add_osm_natural_tree,
                            show_nr_hazardous_trees, legend_loc, save_as, dpi)
     """
+
     # Plot basemap
     fig, base_map = plot_base_map(projection='tmerc', legend_loc=legend_loc)
 
@@ -472,28 +532,32 @@ def plot_base_map_plus(show_metex_weather_cells=True, show_osm_landuse_forest=Tr
     sr.axis('off')
 
     # Save the figure
-    save_prototype_hotpots_fig(fig, "base", "Basemap",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "base", "Basemap",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=verbose)
 
 
-# ====================================================================================================================
-""" Get 'hotspot' data """
+# == Data of HOTSPOTS =================================================================================
 
-
-# Get coordinates of points from a .shp file, by subregion, layer and feature
 def get_shp_coordinates(osm_subregion, osm_layer, osm_feature=None, boundary_polygon=None, sub_area_name=None,
-                        update=False):
+                        update=False, verbose=False):
     """
+    Get coordinates of points from a .shp file, by subregion, layer and feature.
+
     :param osm_subregion: [str]
     :param osm_layer: [str]
     :param osm_feature: [str; None (default)]
     :param boundary_polygon: [tuple; None (default)]
     :param sub_area_name: [str; None (default)]
     :param update: [bool] (default: False)
+    :param verbose:
     :return: [shapely.geometry.multipoint.MultiPoint]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import get_shp_coordinates
+
         osm_subregion = 'England'
         osm_layer = 'railways'
         osm_feature = None
@@ -501,54 +565,67 @@ def get_shp_coordinates(osm_subregion, osm_layer, osm_feature=None, boundary_pol
         sub_area_name = 'anglia'
         update = False
 
-        get_shp_coordinates(osm_subregion, osm_layer, osm_feature, boundary_polygon, sub_area_name, update)
+        shp_coordinates = get_shp_coordinates(osm_subregion, osm_layer, osm_feature, boundary_polygon,
+                                              sub_area_name, update)
     """
+
     suffix = "coordinates"
-    path_to_shp_filename = get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature,
-                                                         boundary_polygon, sub_area_name)
+    path_to_shp_filename = get_shp_file_path_for_basemap(osm_subregion, osm_layer, osm_feature, boundary_polygon,
+                                                         sub_area_name)
     path_to_shp = path_to_shp_filename + ".shp"
     path_to_shp_coordinates_pickle = path_to_shp_filename + "-" + suffix + ".pickle"
 
     if os.path.isfile(path_to_shp_coordinates_pickle) and not update:
         shp_coordinates = load_pickle(path_to_shp_coordinates_pickle)
+
     else:
         try:
             railways_shp_data = dri.read_shp(path_to_shp, mode='geopandas')
             shp_coordinates = shapely.geometry.MultiPoint(
-                list(itertools.chain(*(l.coords for l in railways_shp_data.geometry))))
-            save_pickle(shp_coordinates, path_to_shp_coordinates_pickle)
+                list(itertools.chain(*(x.coords for x in railways_shp_data.geometry))))
+            save_pickle(shp_coordinates, path_to_shp_coordinates_pickle, verbose=verbose)
         except Exception as e:
             print(e)
             shp_coordinates = None
+
     return shp_coordinates
 
 
-# Get midpoints (of incident locations) for plotting hotspots
-def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, sort_by=None, update=False):
+def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, sort_by=None, update=False,
+                                        verbose=False):
     """
+    Get midpoints (of incident locations) for plotting hotspots.
+
     :param route_name: [str; None (default)]
     :param weather_category: [str; None (default)]
     :param sort_by: [list; None (default)]
     :param update: [bool] (default: False)
+    :param verbose:
     :return: [pd.DataFrame]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import get_midpoints_for_plotting_hotspots
+
         route_name = None
         weather_category = None
         sort_by = None
         update = False
+        verbose = True
 
-        get_midpoints_for_plotting_hotspots(route_name, weather_category, sort_by, update)
+        incident_hotspots = get_midpoints_for_plotting_hotspots(route_name, weather_category, sort_by,
+                                                                update, verbose)
     """
+
     pickle_filename = make_filename("Schedule8-hotspots", route_name, weather_category)
-    path_to_pickle = cdd_metex_db_views(pickle_filename)
+    path_to_pickle = metex.cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         incident_hotspots = load_pickle(path_to_pickle)
 
     else:
         # Get TRUST (by incident location, i.e. by STANOX section)
-        schedule8_costs_by_location = view_schedule8_costs_by_location()
+        schedule8_costs_by_location = metex.view_schedule8_costs_by_location()
 
         # Find a pseudo midpoint for each recorded incident
         def get_midpoint(x1, y1, x2, y2, as_geom=False):
@@ -560,14 +637,15 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
             :param as_geom: [bool] (default: False)
             :return: [np.ndarray; (list of) shapely.geometry.Point]
 
-            Testing e.g.
+            **Example**::
+
                 x1, y1, x2, y2 = 1.5429, 52.6347, 1.4909, 52.6271
                 as_geom = False
 
                 get_midpoint(x1, y1, x2, y2, as_geom)
                 get_midpoint(x1, y1, x2, y2, True)
             """
-            mid_pts = (x1 + x2)/2, (y1 + y2)/2
+            mid_pts = (x1 + x2) / 2, (y1 + y2) / 2
             if as_geom:
                 if all(isinstance(x, np.ndarray) for x in mid_pts):
                     mid_pts_ = [shapely.geometry.Point(x_, y_) for x_, y_ in zip(list(mid_pts[0]), list(mid_pts[1]))]
@@ -590,9 +668,10 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
         else:
             boundary_polygon, sub_area_name = None, None
 
-        rail_points = get_shp_coordinates('England', 'railways', 'rail', boundary_polygon, sub_area_name)
+        railway_coordinates = get_shp_coordinates('England', 'railways', 'rail', boundary_polygon, sub_area_name)
 
         # Get rail coordinates closest to the midpoints between starts and ends
+        # noinspection PyUnresolvedReferences
         def find_closest_points_between(pts, ref_pts, as_geom=False):
             """
             :param pts: [np.ndarray] an array of size (n, 2)
@@ -600,7 +679,8 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
             :param as_geom: [bool] (default: False)
             :return: [np.ndarray; list of shapely.geometry.Point]
 
-            Testing e.g.
+            **Example**::
+
                 pts = np.array([[1.5429, 52.6347], [1.4909, 52.6271], [1.4248, 52.63075]])
                 ref_pts = np.array([[2.5429, 53.6347], [2.4909, 53.6271], [2.4248, 53.63075]])
                 as_geom = False
@@ -623,12 +703,12 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
                 closest_pts = np.array([ref_pts_[i] for i in indices])
             return closest_pts
 
-        midpoints = find_closest_points_between(pseudo_midpoints, rail_points)
+        midpoints = find_closest_points_between(pseudo_midpoints, railway_coordinates)
 
         midpoints_ = pd.DataFrame(midpoints, schedule8_costs_by_location.index, columns=['MidLongitude', 'MidLatitude'])
         incident_hotspots = schedule8_costs_by_location.join(midpoints_)
 
-        save_pickle(incident_hotspots, path_to_pickle, verbose=True)
+        save_pickle(incident_hotspots, path_to_pickle, verbose=verbose)
 
     if sort_by:
         incident_hotspots.sort_values(sort_by, ascending=False, inplace=True)
@@ -639,31 +719,37 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
     return incident_hotspots
 
 
-# Get statistics for plotting annual delays
-def get_schedule8_annual_stats(route_name='Anglia', weather_category='Wind', update=False):
+def get_schedule8_annual_stats(route_name='Anglia', weather_category='Wind', update=False, verbose=False):
     """
+    Get statistics for plotting annual delays.
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update: [bool] (default: False)
+    :param verbose:
     :return: [pd.DataFrame]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import get_schedule8_annual_stats
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update = False
+        verbose = True
 
-        get_schedule8_annual_stats(route_name, weather_category, update)
+        annual_stats = get_schedule8_annual_stats(route_name, weather_category, update, verbose)
     """
+
     pickle_filename = make_filename("Schedule8-hotspots-annual-delays", route_name, weather_category)
-    path_to_pickle = cdd_metex_db_views(pickle_filename)
+    path_to_pickle = metex.cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
-        annual_delays = load_pickle(path_to_pickle)
-        annual_delays = get_subset(annual_delays, route_name, weather_category)
+        annual_stats = load_pickle(path_to_pickle)
+        annual_stats = get_subset(annual_stats, route_name, weather_category)
 
     else:
-        schedule8_data = view_schedule8_costs_by_datetime_location(
-            route_name, weather_category, update)
+        schedule8_data = metex.view_schedule8_costs_by_datetime_location(route_name, weather_category, update)
         selected_features = ['FinancialYear', 'WeatherCategory', 'Route', 'StanoxSection',
                              'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude']
         schedule8_data_ = schedule8_data.groupby(selected_features).agg(
@@ -671,25 +757,25 @@ def get_schedule8_annual_stats(route_name='Anglia', weather_category='Wind', upd
 
         incident_location_midpoints = get_midpoints_for_plotting_hotspots(route_name, weather_category, update=update)
 
-        annual_delays = schedule8_data_.merge(
-            incident_location_midpoints[selected_features[1:] + ['MidLatitude', 'MidLongitude']], how='left',
-            on=selected_features[1:])
-        annual_delays.sort_values(by=['DelayMinutes', 'DelayCost', 'IncidentCount'], ascending=False, inplace=True)
+        annual_stats = schedule8_data_.merge(
+            incident_location_midpoints[selected_features[1:] + ['MidLatitude', 'MidLongitude']],
+            how='left', on=selected_features[1:])
+        annual_stats.sort_values(by=['DelayMinutes', 'DelayCost', 'IncidentCount'], ascending=False, inplace=True)
 
-        save_pickle(annual_delays, path_to_pickle)
+        save_pickle(annual_stats, path_to_pickle, verbose=verbose)
 
-    return annual_delays
-
-
-# ====================================================================================================================
-""" Plot 'hotspots' """
+    return annual_stats
 
 
-# Plot hotspots of delays for every financial year (2006/07-2014/15)
-def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind', update_data=False, cmap_name='Set1',
-                                    show_metex_weather_cells=True, show_osm_landuse_forest=True,
-                                    show_nr_hazardous_trees=True, save_as=None, dpi=None):
+# == Visualise the HOTSPOTS ===========================================================================
+
+
+def plot_hotspots_given_annual_stats(route_name='Anglia', weather_category='Wind', update_data=False, cmap_name='Set1',
+                                     show_metex_weather_cells=True, show_osm_landuse_forest=True,
+                                     show_nr_hazardous_trees=True, save_as=None, dpi=None):
     """
+    Plot hotspots of delays for every financial year (2006/07-2014/15).
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
@@ -700,7 +786,10 @@ def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind'
     :param save_as: [str; None (default)]
     :param dpi: [numbers.Number; None (default)]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hotspots_given_annual_stats
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
@@ -708,12 +797,13 @@ def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind'
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         show_nr_hazardous_trees = True
-        save_as = ".tif"
+        save_as = None  # ".tif"
         dpi = None
 
-        plot_hotspots_for_annual_delays(route_name, weather_category, update_data, cmap_name, show_metex_weather_cells,
-                                        show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
+        plot_hotspots_given_annual_stats(route_name, weather_category, update_data, cmap_name, show_metex_weather_cells,
+                                         show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
     """
+
     schedule8_annual_stats = get_schedule8_annual_stats(route_name, weather_category, update_data)
 
     annual_stats = schedule8_annual_stats.groupby('FinancialYear').agg(
@@ -724,12 +814,13 @@ def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind'
 
     # Labels
     years = [str(y) for y in hotspots_annual_stats.index]
+    # noinspection PyTypeChecker
     f_years = ['/'.join([y0, str(y1)[-2:]])
                for y0, y1 in zip(years, np.array(hotspots_annual_stats.index) + np.array([1]))]
 
     d_label = ["%s  (%s min." % (fy, format(int(d), ",")) for fy, d in zip(f_years, hotspots_annual_stats.DelayMinutes)]
     c_label = ["  / £%.2f" % round(c * 1e-6, 2) + "M)" for c in hotspots_annual_stats.DelayCost]
-    label = [l for l in reversed([d + c for d, c in zip(d_label, c_label)])]
+    label = [x for x in reversed([d + c for d, c in zip(d_label, c_label)])]
 
     cmap = plt.get_cmap(cmap_name)
     colours = [c for c in reversed(cmap(np.linspace(start=0, stop=1, num=9)))]
@@ -748,7 +839,7 @@ def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind'
                           markersize=26, markeredgecolor='w')
 
     # Add a colour bar
-    cb = colour_bar_index(no_of_colours=len(label), cmap_param=cmap, shrink=0.4, labels=label, pad=0.068)
+    cb = colour_bar_index(cmap=cmap, n_colours=len(label), labels=label, shrink=0.4, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -772,16 +863,18 @@ def plot_hotspots_for_annual_delays(route_name='Anglia', weather_category='Wind'
         plot_hazardous_trees(base_map, legend_loc=(1.05, 0.975))
 
     # Save figure
-    save_prototype_hotpots_fig(fig, "annual-delays-200607-201415", "Hotspots",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "annual-delays-200607-201415", "Hotspots",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=True)
 
 
-# Plot hotspots of delay minutes
 def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', update_data=False, seed=1, cmap_name='Reds',
                              show_metex_weather_cells=True, show_osm_landuse_forest=True,
                              show_nr_hazardous_trees=True, save_as=None, dpi=None):
     """
+    Plot hotspots in terms of delay minutes.
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
@@ -793,7 +886,10 @@ def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', updat
     :param save_as: [str; None (default)]
     :param dpi: [numbers.Number; None (default)]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hotspots_for_delays
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
@@ -802,12 +898,14 @@ def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', updat
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         show_nr_hazardous_trees = True
-        save_as = ".tif"
+        save_as = None  # ".tif"
         dpi = None
 
-        plot_hotspots_for_delays(route_name, weather_category, update_data, seed, cmap_name, show_metex_weather_cells,
-                                        show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
+        plot_hotspots_for_delays(route_name, weather_category, update_data, seed, cmap_name,
+                                 show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                 save_as, dpi)
     """
+
     hotspots_data_init = get_midpoints_for_plotting_hotspots(route_name, weather_category,
                                                              sort_by=['DelayMinutes', 'IncidentCount', 'DelayCost'],
                                                              update=update_data)
@@ -817,7 +915,7 @@ def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', updat
     np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = pysal.viz.mapclassify.NaturalBreaks(y=notnull_data.DelayMinutes.values, k=6, initial=100)
+    breaks = mapclassify.NaturalBreaks(y=notnull_data.DelayMinutes.values, k=6, initial=100)
     hotspots_data = hotspots_data_init.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
     # hotspots_data['jenks_bins'].fillna(-1, inplace=True)
     jenks_labels = ["<= %s min.  / %s locations" % (format(int(b), ','), c) for b, c in zip(breaks.bins, breaks.counts)]
@@ -845,7 +943,7 @@ def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', updat
                           markeredgecolor='w')
 
     # Add a colour bar
-    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(cmap=cmap, n_colours=len(jenks_labels), labels=jenks_labels, shrink=0.4, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -874,17 +972,19 @@ def plot_hotspots_for_delays(route_name='Anglia', weather_category='Wind', updat
         plot_hazardous_trees(base_map, legend_loc=(1.05, 0.975))
 
     # Save figure
-    save_prototype_hotpots_fig(fig, "delays",  "Hotspots",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "delays", "Hotspots",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=True)
 
 
-# Plot hotspots in terms of incident frequency
 def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='Wind', update_data=False, seed=1,
                                          cmap_name='PuRd', show_metex_weather_cells=True,
                                          show_osm_landuse_forest=True, show_nr_hazardous_trees=True,
                                          save_as=None, dpi=None):
     """
+    Plot hotspots in terms of incident frequency.
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
@@ -896,7 +996,10 @@ def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='
     :param save_as: [str; None (default)]
     :param dpi: [numbers.Number; None (default)]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hotspots_for_incident_frequency
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
@@ -905,13 +1008,14 @@ def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         show_nr_hazardous_trees = True
-        save_as = ".tif"
+        save_as = None  # ".tif"
         dpi = None
 
         plot_hotspots_for_incident_frequency(route_name, weather_category, update_data, seed, cmap_name,
-                                             show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                                             save_as, dpi)
+                                             show_metex_weather_cells, show_osm_landuse_forest,
+                                             show_nr_hazardous_trees, save_as, dpi)
     """
+
     hotspots_data_init = get_midpoints_for_plotting_hotspots(route_name, weather_category,
                                                              sort_by=['IncidentCount', 'DelayCost', 'DelayMinutes'],
                                                              update=update_data)
@@ -921,7 +1025,7 @@ def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='
     np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = pysal.viz.mapclassify.NaturalBreaks(y=notnull_data.IncidentCount.values, k=6, initial=100)
+    breaks = mapclassify.NaturalBreaks(y=notnull_data.IncidentCount.values, k=6, initial=100)
     hotspots_data = hotspots_data_init.join(pd.DataFrame(data={'jenks_bins': breaks.yb}, index=notnull_data.index))
 
     jenks_labels = ["<= %d  / %d locations" % (b, c) for b, c in zip(breaks.bins, breaks.counts)]
@@ -955,7 +1059,7 @@ def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='
                           marker='o', color=colours[b], alpha=0.9, markersize=marker_size[b], markeredgecolor='w')
 
     # Add a colour bar
-    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(cmap=cmap, n_colours=len(jenks_labels), labels=jenks_labels, shrink=0.4, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -980,16 +1084,18 @@ def plot_hotspots_for_incident_frequency(route_name='Anglia', weather_category='
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, legend_loc=(1.05, 0.975))
 
-    save_prototype_hotpots_fig(fig, "frequency",  "Hotspots",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "frequency", "Hotspots",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=True)
 
 
-# Plot hotspots of delay costs
-def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update_data=False,
-                            seed=1, cmap_name='YlGnBu', show_metex_weather_cells=False,
-                            show_osm_landuse_forest=False, show_nr_hazardous_trees=False, save_as=None, dpi=None):
+def plot_hotspots_for_cost(route_name='Anglia', weather_category='Wind', update_data=False,
+                           seed=1, cmap_name='YlGnBu', show_metex_weather_cells=False,
+                           show_osm_landuse_forest=False, show_nr_hazardous_trees=False, save_as=None, dpi=None):
     """
+    Plot hotspots in terms of delay cost.
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
@@ -1001,7 +1107,10 @@ def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update
     :param save_as: [str; None (default)]
     :param dpi: [numbers.Number; None (default)]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hotspots_for_cost
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
@@ -1010,12 +1119,13 @@ def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         show_nr_hazardous_trees = True
-        save_as = ".tif"
+        save_as = None  # ".tif"
         dpi = None
 
-        plot_hotspots_for_costs(route_name, weather_category, update_data, seed, cmap_name, show_metex_weather_cells,
+        plot_hotspots_for_cost(route_name, weather_category, update_data, seed, cmap_name, show_metex_weather_cells,
                                 show_osm_landuse_forest, show_nr_hazardous_trees, save_as, dpi)
     """
+
     hotspots_data_init = get_midpoints_for_plotting_hotspots(route_name, weather_category,
                                                              sort_by=['DelayCost', 'IncidentCount', 'DelayMinutes'],
                                                              update=update_data)
@@ -1026,7 +1136,7 @@ def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update
     np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = pysal.viz.mapclassify.NaturalBreaks(y=notnull_data.DelayCost.values, k=5, initial=100)
+    breaks = mapclassify.NaturalBreaks(y=notnull_data.DelayCost.values, k=5, initial=100)
     hotspots_data = hotspots_data_init.join(pd.DataFrame(data={'jenks_bins': breaks.yb}, index=notnull_data.index))
     # df.drop('jenks_bins', axis=1, inplace=True)
     hotspots_data.jenks_bins.fillna(-1, inplace=True)
@@ -1062,7 +1172,7 @@ def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update
                           markersize=marker_size[b], markeredgecolor='w', markeredgewidth=1)
 
     # Add a colour bar
-    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(cmap=cmap, n_colours=len(jenks_labels), labels=jenks_labels, shrink=0.4, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold'))
     cb.ax.tick_params(labelsize=14)
@@ -1087,17 +1197,19 @@ def plot_hotspots_for_costs(route_name='Anglia', weather_category='Wind', update
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, legend_loc=(1.05, 0.975))
 
-    save_prototype_hotpots_fig(fig, "costs",  "Hotspots",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "costs", "Hotspots",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=True)
 
 
-# Plot hotspots in terms of delay minutes per incident
 def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category='Wind', update_data=False,
                                           seed=1, cmap_name='BrBG', show_metex_weather_cells=False,
                                           show_osm_landuse_forest=False, show_nr_hazardous_trees=False,
                                           save_as=None, dpi=None):
     """
+    Plot hotspots in terms of delay minutes per incident.
+
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
@@ -1109,7 +1221,10 @@ def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category=
     :param save_as: [str; None (default)]
     :param dpi: [numbers.Number; None (default)]
 
-    Testing e.g.
+    **Example**::
+
+        from models.prototype.hotspots_vis import plot_hotspots_for_delays_per_incident
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
@@ -1118,13 +1233,14 @@ def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category=
         show_metex_weather_cells = True
         show_osm_landuse_forest = True
         show_nr_hazardous_trees = True
-        save_as = ".tif"
+        save_as = None  # ".tif"
         dpi = None
 
         plot_hotspots_for_delays_per_incident(route_name, weather_category, update_data, seed, cmap_name,
                                               show_metex_weather_cells, show_osm_landuse_forest,
                                               show_nr_hazardous_trees, save_as, dpi)
     """
+
     hotspots_data_init = get_midpoints_for_plotting_hotspots(route_name, weather_category, update=update_data)
     hotspots_data_init['DelayMinutesPerIncident'] = hotspots_data_init.DelayMinutes.div(
         hotspots_data_init.IncidentCount)
@@ -1136,7 +1252,7 @@ def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category=
     np.random.seed(seed)
 
     # Calculate Jenks natural breaks for delay minutes
-    breaks = pysal.viz.mapclassify.NaturalBreaks(y=notnull_data.DelayMinutesPerIncident.values, k=6)
+    breaks = mapclassify.NaturalBreaks(y=notnull_data.DelayMinutesPerIncident.values, k=6)
     hotspots_data = hotspots_data_init.join(pd.DataFrame({'jenks_bins': breaks.yb}, index=notnull_data.index))
     # data['jenks_bins'].fillna(-1, inplace=True)
     jenks_labels = ["<= %s min.  / %s locations" % (format(int(b), ','), c) for b, c in zip(breaks.bins, breaks.counts)]
@@ -1167,7 +1283,7 @@ def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category=
                           markeredgecolor='w')
 
     # Add a colour bar
-    cb = colour_bar_index(no_of_colours=len(jenks_labels), cmap_param=cmap, shrink=0.4, labels=jenks_labels, pad=0.068)
+    cb = colour_bar_index(cmap=cmap, n_colours=len(jenks_labels), labels=jenks_labels, shrink=0.4, pad=0.068)
     for t in cb.ax.yaxis.get_ticklabels():
         t.set_font_properties(matplotlib.font_manager.FontProperties(family='Times New Roman', weight='bold',
                                                                      fname="C:\\Windows\\Fonts\\Times.ttf"))
@@ -1194,31 +1310,30 @@ def plot_hotspots_for_delays_per_incident(route_name='Anglia', weather_category=
     if show_nr_hazardous_trees:
         plot_hazardous_trees(base_map, legend_loc=(1.05, 0.975))
 
-    save_prototype_hotpots_fig(fig, "delays-per-incident", "Hotspots",
-                               show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
-                               save_as, dpi, verbose=True)
+    if save_as:
+        save_prototype_hotpots_fig(fig, "delays-per-incident", "Hotspots",
+                                   show_metex_weather_cells, show_osm_landuse_forest, show_nr_hazardous_trees,
+                                   save_as, dpi, verbose=True)
 
 
-# Plotting
 def plot_hotspots_on_route(route_name='Anglia', weather_category='Wind', update_data=False):
     """
     :param route_name: [str; None] (default: 'Anglia')
     :param weather_category: [str; None] (default: 'Wind')
     :param update_data: [bool] (default: False)
 
-    Testing e.g.
+    **Example**::
+
         route_name = 'Anglia'
         weather_category = 'Wind'
         update_data = False
 
         plot_hotspots_on_route(route_name, weather_category, update_data)
     """
-    import settings
-    settings.mpl_preferences(use_cambria=False, reset=False)
-    settings.np_preferences(reset=False)
-    settings.pd_preferences(reset=False)
 
     if confirmed():  # No need of dpi for ".pdf" or ".svg"
+
+        mpl_preferences(use_cambria=False, reset=False)
 
         fmt = ".png"
 
@@ -1229,9 +1344,9 @@ def plot_hotspots_on_route(route_name='Anglia', weather_category='Wind', update_
         plot_base_map_plus(True, True, False, True, (1.05, 0.85), ".tif", dpi=600)  # Fig. 1.
 
         # Annual delays     # Fig. 2.
-        plot_hotspots_for_annual_delays(route_name, weather_category, update_data, 'Set1', True, True, True, fmt)
-        plot_hotspots_for_annual_delays(route_name, weather_category, update_data, 'Set1', True, True, True, ".tif",
-                                        dpi=600)
+        plot_hotspots_given_annual_stats(route_name, weather_category, update_data, 'Set1', True, True, True, fmt)
+        plot_hotspots_given_annual_stats(route_name, weather_category, update_data, 'Set1', True, True, True, ".tif",
+                                         dpi=600)
 
         # Delays    # Fig. 3.
         plot_hotspots_for_delays(route_name, weather_category, update_data, 1, 'Reds', False, False, False, fmt)
@@ -1239,8 +1354,8 @@ def plot_hotspots_on_route(route_name='Anglia', weather_category='Wind', update_
                                  dpi=600)
 
         # Cost
-        plot_hotspots_for_costs(route_name, weather_category, update_data, 1, 'YlGnBu', False, False, False, fmt)
-        plot_hotspots_for_costs(route_name, weather_category, update_data, 1, 'YlGnBu', True, True, True, fmt)
+        plot_hotspots_for_cost(route_name, weather_category, update_data, 1, 'YlGnBu', False, False, False, fmt)
+        plot_hotspots_for_cost(route_name, weather_category, update_data, 1, 'YlGnBu', True, True, True, fmt)
 
         # Frequency
         plot_hotspots_for_incident_frequency(route_name, weather_category, update_data,
