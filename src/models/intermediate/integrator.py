@@ -132,7 +132,7 @@ def calculate_weather_stats(weather_data):
     return weather_stats_info
 
 
-def integrate_prior_ip_gridded_weather_obs(grids, period, weather_obs):
+def integrate_pip_gridded_weather_obs(grids, period, weather_obs):
     """
     Gather gridded weather observations of the given period for each incident record.
 
@@ -151,6 +151,46 @@ def integrate_prior_ip_gridded_weather_obs(grids, period, weather_obs):
     prior_ip_weather = weather_obs[weather_obs.Pseudo_Grid_ID.isin(grids) & weather_obs.Date.isin(period)]
     # Calculate the max/min/avg for Weather parameters during the period
     weather_stats = calculate_weather_stats(prior_ip_weather)
+
+    # Whether "max_temp = weather_stats[0]" is the hottest of year so far
+    obs_by_far = weather_obs[
+        (weather_obs.Date < min(period)) &
+        (weather_obs.Date > datetime_truncate.truncate_year(min(period))) &
+        weather_obs.Pseudo_Grid_ID.isin(grids)]  # Or weather_obs.Date > pd.datetime(min(period).year, 6, 1)
+    weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
+
+    return weather_stats
+
+
+def integrate_nip_gridded_weather_obs(grids, period, stanox_section, weather_obs, prior_ip_data):
+    """
+    Gather gridded Weather observations of the corresponding non-incident period for each incident record.
+
+    :param grids: e.g. grids = non_ip_data.Weather_Grid.iloc[12]
+    :param period: e.g. period = non_ip_data.Critical_Period.iloc[12]
+    :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[12]
+    :param weather_obs:
+    :param prior_ip_data:
+    :return:
+    """
+
+    # Get non-IP Weather data about where and when the incident occurred
+    nip_weather = weather_obs[(weather_obs.Pseudo_Grid_ID.isin(grids)) & (weather_obs.Date.isin(period))]
+
+    # Get all incident period data on the same section
+    ip_overlap = prior_ip_data[
+        (prior_ip_data.StanoxSection == stanox_section) &
+        (((prior_ip_data.Critical_StartDateTime <= min(period)) &
+          (prior_ip_data.Critical_EndDateTime >= min(period))) |
+         ((prior_ip_data.Critical_StartDateTime <= max(period)) &
+          (prior_ip_data.Critical_EndDateTime >= max(period))))]
+    # Skip data of Weather causing Incidents at around the same time; but
+    if not ip_overlap.empty:
+        nip_weather = nip_weather[
+            (nip_weather.Date < min(ip_overlap.Critical_StartDateTime)) |
+            (nip_weather.Date > max(ip_overlap.Critical_EndDateTime))]
+    # Get the max/min/avg Weather parameters for those incident periods
+    weather_stats = calculate_weather_stats(nip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
     obs_by_far = weather_obs[
@@ -189,7 +229,7 @@ def calculate_radtob_variables_stats(radtob_dat):
 
 
 # Gather solar radiation of the given period for each incident record
-def integrate_prior_ip_midas_radtob(met_stn_id, period, irad_obs):
+def integrate_pip_midas_radtob(met_stn_id, period, irad_obs):
     """
     :param met_stn_id: e.g. met_stn_id = Incidents.Met_SRC_ID.iloc[1]
     :param period: e.g. period = Incidents.Critical_Period.iloc[1]
@@ -198,4 +238,36 @@ def integrate_prior_ip_midas_radtob(met_stn_id, period, irad_obs):
     """
     prior_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
     radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
+    return radtob_stats
+
+
+def integrate_nip_midas_radtob(met_stn_id, period, stanox_section, irad_obs, prior_ip_data):
+    """
+    Gather solar radiation of the corresponding non-incident period for each incident record.
+
+    :param met_stn_id: e.g. met_stn_id = non_ip_data.Met_SRC_ID.iloc[1]
+    :param period: e.g. period = non_ip_data.Critical_Period.iloc[1]
+    :param stanox_section: e.g. location = non_ip_data.StanoxSection.iloc[0]
+    :param irad_obs:
+    :param prior_ip_data:
+    :return:
+    """
+
+    non_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
+
+    # Get all incident period data on the same section
+    ip_overlap = prior_ip_data[
+        (prior_ip_data.StanoxSection == stanox_section) &
+        (((prior_ip_data.Critical_StartDateTime <= min(period)) &
+          (prior_ip_data.Critical_EndDateTime >= min(period))) |
+         ((prior_ip_data.Critical_StartDateTime <= max(period)) &
+          (prior_ip_data.Critical_EndDateTime >= max(period))))]
+    # Skip data of Weather causing Incidents at around the same time; but
+    if not ip_overlap.empty:
+        non_ip_radtob = non_ip_radtob[
+            (non_ip_radtob.OB_END_DATE < min(ip_overlap.Critical_StartDateTime)) |
+            (non_ip_radtob.OB_END_DATE > max(ip_overlap.Critical_EndDateTime))]
+
+    radtob_stats = calculate_radtob_variables_stats(non_ip_radtob)
+
     return radtob_stats
