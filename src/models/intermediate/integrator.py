@@ -25,16 +25,24 @@ def create_circle_buffer_upon_weather_grid(start, end, midpoint, whisker=500):
     """
     Create a circle buffer for start/end location.
 
-    :param start: e.g. incidents.StartNE[0]
+    :param start:
     :type start: shapely.geometry.Point
-    :param end: e.g. incidents.EndNE[0]
+    :param end:
     :type end: shapely.geometry.Point
-    :param midpoint: e.g. incidents.MidpointNE[0]
+    :param midpoint:
     :type midpoint: shapely.geometry.Point
     :param whisker: extended length on both sides of the start and end locations, defaults to ``500``
     :type whisker: int
     :return: a buffer zone
     :rtype: shapely.geometry.Polygon
+
+    **Example**::
+
+        whisker = 0
+
+        start = incidents.StartNE.iloc[0]
+        end = incidents.EndNE.iloc[0]
+        midpoint = incidents.MidpointNE.iloc[0]
     """
 
     if start == end:
