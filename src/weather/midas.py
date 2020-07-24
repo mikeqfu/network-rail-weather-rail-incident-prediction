@@ -7,6 +7,7 @@ import zipfile
 import natsort
 import numpy as np
 import pandas as pd
+import shapely.geometry
 from pyhelpers.geom import wgs84_to_osgb36
 from pyhelpers.store import load_pickle, save_pickle
 
@@ -41,7 +42,8 @@ def get_radiation_stations_information(update=False, verbose=False):
     path_to_pickle = cdd_weather("midas", filename + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
+        rad_stations_info = load_pickle(path_to_pickle)
+        return rad_stations_info
 
     else:
         try:
@@ -53,6 +55,8 @@ def get_radiation_stations_information(update=False, verbose=False):
 
             osgb_en = np.array(wgs84_to_osgb36(rad_stations_info.Longitude.values, rad_stations_info.Latitude.values))
             rad_stations_info[['Easting', 'Northing']] = pd.DataFrame(osgb_en.T)
+            rad_stations_info['E_N_GEOM'] = [shapely.geometry.Point(xy)
+                                             for xy in zip(rad_stations_info.Easting, rad_stations_info.Northing)]
 
             rad_stations_info.sort_values(['SRC_ID'], inplace=True)
             rad_stations_info.set_index('SRC_ID', inplace=True)
