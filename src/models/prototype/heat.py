@@ -13,59 +13,18 @@ from pyhelpers.store import load_pickle, save_fig, save_pickle
 from sklearn import metrics
 
 from models.prototype.wind import get_incident_location_vegetation
-from models.tools import calculate_prototype_weather_statistics, categorise_track_orientations, cdd_prototype
-from models.tools import get_data_by_season, get_weather_variable_names
+from models.tools import calculate_prototype_weather_statistics, categorise_track_orientations
+from models.tools import cdd_prototype_heat, cdd_prototype_heat_trial, get_data_by_season, get_weather_variable_names
 from mssqlserver import metex
 from settings import mpl_preferences, pd_preferences
 from utils import make_filename
-
-# == Apply the preferences ============================================================================
 
 mpl_preferences(reset=False)
 pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
 
-# == Change directories ===============================================================================
-
-def cdd_prototype_heat(*sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file.
-
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file
-    :rtype: str
-    """
-
-    path = cdd_prototype("heat", *sub_dir, mkdir=mkdir)
-
-    return path
-
-
-def cdd_prototype_heat_trial(trial_id, *sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\prototype\\heat\\<``trial_id``>" and sub-directories / a file.
-
-    :param trial_id:
-    :type trial_id:
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\prototype\\heat\\data\\" and sub-directories / a file
-    :rtype: str
-    """
-
-    path = cdd_prototype("heat", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
-
-    return path
-
-
 # == Calculations for weather data ====================================================================
-
 
 def specify_weather_stats_calculations():
     """
