@@ -130,6 +130,76 @@ def cd_intermediate_fig_pub(*sub_dir, mkdir=False):
     return path
 
 
+def cdd_prototype_heat(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\heat\\dat\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("heat", *sub_dir, mkdir=mkdir)
+
+    return path
+
+
+def cdd_prototype_heat_trial(trial_id, *sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\prototype\\heat\\<``trial_id``>" and sub-directories / a file.
+
+    :param trial_id:
+    :type trial_id:
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\prototype\\heat\\data\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_prototype("heat", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
+
+    return path
+
+
+def cdd_intermediate_heat(*sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\intermediate\\heat\\dat\\" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\intermediate\\heat\\dat\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_intermediate("heat", *sub_dir, mkdir=mkdir)
+    return path
+
+
+def cdd_intermediate_heat_trial(trial_id, *sub_dir, mkdir=False):
+    """
+    Change directory to "..\\data\\models\\intermediate\\heat\\<``trial_id``>" and sub-directories / a file.
+
+    :param trial_id:
+    :type trial_id: int, str
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "..\\data\\models\\intermediate\\heat\\data\\" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_intermediate("heat", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
+    return path
+
+
 # == Data manipulations ===============================================================================
 
 def find_weather_cell_id(longitude, latitude):
@@ -490,9 +560,20 @@ def categorise_track_orientations(data, start_lon_colname='StartLongitude', star
     :type end_lat_colname: str
     :return:
     :rtype:
+
+    **Example**::
+
+        start_lon_colname = 'StartLongitude'
+        start_lat_colname = 'StartLatitude'
+        end_lon_colname = 'EndLongitude'
+        end_lat_colname = 'EndLatitude'
+
+        data = incident_location_weather.copy()
+
     """
 
     track_orientations = pd.DataFrame(None, index=range(len(data)), columns=['Track_Orientation'])
+    categories = ['N_S', 'NE_SW', 'NW_SE', 'E_W']
     # origin = (-0.565409, 51.23622)
     start_lon, start_lat = data[start_lon_colname], data[start_lat_colname]
     end_lon, end_lat = data[end_lon_colname], data[end_lat_colname]
@@ -504,7 +585,7 @@ def categorise_track_orientations(data, start_lon_colname='StartLongitude', star
                        track_orientations.Track_Orientation_radians < -np.pi / 3),
         np.logical_and(track_orientations.Track_Orientation_radians >= np.pi / 3,
                        track_orientations.Track_Orientation_radians < np.pi * 2 / 3))
-    track_orientations.Track_Orientation[n_s] = 'N_S'
+    track_orientations.Track_Orientation[n_s] = categories[0]
 
     # NE-SW / SW-NE: [np.pi/6, np.pi/3] & [-np.pi*5/6, -np.pi*2/3]
     ne_sw = np.logical_or(
@@ -512,7 +593,7 @@ def categorise_track_orientations(data, start_lon_colname='StartLongitude', star
                        track_orientations.Track_Orientation_radians < np.pi / 3),
         np.logical_and(track_orientations.Track_Orientation_radians >= -np.pi * 5 / 6,
                        track_orientations.Track_Orientation_radians < -np.pi * 2 / 3))
-    track_orientations.Track_Orientation[ne_sw] = 'NE_SW'
+    track_orientations.Track_Orientation[ne_sw] = categories[1]
 
     # NW-SE / SE-NW: [np.pi*2/3, np.pi*5/6], [-np.pi/3, -np.pi/6]
     nw_se = np.logical_or(
@@ -520,17 +601,19 @@ def categorise_track_orientations(data, start_lon_colname='StartLongitude', star
                        track_orientations.Track_Orientation_radians < np.pi * 5 / 6),
         np.logical_and(track_orientations.Track_Orientation_radians >= -np.pi / 3,
                        track_orientations.Track_Orientation_radians < -np.pi / 6))
-    track_orientations.Track_Orientation[nw_se] = 'NW_SE'
+    track_orientations.Track_Orientation[nw_se] = categories[2]
 
     # E-W / W-E: [-np.pi, -np.pi*5/6], [-np.pi/6, np.pi/6], [np.pi*5/6, np.pi]
-    track_orientations.Track_Orientation.fillna('E_W', inplace=True)
+    track_orientations.Track_Orientation.fillna(categories[3], inplace=True)
     # e_w = np.logical_or(np.logical_or(
     #     np.logical_and(df.Track_Orientation_radians >= -np.pi, df.Track_Orientation_radians < -np.pi * 5 / 6),
     #     np.logical_and(df.Track_Orientation_radians >= -np.pi/6, df.Track_Orientation_radians < np.pi/6)),
     #     np.logical_and(df.Track_Orientation_radians >= np.pi*5/6, df.Track_Orientation_radians < np.pi))
-    # data.Track_Orientation[e_w] = 'E-W'
+    # data.Track_Orientation[e_w] = 'E_W'
 
-    categorical_var = pd.get_dummies(track_orientations.Track_Orientation, prefix='Track_Orientation', prefix_sep='_')
+    prefix, sep = 'Track_Orientation', '_'
+    categorical_var = pd.get_dummies(track_orientations.Track_Orientation, prefix=prefix, prefix_sep=sep)
+    categorical_var = categorical_var.T.reindex([prefix + sep + x for x in categories]).T.fillna(0).astype(np.int64)
 
     track_orientations = pd.concat([track_orientations[['Track_Orientation']], categorical_var], axis=1)
 
