@@ -146,14 +146,16 @@ def make_filename(base_name, route_name=None, weather_category=None, *extra_suff
         from utils import make_filename
 
         base_name = "test"  # None
-        route_name = None
-        weather_category = None
         sep = "-"
         save_as = ".pickle"
 
+        route_name = None
+        weather_category = None
         make_filename(base_name, route_name, weather_category)
         # test.pickle
 
+        route_name = None
+        weather_category = 'Heat'
         make_filename(None, route_name, weather_category, "test1")
         # test1.pickle
 
@@ -167,19 +169,22 @@ def make_filename(base_name, route_name=None, weather_category=None, *extra_suff
         # test-North_and_East-Heat-test1-test2.pickle
     """
 
-    base_name_ = "data" if base_name is None else base_name
+    base_name_ = "" if base_name is None else base_name
 
     if route_name is None:
         route_name_ = ""
     else:
         rts = list(set(load_json(cdd_network("routes", "name-changes.json")).values()))
-        route_name_ = (sep if base_name_ else "") + find_similar_str(route_name, rts).replace(" ", "_")
+        route_name_ = (sep if base_name else "") + find_similar_str(route_name, rts).replace(" ", "_")
 
     if weather_category is None:
         weather_category_ = ""
     else:
         wcs = load_json(cdd_weather("weather-categories.json"))['WeatherCategory']
-        weather_category_ = (sep if route_name_ else "") + find_similar_str(weather_category, wcs).replace(" ", "_")
+        weather_category_ = (sep if route_name else "") + find_similar_str(weather_category, wcs).replace(" ", "_")
+
+    if base_name_ + route_name_ + weather_category_ == '':
+        base_name_ = "data"
 
     if extra_suffixes:
         extra_suffixes_ = [extra_suffixes] if isinstance(extra_suffixes, str) else extra_suffixes
