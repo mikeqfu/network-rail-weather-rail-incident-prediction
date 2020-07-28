@@ -12,7 +12,7 @@ from pyhelpers.geom import find_closest_points_between, get_midpoint, wgs84_to_o
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import save
 
-from models.prototype.plot_hotspots import get_shp_coordinates
+from models.prototype.hotspots_vis import get_shp_coordinates
 from mssqlserver import metex
 from utils import cdd_incidents
 
