@@ -654,6 +654,14 @@ def cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', upd
     :type update_dict: bool
     :return: cleansed data frame
     :rtype: pandas.DataFrame
+
+    **Example**::
+
+        col_name = 'StanoxSection'
+        sep = ' : '
+        update_dict = False
+
+        data = s8weather_incidents.copy()
     """
 
     dat = data.copy(deep=True)
@@ -699,7 +707,9 @@ def cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', upd
 
     #
     start_end.replace(fetch_location_names_repl_dict('Description', regex=True), inplace=True)
+    start_end.replace(fetch_location_names_repl_dict(old_column_name, regex=True), inplace=True)
     start_end.replace(fetch_location_names_repl_dict(regex=True), regex=True, inplace=True)
+    start_end.replace(fetch_location_names_repl_dict(), inplace=True)
 
     # ref = rc.get_location_codes()['Locations']
     # ref.drop_duplicates(subset=['Location'], inplace=True)
@@ -736,6 +746,11 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     :type update_metadata: bool
     :return: cleansed data frame
     :rtype: pandas.DataFrame
+
+    **Example**::
+
+        update_metadata = False
+        data = s8weather_incidents.copy()
     """
 
     dat = data.copy(deep=True)
@@ -745,8 +760,19 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     coords_cols = ['EASTING', 'NORTHING', 'DEG_LONG', 'DEG_LAT']
     coords_cols_alt = ['Easting', 'Northing', 'Longitude', 'Latitude']
     ref_loc_dat_1.rename(columns=dict(zip(coords_cols, coords_cols_alt)), inplace=True)
+    ref_loc_dat_1 = ref_loc_dat_1[['LOOKUP_NAME'] + coords_cols_alt].drop_duplicates('LOOKUP_NAME')
 
-    ref_loc_dat_1 = ref_loc_dat_1.drop_duplicates('LOOKUP_NAME').set_index('LOOKUP_NAME')
+    tmp, idx = [], []
+    for i in ref_loc_dat_1.index:
+        x_ = ref_loc_dat_1.LOOKUP_NAME.loc[i]
+        if isinstance(x_, tuple):
+            for y in x_:
+                tmp.append([y] + ref_loc_dat_1[coords_cols_alt].loc[i].to_list())
+    ref_colname_1 = ['LOOKUP_NAME'] + coords_cols_alt
+    ref_loc_dat_1 = ref_loc_dat_1[ref_colname_1].append(pd.DataFrame(tmp, columns=ref_colname_1))
+    ref_loc_dat_1.drop_duplicates(subset=coords_cols_alt, keep='last', inplace=True)
+    ref_loc_dat_1.set_index('LOOKUP_NAME', inplace=True)
+
     dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='StartLocation')
     dat.rename(columns=dict(zip(coords_cols_alt, ['Start' + c for c in coords_cols_alt])), inplace=True)
     dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='EndLocation')
@@ -765,8 +791,8 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     temp = dat[dat.StartEasting.isnull() | dat.StartLongitude.isnull()]
     temp = temp.join(loc_metadata, on='StartLocation')
     dat.loc[temp.index, 'StartLongitude':'StartLatitude'] = temp[['Longitude', 'Latitude']].values
-    dat.loc[temp.index, 'StartEasting':'StartNorthing'] = [
-        list(wgs84_to_osgb36(x[0], x[1])) for x in temp[['Longitude', 'Latitude']].values]
+    dat.loc[temp.index, 'StartEasting'], dat.loc[temp.index, 'StartNorthing'] = wgs84_to_osgb36(
+        temp.Longitude.values, temp.Latitude.values)
 
     temp = dat[dat.EndEasting.isnull() | dat.EndLongitude.isnull()]
     temp = temp.join(loc_metadata, on='EndLocation')
@@ -779,14 +805,14 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     na_loc = ['Dalston Junction (East London Line)', 'Ashford West Junction (CTRL)',
               'Southfleet Junction', 'Channel Tunnel Eurotunnel Boundary CTRL']
     na_loc_longlat = [[-0.0751, 51.5461], [0.86601557, 51.146927], [0.34262910, 51.419354], [1.1310482, 51.094808]]
-    for x, longlat in zip(na_loc, na_loc_longlat):
-        if x in list(temp.EndLocation):
-            idx = temp[temp.EndLocation == x].index
+    for x_, longlat in zip(na_loc, na_loc_longlat):
+        if x_ in list(temp.EndLocation):
+            idx = temp[temp.EndLocation == x_].index
             temp.loc[idx, 'EndLongitude':'Latitude'] = longlat * 2
             dat.loc[idx, 'EndLongitude':'EndLatitude'] = longlat
 
-    dat.loc[temp.index, 'EndEasting':'EndNorthing'] = [
-        list(wgs84_to_osgb36(x[0], x[1])) for x in temp[['Longitude', 'Latitude']].values]
+    dat.loc[temp.index, 'EndEasting'], dat.loc[temp.index, 'EndNorthing'] = wgs84_to_osgb36(
+        temp.Longitude.values, temp.Latitude.values)
 
     # ref 2 ----------------------------------------------
     stn = Stations()
@@ -810,19 +836,11 @@ def cleanse_geographical_coordinates(data, update_metadata=False):
     dat.loc[:, 'EndLongitude':'EndLatitude'] = np.array(
         osgb36_to_wgs84(dat.EndEasting.values, dat.EndNorthing.values)).T
 
-    #
-    def convert_to_point(x, h_col, v_col):
-        if np.isnan(x[h_col]) or np.isnan(x[v_col]):
-            p = shapely.geometry.Point()
-        else:
-            p = shapely.geometry.Point((x[h_col], x[v_col]))
-        return p
-
     # Convert coordinates to shapely.geometry.Point
-    dat['StartLongLat'] = dat.apply(lambda x: convert_to_point(x, 'StartLongitude', 'StartLatitude'), axis=1)
-    dat['StartNE'] = dat.apply(lambda x: convert_to_point(x, 'StartEasting', 'StartNorthing'), axis=1)
-    dat['EndLongLat'] = dat.apply(lambda x: convert_to_point(x, 'EndLongitude', 'EndLatitude'), axis=1)
-    dat['EndNE'] = dat.apply(lambda x: convert_to_point(x, 'EndEasting', 'EndNorthing'), axis=1)
+    dat['StartXY'] = dat.apply(lambda x: shapely.geometry.Point(x.StartEasting, x.StartNorthing), axis=1)
+    dat['EndXY'] = dat.apply(lambda x: shapely.geometry.Point(x.EndEasting, x.EndNorthing), axis=1)
+    dat['StartLongLat'] = dat.apply(lambda x: shapely.geometry.Point(x.StartLongitude, x.StartLatitude), axis=1)
+    dat['EndLongLat'] = dat.apply(lambda x: shapely.geometry.Point(x.EndLongitude, x.EndLatitude), axis=1)
 
     return dat
 
@@ -848,7 +866,7 @@ def get_schedule8_weather_incidents(route_name=None, weather_category=None, upda
 
         route_name = None
         weather_category = None
-        update = True
+        update = False
         verbose = True
 
         s8weather_incidents = get_schedule8_weather_incidents(route_name, weather_category, update, verbose)
@@ -860,6 +878,7 @@ def get_schedule8_weather_incidents(route_name=None, weather_category=None, upda
 
     if os.path.isfile(path_to_pickle) and not update:
         s8weather_incidents = load_pickle(path_to_pickle)
+
     else:
         try:
             # Load data from the raw file
