@@ -1,11 +1,9 @@
 """ Met Office RADTOB (Radiation values currently being reported) """
 
-import gc
 import os
 import zipfile
 
 import natsort
-import numpy as np
 import pandas as pd
 import shapely.geometry
 from pyhelpers.geom import wgs84_to_osgb36
@@ -51,12 +49,12 @@ def get_radiation_stations_information(update=False, verbose=False):
             rad_stations_info = pd.read_excel(path_to_spreadsheet, parse_dates=['Station start date'])
             rad_stations_info.columns = [x.title().replace(' ', '') if x != 'src_id' else x.upper()
                                          for x in rad_stations_info.columns]
-            rad_stations_info.StationName = rad_stations_info.StationName.str.replace('\xa0\xa0\xa0\xa0Locate', '')
+            rad_stations_info.StationName = rad_stations_info.StationName.str.replace(r'(\xa0)+Locate', '', regex=True)
 
-            osgb_en = np.array(wgs84_to_osgb36(rad_stations_info.Longitude.values, rad_stations_info.Latitude.values))
-            rad_stations_info[['Easting', 'Northing']] = pd.DataFrame(osgb_en.T)
-            rad_stations_info['E_N_GEOM'] = [shapely.geometry.Point(xy)
-                                             for xy in zip(rad_stations_info.Easting, rad_stations_info.Northing)]
+            rad_stations_info['Easting'], rad_stations_info['Northing'] = wgs84_to_osgb36(
+                rad_stations_info.Longitude.values, rad_stations_info.Latitude.values)
+            rad_stations_info['EN_GEOM'] = [
+                shapely.geometry.Point(xy) for xy in zip(rad_stations_info.Easting, rad_stations_info.Northing)]
 
             rad_stations_info.sort_values(['SRC_ID'], inplace=True)
             rad_stations_info.set_index('SRC_ID', inplace=True)
@@ -199,8 +197,6 @@ def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False
 
             # Save data as a pickle
             save_pickle(radtob, path_to_pickle, verbose=verbose)
-
-            gc.collect()
 
             return radtob
 
