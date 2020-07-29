@@ -617,7 +617,7 @@ def get_midpoints_for_plotting_hotspots(route_name=None, weather_category=None, 
                                                                 update, verbose)
     """
 
-    pickle_filename = make_filename("Schedule8-hotspots", route_name, weather_category)
+    pickle_filename = make_filename("s8hotspots", route_name, weather_category)
     path_to_pickle = metex.cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -741,7 +741,7 @@ def get_schedule8_annual_stats(route_name='Anglia', weather_category='Wind', upd
         annual_stats = get_schedule8_annual_stats(route_name, weather_category, update, verbose)
     """
 
-    pickle_filename = make_filename("Schedule8-hotspots-annual-delays", route_name, weather_category)
+    pickle_filename = make_filename("s8hotspots-annual-delays", route_name, weather_category)
     path_to_pickle = metex.cdd_metex_db_views(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
