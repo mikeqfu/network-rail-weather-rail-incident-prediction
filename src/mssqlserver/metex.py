@@ -2009,7 +2009,7 @@ def view_schedule8_data(route_name=None, weather_category=None, rearrange_index=
         print(schedule8_data)
     """
 
-    filename = "Schedule8-data" + ("-weather-attributed" if weather_attributed_only else "")
+    filename = "s8data" + ("-weather-attributed" if weather_attributed_only else "")
     pickle_filename = make_filename(filename, route_name, weather_category, save_as=".pickle")
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2159,7 +2159,7 @@ def view_schedule8_data_pfpi(route_name=None, weather_category=None, update=Fals
         print(data)
     """
 
-    filename = "Schedule8-details-pfpi"
+    filename = "s8data-pfpi"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2260,7 +2260,7 @@ def view_schedule8_costs_by_location(route_name=None, weather_category=None, upd
         print(extracted_data)
     """
 
-    filename = "Schedule8-costs-by-location"
+    filename = "s8costs-by-location"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2347,7 +2347,7 @@ def view_schedule8_costs_by_datetime_location(route_name=None, weather_category=
         print(extracted_data)
     """
 
-    filename = "Schedule8-costs-by-datetime-location"
+    filename = "s8costs-by-datetime-location"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2442,7 +2442,7 @@ def view_schedule8_costs_by_datetime_location_reason(route_name=None, weather_ca
         print(extracted_data)
     """
 
-    filename = "Schedule8-costs-by-datetime-location-reason"
+    filename = "s8costs-by-datetime-location-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2512,7 +2512,7 @@ def view_schedule8_costs_by_datetime(route_name=None, weather_category=None, upd
     :rtype: pandas.DataFrame
     """
 
-    filename = "Schedule8-costs-by-datetime"
+    filename = "s8costs-by-datetime"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2569,7 +2569,7 @@ def view_schedule8_costs_by_reason(route_name=None, weather_category=None, updat
     :rtype: pandas.DataFrame
     """
 
-    filename = "Schedule8-costs-by-reason"
+    filename = "s8costs-by-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2631,7 +2631,7 @@ def view_schedule8_costs_by_location_reason(route_name=None, weather_category=No
     :rtype: pandas.DataFrame
     """
 
-    filename = "Schedule8-costs-by-location-reason"
+    filename = "s8costs-by-location-reason"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2698,7 +2698,7 @@ def view_schedule8_costs_by_weather_category(route_name=None, weather_category=N
     :rtype: pandas.DataFrame
     """
 
-    filename = "Schedule8-costs-by-weather_category"
+    filename = "s8costs-by-weather_category"
     pickle_filename = make_filename(filename, route_name, weather_category)
     path_to_pickle = cdd_metex_db_views(pickle_filename)
 
@@ -2782,7 +2782,7 @@ def view_metex_schedule8_incident_locations(route_name=None, weather_category=No
 
     assert start_and_end_elr in (None, 'same', 'diff')
 
-    filename = "Schedule8-incident-locations"
+    filename = "s8incident-locations"
 
     start_and_end_elr_ = start_and_end_elr + 'ELR' if start_and_end_elr else start_and_end_elr
     pickle_filename = make_filename(filename, route_name, weather_category, start_and_end_elr_)
