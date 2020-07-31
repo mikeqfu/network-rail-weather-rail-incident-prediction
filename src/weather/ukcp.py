@@ -2,20 +2,25 @@
 
 import gc
 import os
+import tempfile
 import zipfile
 
 import natsort
 import pandas as pd
 import shapely.geometry
+import sqlalchemy.types
 from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.settings import pd_preferences
 from pyhelpers.store import load_pickle, save_pickle
 
+from mssqlserver.tools import create_mssql_connectable_engine
 from utils import cdd_weather
 from weather.tools import create_grid
 
 pd_preferences()
 
+
+# == Observation grids ================================================================================
 
 def parse_observation_grids(filename):
     """
@@ -47,77 +52,61 @@ def parse_observation_grids(filename):
     return obs_grids
 
 
-def prep_observation_grids(zip_filename, verbose=False):
-    """
-    Get ready the data of observation grids from the zipped file.
-
-    :param zip_filename: filename of a zipped file for the data of observation grids
-    :type zip_filename: str
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
-    :type verbose: bool, int
-
-    **Example**::
-
-        zip_filename = "daily-precipitation.zip"
-        verbose = True
-
-        prep_observation_grids(zip_filename)
-    """
-
-    try:
-        path_to_zip = cdd_weather("ukcp", zip_filename)
-
-        with zipfile.ZipFile(path_to_zip, 'r') as zf:
-            filename_list = natsort.natsorted(zf.namelist())
-            obs_grids = [parse_observation_grids(zf.open(f)) for f in filename_list]
-        zf.close()
-
-        observation_grids = pd.concat(obs_grids, ignore_index=True)
-
-        # Add a pseudo id for each observation grid
-        observation_grids.sort_values('Centroid', inplace=True)
-        observation_grids.index = pd.Index(range(len(observation_grids)), name='Pseudo_Grid_ID')
-
-        path_to_pickle = cdd_weather("ukcp", "observation-grids.pickle")
-        save_pickle(observation_grids, path_to_pickle, verbose=verbose)
-
-    except Exception as e:
-        print("Failed to get \"Observation Grids\". {}".format(e))
-
-
-def fetch_observation_grids(update=False, verbose=False):
+def get_observation_grids(zip_filename="daily-precipitation.zip", update=False, verbose=False):
     """
     Fetch data of observation grids from local pickle.
 
+    :param zip_filename: filename of a zipped file for the data of observation grids
+    :type zip_filename: str
     :param update: whether to check on update and proceed to update the package data, defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
     :type verbose: bool, int
-    :return: MIDAS RADTOB (Radiation data)
+    :return: MIDAS RADTOB observation grids
     :rtype: pandas.DataFrame
 
     **Example**::
 
-        from weather.ukcp import fetch_observation_grids
+        from weather.ukcp import get_observation_grids
 
         update = True
         verbose = True
 
-        observation_grids = fetch_observation_grids(zip_filename, update, verbose)
+        zip_filename = "daily-precipitation.zip"
+        observation_grids = get_observation_grids(zip_filename, update, verbose)
     """
 
     path_to_pickle = cdd_weather("ukcp", "observation-grids.pickle")
 
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_observation_grids("daily-precipitation.zip", verbose=verbose)
-
-    try:
+    if os.path.isfile(path_to_pickle) and not update:
         observation_grids = load_pickle(path_to_pickle)
-        return observation_grids
 
-    except Exception as e:
-        print(e)
+    else:
+        try:
+            path_to_zip = cdd_weather("ukcp", zip_filename)
 
+            with zipfile.ZipFile(path_to_zip, 'r') as zf:
+                filename_list = natsort.natsorted(zf.namelist())
+                obs_grids = [parse_observation_grids(zf.open(f)) for f in filename_list]
+            zf.close()
+
+            observation_grids = pd.concat(obs_grids, ignore_index=True)
+
+            # Add a pseudo id for each observation grid
+            observation_grids.sort_values('Centroid', inplace=True)
+            observation_grids.index = pd.Index(range(len(observation_grids)), name='Pseudo_Grid_ID')
+
+            path_to_pickle = cdd_weather("ukcp", "observation-grids.pickle")
+            save_pickle(observation_grids, path_to_pickle, verbose=verbose)
+
+        except Exception as e:
+            print("Failed to get \"Observation Grids\". {}".format(e))
+            observation_grids = None
+
+    return observation_grids
+
+
+# == UKCP09 data ======================================================================================
 
 def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01'):
     """
@@ -184,75 +173,8 @@ def make_ukcp_pickle_path(filename, start_date):
     return path_to_pickle
 
 
-def prep_daily_gridded_weather_obs(zip_filename, var_name, start_date='2006-01-01', use_pseudo_grid_id=False,
-                                   update=False, verbose=False):
-    """
-    Get ready the data of daily gridded weather observations from original file.
-
-    :param zip_filename: "daily-maximum-temperature", "daily-minimum-temperature", or "daily-precipitation"
-    :type zip_filename: str
-    :param var_name: variable name; 'Precipitation' or 'Maximum_Temperature', 'Minimum_Temperature'
-    :type var_name: str
-    :param start_date: defaults to ``'2006-01-01'``
-    :type start_date: str
-    :param use_pseudo_grid_id: defaults to ``False``
-    :type use_pseudo_grid_id: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
-    :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
-    :type verbose: bool, int
-
-    **Examples**::
-
-        from weather.ukcp import prep_daily_gridded_weather_obs
-
-        start_date = '2006-01-01'
-        use_pseudo_grid_id = False
-        update = True
-        verbose = True
-
-        zip_filename = "daily-maximum-temperature"
-        var_name = 'Maximum_Temperature'
-        prep_daily_gridded_weather_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, update, verbose)
-
-        zip_filename = "daily-minimum-temperature"
-        var_name = 'Minimum_Temperature'
-        prep_daily_gridded_weather_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, update, verbose)
-
-        zip_filename = "daily-precipitation"
-        var_name = 'Precipitation'
-        prep_daily_gridded_weather_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, update, verbose)
-    """
-
-    assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
-
-    try:
-        path_to_zip = cdd_weather("ukcp", zip_filename + ".zip")
-
-        with zipfile.ZipFile(path_to_zip, 'r') as zf:
-            filename_list = natsort.natsorted(zf.namelist())
-            obs_data = [parse_daily_gridded_weather_obs(zf.open(f), var_name, start_date) for f in filename_list]
-        zf.close()
-
-        gridded_obs = pd.concat(obs_data, axis=0)
-
-        # Add a pseudo id for each observation grid
-        if use_pseudo_grid_id:
-            observation_grids = fetch_observation_grids(update=update)
-            observation_grids = observation_grids.reset_index().set_index('Centroid')
-            gridded_obs = gridded_obs.reset_index(level='Date').join(observation_grids[['Pseudo_Grid_ID']])
-            gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
-
-        path_to_pickle = make_ukcp_pickle_path(zip_filename, start_date)
-        save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
-
-    except Exception as e:
-        print("Failed to get \"{}\". {}.".format(
-            os.path.splitext(make_ukcp_pickle_path(zip_filename, start_date))[0], e))
-
-
-def fetch_daily_gridded_weather_obs(zip_filename, var_name, start_date='2006-01-01', use_pseudo_grid_id=False,
-                                    update=False, verbose=False):
+def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseudo_grid_id=False, update=False,
+                       verbose=False):
     """
     :param zip_filename: "daily-maximum-temperature", "daily-minimum-temperature", or "daily-precipitation"
     :type zip_filename: str
@@ -271,7 +193,7 @@ def fetch_daily_gridded_weather_obs(zip_filename, var_name, start_date='2006-01-
 
     **Example**::
 
-        from weather.ukcp import fetch_daily_gridded_weather_obs
+        from weather.ukcp import get_ukcp09_var_obs
 
         zip_filename = "daily-maximum-temperature"
         var_name = 'Maximum_Temperature'
@@ -280,83 +202,45 @@ def fetch_daily_gridded_weather_obs(zip_filename, var_name, start_date='2006-01-
         update = False
         verbose = True
 
-        gridded_obs = fetch_daily_gridded_weather_obs(zip_filename, var_name, start_date,
-                                                      use_pseudo_grid_id, update, verbose)
+        gridded_obs = get_ukcp09_var_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, update, verbose)
     """
 
-    path_to_pickle = make_ukcp_pickle_path(zip_filename, start_date)
+    assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
 
-    if not os.path.isfile(path_to_pickle) or update:
-        prep_daily_gridded_weather_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, verbose=verbose)
+    filename = os.path.splitext(zip_filename)[0]
+    path_to_pickle = make_ukcp_pickle_path(filename, start_date)
 
-    try:
+    if os.path.isfile(path_to_pickle) and not update:
         gridded_obs = load_pickle(path_to_pickle)
-        return gridded_obs
 
-    except Exception as e:
-        print(e)
+    else:
+        try:
+            path_to_zip = cdd_weather("ukcp", zip_filename + ".zip")
 
+            with zipfile.ZipFile(path_to_zip, 'r') as zf:
+                filename_list = natsort.natsorted(zf.namelist())
+                obs_data = [parse_daily_gridded_weather_obs(zf.open(f), var_name, start_date) for f in filename_list]
+            zf.close()
 
-def integrate_daily_gridded_weather_obs(start_date='2006-01-01', use_pseudo_grid_id=True, update=False, verbose=False):
-    """
-    Integrate weather observations of different variables.
+            gridded_obs = pd.concat(obs_data, axis=0)
 
-    :param start_date: start date from which the observation data was collected, defaults to ``'2006-01-01'``
-    :type start_date: str
-    :param use_pseudo_grid_id: defaults to ``False``
-    :type use_pseudo_grid_id: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
-    :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
-    :type verbose: bool, int
-    :return: data of integrated daily gridded weather observations
-    :rtype: pandas.DataFrame
+            # Add a pseudo id for each observation grid
+            if use_pseudo_grid_id:
+                observation_grids = get_observation_grids(update=update)
+                observation_grids = observation_grids.reset_index().set_index('Centroid')
+                gridded_obs = gridded_obs.reset_index(level='Date').join(observation_grids[['Pseudo_Grid_ID']])
+                gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
-    **Example**::
+            save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
 
-        from weather.ukcp import integrate_daily_gridded_weather_obs
+        except Exception as e:
+            print("Failed to get \"{}\". {}.".format(filename.replace("-", " "), e))
+            gridded_obs = None
 
-        start_date = '2006-01-01'
-        use_pseudo_grid_id = True
-        update = True
-        verbose = True
-
-        integrate_daily_gridded_weather_obs(start_date, use_pseudo_grid_id, update, verbose)
-    """
-
-    try:
-        d_max_temp = fetch_daily_gridded_weather_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date,
-                                                     use_pseudo_grid_id=False, update=update, verbose=verbose)
-        d_min_temp = fetch_daily_gridded_weather_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date,
-                                                     use_pseudo_grid_id=False, update=update, verbose=verbose)
-        d_precipitation = fetch_daily_gridded_weather_obs("daily-precipitation", 'Precipitation', start_date,
-                                                          use_pseudo_grid_id=False, update=update, verbose=verbose)
-
-        gridded_obs = pd.concat([d_max_temp, d_min_temp, d_precipitation], axis=1)
-
-        del d_max_temp, d_min_temp, d_precipitation
-        gc.collect()
-
-        gridded_obs['Temperature_Change'] = abs(gridded_obs.Maximum_Temperature - gridded_obs.Minimum_Temperature)
-
-        if use_pseudo_grid_id:
-            observation_grids = fetch_observation_grids(update=update)
-            observation_grids = observation_grids.reset_index().set_index('Centroid')
-            gridded_obs = gridded_obs.reset_index('Date').join(observation_grids[['Pseudo_Grid_ID']])
-            gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
-
-        path_to_pickle = make_ukcp_pickle_path("ukcp-daily-gridded-weather", start_date)
-        save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
-
-        del gridded_obs
-        gc.collect()
-
-    except Exception as e:
-        print("Failed to integrate the UKCP gridded weather observations. {}".format(e))
+    return gridded_obs
 
 
-def fetch_integrated_daily_gridded_weather_obs(start_date='2006-01-01', use_pseudo_grid_id=True, update=False,
-                                               verbose=False):
+def get_ukcp09_data(start_date='2006-01-01', use_pseudo_grid_id=True, update=False, verbose=False):
     """
     Fetch integrated weather observations of different variables from local pickle.
 
@@ -375,26 +259,90 @@ def fetch_integrated_daily_gridded_weather_obs(start_date='2006-01-01', use_pseu
 
     **Example**::
 
-        from weather.ukcp import fetch_integrated_daily_gridded_weather_obs
+        from weather.ukcp import get_ukcp09_data
 
         start_date = '2006-01-01'
         use_pseudo_grid_id = False
         update = False
         verbose = True
 
-        gridded_obs = fetch_integrated_daily_gridded_weather_obs(start_date, use_pseudo_grid_id, update,
-                                                                 verbose)
+        ukcp09_data = get_ukcp09_data(start_date, use_pseudo_grid_id, update, verbose)
     """
 
-    path_to_pickle = make_ukcp_pickle_path("ukcp-daily-gridded-weather", start_date)
+    filename = "ukcp-daily-gridded-weather"
+    path_to_pickle = make_ukcp_pickle_path(filename, start_date)
 
-    if not os.path.isfile(path_to_pickle) or update:
-        integrate_daily_gridded_weather_obs(start_date=start_date, use_pseudo_grid_id=use_pseudo_grid_id,
-                                            update=update, verbose=verbose)
+    if os.path.isfile(path_to_pickle) and not update:
+        ukcp09_data = load_pickle(path_to_pickle)
 
-    try:
-        ukcp_gridded_weather_obs = load_pickle(path_to_pickle)
-        return ukcp_gridded_weather_obs
+    else:
+        try:
+            d_max_temp = get_ukcp09_var_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date,
+                                            use_pseudo_grid_id=False, update=update, verbose=verbose)
+            d_min_temp = get_ukcp09_var_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date,
+                                            use_pseudo_grid_id=False, update=update, verbose=verbose)
+            d_precipitation = get_ukcp09_var_obs("daily-precipitation", 'Precipitation', start_date,
+                                                 use_pseudo_grid_id=False, update=update, verbose=verbose)
 
-    except Exception as e:
-        print(e)
+            ukcp09_data = pd.concat([d_max_temp, d_min_temp, d_precipitation], axis=1)
+
+            del d_max_temp, d_min_temp, d_precipitation
+            gc.collect()
+
+            ukcp09_data['Temperature_Change'] = abs(ukcp09_data.Maximum_Temperature - ukcp09_data.Minimum_Temperature)
+
+            if use_pseudo_grid_id:
+                observation_grids = get_observation_grids(update=update)
+                observation_grids = observation_grids.reset_index().set_index('Centroid')
+                ukcp09_data = ukcp09_data.reset_index('Date').join(observation_grids[['Pseudo_Grid_ID']])
+                ukcp09_data = ukcp09_data.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
+
+            path_to_pickle = make_ukcp_pickle_path(filename, start_date)
+            save_pickle(ukcp09_data, path_to_pickle, verbose=verbose)
+
+        except Exception as e:
+            print("Failed to integrate the UKCP09 gridded weather observations. {}".format(e))
+            ukcp09_data = None
+
+    return ukcp09_data
+
+
+def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_size=100000, update=False,
+                              verbose=False):
+    """
+    See also [`DUDTM <https://stackoverflow.com/questions/50689082>`_].
+
+    :param table_name:
+    :param if_exists:
+    :param chunk_size:
+    :param update:
+    :param verbose:
+    :return:
+    """
+
+    ukcp09_data = get_ukcp09_data(update=update, verbose=verbose)
+    ukcp09_data.reset_index(inplace=True)
+
+    ukcp09_engine = create_mssql_connectable_engine(database_name='Weather')
+
+    ukcp09_data_ = pd.DataFrame(ukcp09_data.Centroid.to_list(), columns=['Centroid_X', 'Centroid_Y'])
+    ukcp09_data = pd.concat([ukcp09_data.drop('Centroid', axis=1), ukcp09_data_], axis=1)
+
+    print("Importing UKCP09 data to MSSQL Server", end=" ... ")
+
+    with tempfile.NamedTemporaryFile() as temp_file:
+        ukcp09_data.to_csv(temp_file.name + ".csv", index=False, chunksize=chunk_size)
+
+        tsql_chunksize = 2100 // len(ukcp09_data.columns)
+        temp_file_ = pd.read_csv(temp_file.name + ".csv", chunksize=tsql_chunksize)
+        for chunk in temp_file_:
+            # e.g. chunk = temp_file_.get_chunk(chunk_size)
+            chunk.to_sql(table_name, ukcp09_engine, schema='dbo', if_exists=if_exists, index=False,
+                         dtype={'Date': sqlalchemy.types.DATE}, method='multi')
+            gc.collect()
+
+        temp_file.close()
+
+    os.remove(temp_file.name)
+
+    print("Done. ")
