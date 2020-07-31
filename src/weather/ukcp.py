@@ -5,6 +5,7 @@ import os
 import tempfile
 import zipfile
 
+import datetime_truncate
 import natsort
 import pandas as pd
 import shapely.geometry
@@ -346,3 +347,138 @@ def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_si
     os.remove(temp_file.name)
 
     print("Done. ")
+
+
+def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+    """
+    Get UKCP09 data by observation grids (Query from the database) for the given ``period``.
+
+    :param grids: a list of weather observation IDs
+    :type grids: list
+    :param period: prior-incident / non-incident period
+    :type period:
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param dat_dir: directory where the queried data is saved, defaults to ``None``
+    :type dat_dir: str, None
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: UKCP09 data by ``grids`` and ``period``
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from weather.ukcp import query_ukcp09_by_grid_datetime
+
+        update = False
+        verbose = True
+
+        pickle_it = False
+        grids = incidents.Weather_Grid.iloc[0]
+        period = incidents.Critical_Period.iloc[0]
+        ukcp09_dat = query_ukcp09_by_grid_datetime(grids, period, verbose=verbose)
+
+        pickle_it = True
+        grids = incidents.Weather_Grid.iloc[1]
+        period = incidents.Critical_Period.iloc[1]
+        ukcp09_dat = query_ukcp09_by_grid_datetime(grids, period, pickle_it=pickle_it, verbose=verbose)
+    """
+
+    # Make a pickle filename
+    pickle_filename = "{}-{}.pickle".format(
+        "".join(str(x)[0] + str(x)[-1] for x in grids),
+        "-".join(x.strftime('%Y%m%d%H%M') for x in period))
+
+    # Specify a directory/path to store the pickle file (if appropriate)
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
+    path_to_pickle = cdd_weather(dat_dir, pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        ukcp09_dat = load_pickle(path_to_pickle)
+
+    else:
+        # Create an engine to the MSSQL server
+        conn_metex = create_mssql_connectable_engine(database_name='Weather')
+        # Specify database sql query
+        grids_ = tuple(grids)
+        period_ = tuple(x.strftime('%Y-%m-%d %H:%M:%S') for x in period)
+        sql_query = "SELECT * FROM dbo.[UKCP09] WHERE [Pseudo_Grid_ID] IN {} AND [Date] IN {};".format(grids_, period_)
+        # Query the weather data
+        ukcp09_dat = pd.read_sql(sql_query, conn_metex)
+
+        if pickle_it:
+            save_pickle(ukcp09_dat, path_to_pickle, verbose=verbose)
+
+    return ukcp09_dat
+
+
+def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+    """
+    Get UKCP09 data by observation grids and date (Query from the database)
+    from the beginning of the year to the start of the ``period``.
+
+    :param grids: a list of weather observation IDs
+    :type grids: list
+    :param period: prior-incident / non-incident period
+    :type period:
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param dat_dir: directory where the queried data is saved, defaults to ``None``
+    :type dat_dir: str, None
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: UKCP09 data by ``grids`` and ``period``
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from weather.ukcp import query_ukcp09_by_grid_datetime
+
+        update = False
+        verbose = True
+
+        pickle_it = False
+        grids = incidents.Weather_Grid.iloc[0]
+        period = incidents.Critical_Period.iloc[0]
+        ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, verbose=verbose)
+
+        pickle_it = True
+        grids = incidents.Weather_Grid.iloc[1]
+        period = incidents.Critical_Period.iloc[1]
+        ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=pickle_it, verbose=verbose)
+    """
+
+    p_start = period.min().strftime('%Y-%m-%d')
+    y_start = datetime_truncate.truncate_year(period.min()).strftime('%Y-%m-%d')
+
+    # Make a pickle filename
+    pickle_filename = "{}-{}.pickle".format(
+        "".join(str(x)[0] + str(x)[-1] for x in grids),
+        "-".join([y_start.replace("-", ""), p_start.replace("-", "")]))
+
+    # Specify a directory/path to store the pickle file (if appropriate)
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
+    path_to_pickle = cdd_weather(dat_dir, pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        ukcp09_dat = load_pickle(path_to_pickle)
+
+    else:
+        # Create an engine to the MSSQL server
+        conn_metex = create_mssql_connectable_engine(database_name='Weather')
+        # Specify database sql query
+        grids_ = tuple(grids)
+        sql_query = "SELECT * FROM dbo.[UKCP09] " \
+                    "WHERE [Pseudo_Grid_ID] IN {} AND " \
+                    "[Date] >= '{}' AND [Date] <= '{}';".format(grids_, y_start, p_start)
+        # Query the weather data
+        ukcp09_dat = pd.read_sql(sql_query, conn_metex)
+
+        if pickle_it:
+            save_pickle(ukcp09_dat, path_to_pickle, verbose=verbose)
+
+    return ukcp09_dat
