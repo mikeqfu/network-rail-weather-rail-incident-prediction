@@ -175,13 +175,17 @@ def make_filename(base_name, route_name=None, weather_category=None, *extra_suff
         route_name_ = ""
     else:
         rts = list(set(load_json(cdd_network("routes", "name-changes.json")).values()))
-        route_name_ = (sep if base_name else "") + find_similar_str(route_name, rts).replace(" ", "_")
+        route_name_ = (sep if base_name else "") + sep.join(
+            [find_similar_str(x, rts).replace(" ", "")
+             for x in ([route_name] if isinstance(route_name, str) else list(route_name))])
 
     if weather_category is None:
         weather_category_ = ""
     else:
         wcs = load_json(cdd_weather("weather-categories.json"))['WeatherCategory']
-        weather_category_ = (sep if route_name else "") + find_similar_str(weather_category, wcs).replace(" ", "_")
+        weather_category_ = (sep if route_name else "") + sep.join(
+            [find_similar_str(x, wcs).replace(" ", "")
+             for x in ([weather_category] if isinstance(weather_category, str) else list(weather_category))])
 
     if base_name_ + route_name_ + weather_category_ == '':
         base_name_ = "data"
