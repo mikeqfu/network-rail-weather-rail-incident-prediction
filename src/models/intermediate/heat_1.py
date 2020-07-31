@@ -17,76 +17,206 @@ from pyhelpers.store import load_pickle, save_fig, save_pickle
 from sklearn import metrics
 
 from models.intermediate import integrator
-from models.tools import categorise_temperatures, categorise_track_orientations
-from models.tools import cd_intermediate_fig_pub, cdd_intermediate
-from models.tools import get_data_by_season
+from models.tools import categorise_temperatures, categorise_track_orientations, get_data_by_season
+from models.tools import cd_intermediate_fig_pub, cdd_intermediate_heat, cdd_intermediate_heat_trial
+from mssqlserver.metex import view_schedule8_costs_by_datetime_location_reason
 from settings import mpl_preferences, pd_preferences
-from spreadsheet.incidents import get_schedule8_weather_incidents
-from utils import get_subset, make_filename
+from utils import make_filename
 from weather import midas, ukcp
-
-# == Apply the preferences ============================================================================
 
 mpl_preferences(reset=False)
 pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
 
-# == Change directories ===============================================================================
+# == Tools ============================================================================================
 
-def cdd_intermediate_heat(*sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\intermediate\\heat\\dat\\" and sub-directories / a file.
-
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\intermediate\\heat\\dat\\" and sub-directories / a file
-    :rtype: str
+def define_prior_ip(incidents, prior_ip_start_hrs):
     """
 
-    path = cdd_intermediate("heat", *sub_dir, mkdir=mkdir)
-    return path
-
-
-def cdd_intermediate_heat_trial(trial_id, *sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\intermediate\\heat\\<``trial_id``>" and sub-directories / a file.
-
-    :param trial_id:
-    :type trial_id: int, str
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\intermediate\\heat\\data\\" and sub-directories / a file
-    :rtype: str
+    :param incidents:
+    :param prior_ip_start_hrs:
+    :return:
     """
 
-    path = cdd_intermediate("heat", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
-    return path
+    incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
+    # End date and time of the prior IP
+    incidents['Critical_EndDateTime'] = incidents.StartDateTime.dt.round('H')
+    # Start date and time of the prior IP
+    critical_start_dt = incidents.Critical_EndDateTime.map(
+        lambda x: x + pd.Timedelta(hours=prior_ip_start_hrs if x.time() > datetime.time(9) else prior_ip_start_hrs * 2))
+    incidents.insert(incidents.columns.get_loc('Critical_EndDateTime'), 'Critical_StartDateTime', critical_start_dt)
+    # Prior-IP dates of each incident
+    incidents['Critical_Period'] = incidents.apply(
+        lambda x: pd.date_range(x.Critical_StartDateTime, x.Critical_EndDateTime, normalize=True),
+        axis=1)
+
+    return incidents
+
+
+def get_prior_ip_ukcp09_stats(incidents):
+    """
+    Get prior-IP statistics of weather variables for each incident.
+
+    :param incidents: data of incidents
+    :type incidents: pandas.DataFrame
+    :return: statistics of weather observation data for each incident record during the prior IP
+    :rtype: pandas.DataFrame
+    """
+
+    prior_ip_weather_stats = incidents.apply(
+        lambda x: pd.Series(integrator.integrate_pip_ukcp09_data(x.Weather_Grid, x.Critical_Period)), axis=1)
+
+    w_col_names = integrator.specify_weather_variable_names(
+        integrator.specify_weather_stats_calculations()) + ['Hottest_Heretofore']
+
+    prior_ip_weather_stats.columns = w_col_names
+
+    prior_ip_weather_stats['Temperature_Change_max'] = \
+        abs(prior_ip_weather_stats.Maximum_Temperature_max - prior_ip_weather_stats.Minimum_Temperature_min)
+    prior_ip_weather_stats['Temperature_Change_min'] = \
+        abs(prior_ip_weather_stats.Maximum_Temperature_min - prior_ip_weather_stats.Minimum_Temperature_max)
+
+    return prior_ip_weather_stats
+
+
+def get_prior_ip_radtob_stats(incidents):
+    """
+    Get prior-IP statistics of radiation data for each incident.
+
+    :param incidents: data of incidents
+    :type incidents: pandas.DataFrame
+    :return: statistics of radiation data for each incident record during the prior IP
+    :rtype: pandas.DataFrame
+    """
+
+    prior_ip_radtob_stats = incidents.apply(
+        lambda x: pd.Series(integrator.integrate_pip_midas_radtob(x.Met_SRC_ID, x.Critical_Period)),
+        axis=1)
+
+    r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
+    r_col_names += ['GLBL_IRAD_AMT_total']
+
+    prior_ip_radtob_stats.columns = r_col_names
+
+    return prior_ip_radtob_stats
+
+
+def define_latent_and_non_ip(incidents, prior_ip_data, non_ip_start_hrs):
+    """
+
+    :param incidents:
+    :param prior_ip_data:
+    :param non_ip_start_hrs:
+    :return:
+    """
+
+    non_ip_data = incidents.copy(deep=True)  # Get Weather data that did not cause any incident
+
+    def define_latent_period(ip_max_temp_max, ip_start_dt, non_ip_start_hrs_):
+        """
+        Determine latent period for a given date/time and the maximum temperature.
+
+        :param ip_max_temp_max:
+        :param ip_start_dt:
+        :param non_ip_start_hrs_:
+        :return:
+        """
+
+        if ip_max_temp_max < 24:
+            lp = -3
+        elif 24 <= ip_max_temp_max < 26:
+            lp = -4
+        elif 26 <= ip_max_temp_max < 29:
+            lp = -5
+        else:  # ip_max_temp_max >= 29:
+            lp = -6
+
+        critical_end_dt = ip_start_dt + datetime.timedelta(days=lp)
+        critical_start_dt = critical_end_dt + datetime.timedelta(hours=non_ip_start_hrs_)
+        critical_period = pd.date_range(critical_start_dt, critical_end_dt, normalize=True)
+
+        return critical_start_dt, critical_end_dt, critical_period
+
+    non_ip_data[['Critical_StartDateTime', 'Critical_EndDateTime', 'Critical_Period']] = prior_ip_data.apply(
+        lambda x: pd.Series(
+            define_latent_period(x.Maximum_Temperature_max, x.Critical_StartDateTime, non_ip_start_hrs)),
+        axis=1)
+
+    return non_ip_data
+
+
+def get_non_ip_weather_stats(non_ip_data, prior_ip_data):
+    """
+    Get prior-IP statistics of weather variables for each incident.
+
+    :param non_ip_data: non-IP data
+    :type non_ip_data: pandas.DataFrame
+    :param prior_ip_data: prior-IP data
+    :type prior_ip_data: pandas.DataFrame
+    :return: statistics of weather observation data for each incident record during the non-incident period
+    :rtype: pandas.DataFrame
+    """
+
+    non_ip_weather_stats = non_ip_data.apply(
+        lambda x: pd.Series(integrator.integrate_nip_ukcp09_data(
+            x.Weather_Grid, x.Critical_Period, prior_ip_data, x.StanoxSection)), axis=1)
+
+    w_col_names = integrator.specify_weather_variable_names(
+        integrator.specify_weather_stats_calculations()) + ['Hottest_Heretofore']
+
+    non_ip_weather_stats.columns = w_col_names
+
+    non_ip_weather_stats['Temperature_Change_max'] = \
+        abs(non_ip_weather_stats.Maximum_Temperature_max - non_ip_weather_stats.Minimum_Temperature_min)
+    non_ip_weather_stats['Temperature_Change_min'] = \
+        abs(non_ip_weather_stats.Maximum_Temperature_min - non_ip_weather_stats.Minimum_Temperature_max)
+
+    return non_ip_weather_stats
+
+
+def get_non_ip_radtob_stats(non_ip_data, prior_ip_data):
+    """
+    Get prior-IP statistics of radiation data for each incident.
+
+    :param non_ip_data: non-IP data
+    :type non_ip_data: pandas.DataFrame
+    :param prior_ip_data: prior-IP data
+    :type prior_ip_data: pandas.DataFrame
+    :return: statistics of radiation data for each incident record during the non-incident period
+    :rtype: pandas.DataFrame
+    """
+
+    non_ip_radtob_stats = non_ip_data.apply(
+        lambda x: pd.Series(integrator.integrate_nip_midas_radtob(
+            x.Met_SRC_ID, x.Critical_Period, prior_ip_data, x.StanoxSection)), axis=1)
+
+    r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
+    r_col_names += ['GLBL_IRAD_AMT_total']
+    non_ip_radtob_stats.columns = r_col_names
+
+    return non_ip_radtob_stats
 
 
 # == Data of weather conditions =======================================================================
 
 def get_incident_location_weather(route_name=None, weather_category='Heat', season='summer',
-                                  prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
-                                  trial_only=True, random_state=None, illustrate_buf_cir=False, update=False,
-                                  verbose=False):
+                                  prior_ip_start_hrs=-24, latent_period=-5, non_ip_start_hrs=-24,
+                                  trial_only=True, random_state=None, illustrate_buf_cir=False,
+                                  update=False, verbose=False):
     """
     Process data of weather conditions for each incident location.
 
     **Example**::
 
-        route_name         = 'Anglia'
+        route_name         = ['Anglia', 'Wessex', 'Wales', 'North and East']
         weather_category   = 'Heat'
         season             = 'summer'
-        prior_ip_start_hrs = -0
+        prior_ip_start_hrs = -24
         latent_period      = -5
-        non_ip_start_hrs   = -0
+        non_ip_start_hrs   = -24
         trial_only         = True
-        random_state       = 0
+        random_state       = None
         illustrate_buf_cir = False
         update             = False
         verbose            = True
@@ -97,9 +227,10 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
         conditions on the day of incident occurrence; 'StartDateTime' otherwise.
     """
 
-    pickle_filename = make_filename("weather", route_name, weather_category,
+    pickle_filename = make_filename("weather", route_name, None,
                                     "_".join([season] if isinstance(season, str) else season),
-                                    "trial" if trial_only else "full")
+                                    prior_ip_start_hrs, str(latent_period) + 'd', non_ip_start_hrs,
+                                    "trial" if trial_only else "", sep="_")
     path_to_pickle = cdd_intermediate_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -107,65 +238,80 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
     else:
         try:
-            # Incidents data
+            # -- Incidents data -----------------------------------------------------------------------
 
-            incidents_all = get_schedule8_weather_incidents()
-            incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
-            incidents_all_by_season = get_data_by_season(incidents_all, season)
-            incidents = get_subset(incidents_all_by_season, route_name, weather_category)
+            metex_incidents = view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
+            # incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
+            incidents_by_season = get_data_by_season(metex_incidents, season)
+            incidents = incidents_by_season[
+                (incidents_by_season.StartDateTime >= datetime.datetime(2006, 1, 1)) &
+                (incidents_by_season.StartDateTime < datetime.datetime(2017, 1, 1))]
+
             if trial_only:  # For testing purpose only
-                incidents = incidents.sample(n=10, random_state=random_state)  # incidents = incidents.iloc[0:10, :]
+                incidents = incidents.sample(n=10, random_state=random_state)
 
-            # Weather data
+            if 'StartXY' not in incidents.columns or 'EndXY' not in incidents.columns:
+                incidents['StartLongLat'] = incidents.apply(
+                    lambda x: shapely.geometry.Point(x.StartLongitude, x.StartLatitude), axis=1)
+                incidents['EndLongLat'] = incidents.apply(
+                    lambda x: shapely.geometry.Point(x.EndLongitude, x.EndLatitude), axis=1)
+                from pyhelpers.geom import wgs84_to_osgb36
+                incidents['StartEasting'], incidents['StartNorthing'] = \
+                    wgs84_to_osgb36(incidents.StartLongitude.values, incidents.StartLatitude.values)
+                incidents['EndEasting'], incidents['EndNorthing'] = \
+                    wgs84_to_osgb36(incidents.EndLongitude.values, incidents.EndLatitude.values)
+                incidents['StartXY'] = incidents.apply(
+                    lambda x: shapely.geometry.Point(x.StartEasting, x.StartNorthing), axis=1)
+                incidents['EndXY'] = incidents.apply(
+                    lambda x: shapely.geometry.Point(x.EndEasting, x.EndNorthing), axis=1)
 
-            weather_obs = ukcp.fetch_integrated_daily_gridded_weather_obs().reset_index()  # Weather observations
-            irad_obs = midas.get_radtob().reset_index()  # Radiation observations
-
-            observation_grids = ukcp.fetch_observation_grids()  # Grids for observing weather conditions
-            obs_cen_geom = shapely.geometry.MultiPoint(list(observation_grids.Centroid_XY))
-            obs_grids_geom = shapely.geometry.MultiPolygon(list(observation_grids.Grid))
-
-            met_stations = midas.get_radiation_stations_information()  # Met station locations
-            met_stations_geom = shapely.geometry.MultiPoint(list(met_stations.E_N_GEOM))
-
-            # -- Data integration in the spatial context ----------------------------------------------
-
-            # Start
-            incidents['Start_Pseudo_Grid_ID'] = incidents.StartNE.map(
-                lambda x: integrator.find_closest_weather_grid(x, observation_grids, obs_cen_geom))
-            incidents = incidents.join(observation_grids, on='Start_Pseudo_Grid_ID')
-            # End
-            incidents['End_Pseudo_Grid_ID'] = incidents.EndNE.map(
-                lambda x: integrator.find_closest_weather_grid(x, observation_grids, obs_cen_geom))
-            incidents = incidents.join(observation_grids, on='End_Pseudo_Grid_ID', lsuffix='_Start', rsuffix='_End')
-            # Modify column names
-            for p in ['Start', 'End']:
-                a = [c for c in incidents.columns if c.endswith(p)]
-                b = [p + '_' + c if c == 'Grid' else p + '_Grid_' + c for c in observation_grids.columns]
-                incidents.rename(columns=dict(zip(a, b)), inplace=True)
-
-            # Append 'MidpointNE' column
-            incidents['MidpointNE'] = incidents.apply(
-                lambda x: get_geometric_midpoint(x.StartNE, x.EndNE, as_geom=True), axis=1)
+            # Append 'MidpointXY' column
+            incidents['MidpointXY'] = incidents.apply(
+                lambda x: get_geometric_midpoint(x.StartXY, x.EndXY, as_geom=True), axis=1)
 
             # Make a buffer zone for Weather data aggregation
             incidents['Buffer_Zone'] = incidents.apply(
                 lambda x: integrator.create_circle_buffer_upon_weather_grid(
-                    x.StartNE, x.EndNE, x.MidpointNE, whisker=0), axis=1)
+                    x.StartXY, x.EndXY, x.MidpointXY, whisker=0), axis=1)
+
+            # -- Weather data -------------------------------------------------------------------------
+
+            obs_grids = ukcp.get_observation_grids()  # Grids for observing weather conditions
+            obs_centroid_geom = shapely.geometry.MultiPoint(list(obs_grids.Centroid_XY))
+            obs_grids_geom = shapely.geometry.MultiPolygon(list(obs_grids.Grid))
+
+            met_stations = midas.get_radiation_stations_information()  # Met station locations
+            met_stations_geom = shapely.geometry.MultiPoint(list(met_stations.EN_GEOM))
+
+            # -- Data integration in the spatial context ----------------------------------------------
+
+            incidents['Start_Pseudo_Grid_ID'] = incidents.StartXY.map(  # Start
+                lambda x: integrator.find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
+            incidents = incidents.join(obs_grids, on='Start_Pseudo_Grid_ID')
+
+            incidents['End_Pseudo_Grid_ID'] = incidents.EndXY.map(  # End
+                lambda x: integrator.find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
+            incidents = incidents.join(obs_grids, on='End_Pseudo_Grid_ID', lsuffix='_Start', rsuffix='_End')
+
+            # Modify column names
+            for p in ['Start', 'End']:
+                a = [c for c in incidents.columns if c.endswith(p)]
+                b = [p + '_' + c if c == 'Grid' else p + '_Grid_' + c for c in obs_grids.columns]
+                incidents.rename(columns=dict(zip(a, b)), inplace=True)
 
             # Find all Weather observation grids that intersect with the created buffer zone for each incident location
             incidents['Weather_Grid'] = incidents.Buffer_Zone.map(
-                lambda x: integrator.find_intersecting_weather_grid(x, observation_grids, obs_grids_geom))
+                lambda x: integrator.find_intersecting_weather_grid(x, obs_grids, obs_grids_geom))
 
-            incidents['Met_SRC_ID'] = incidents.MidpointNE.map(
+            incidents['Met_SRC_ID'] = incidents.MidpointXY.map(
                 lambda x: integrator.find_closest_met_stn(x, met_stations, met_stations_geom))
 
             if illustrate_buf_cir:  # Illustration of the buffer circle
-                start_point, end_point, midpoint = incidents[['StartNE', 'EndNE', 'MidpointNE']].iloc[0]
+                start_point, end_point, midpoint = incidents[['StartXY', 'EndXY', 'MidpointXY']].iloc[0]
                 bf_circle = integrator.create_circle_buffer_upon_weather_grid(
-                    start_point, end_point, midpoint, whisker=500)
+                    start_point, end_point, midpoint, whisker=0)
                 i_obs_grids = integrator.find_intersecting_weather_grid(
-                    bf_circle, observation_grids, obs_grids_geom, as_grid_id=False)
+                    bf_circle, obs_grids, obs_grids_geom, as_grid_id=False)
                 plt.figure(figsize=(7, 6))
                 ax = plt.subplot2grid((1, 1), (0, 0))
                 for g in i_obs_grids:
@@ -189,77 +335,29 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
                 frame.set_edgecolor('k')
                 plt.tight_layout()
 
-            # -- Calculate critical time periods ------------------------------------------------------
-            incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-            incidents['Critical_StartDateTime'] = incidents.StartDateTime.map(
-                lambda x: x + pd.Timedelta(days=-1) if x.time() < datetime.time(9) else x)
-            incidents.Critical_StartDateTime += datetime.timedelta(hours=prior_ip_start_hrs)
-            incidents['Critical_EndDateTime'] = incidents.Critical_StartDateTime
-            incidents['Critical_Period'] = incidents.apply(
-                lambda x: pd.date_range(x.Critical_StartDateTime, x.Critical_EndDateTime, normalize=True), axis=1)
-
             # -- Data integration for the specified prior-IP ------------------------------------------
 
-            prior_ip_weather_stats = incidents.apply(
-                lambda x: pd.Series(integrator.integrate_pip_gridded_weather_obs(
-                    x.Weather_Grid, x.Critical_Period, weather_obs)), axis=1)
+            incidents = define_prior_ip(incidents, prior_ip_start_hrs)
 
-            w_col_names = integrator.specify_weather_variable_names(
-                integrator.specify_weather_stats_calculations()) + ['Hottest_Heretofore']
-            prior_ip_weather_stats.columns = w_col_names
-            prior_ip_weather_stats['Temperature_Change_max'] = \
-                abs(prior_ip_weather_stats.Maximum_Temperature_max - prior_ip_weather_stats.Minimum_Temperature_min)
-            prior_ip_weather_stats['Temperature_Change_min'] = \
-                abs(prior_ip_weather_stats.Maximum_Temperature_min - prior_ip_weather_stats.Minimum_Temperature_max)
+            # Get prior-IP statistics of weather variables for each incident.
+            prior_ip_weather_stats = get_prior_ip_ukcp09_stats(incidents)
 
-            prior_ip_data = incidents.join(prior_ip_weather_stats)
+            # Get prior-IP statistics of radiation data for each incident.
+            prior_ip_radtob_stats = get_prior_ip_radtob_stats(incidents)
 
-            prior_ip_radtob_stats = prior_ip_data.apply(
-                lambda x: pd.Series(integrator.integrate_pip_midas_radtob(
-                    x.Met_SRC_ID, x.Critical_Period, irad_obs)), axis=1)
-
-            r_col_names = integrator.specify_weather_variable_names(
-                integrator.specify_radtob_stats_calculations()) + ['GLBL_IRAD_AMT_total']
-            prior_ip_radtob_stats.columns = r_col_names
-
-            prior_ip_data = prior_ip_data.join(prior_ip_radtob_stats)
+            prior_ip_data = incidents.join(prior_ip_weather_stats).join(prior_ip_radtob_stats)
 
             prior_ip_data['Incident_Reported'] = 1
 
             # -- Data integration for the specified non-IP --------------------------------------------
 
-            non_ip_data = incidents.copy(deep=True)  # Get Weather data that did not cause any incident
-            # non_ip_data[[c for c in non_ip_data.columns if c.startswith('Incident')]] = None
-            # non_ip_data[['StartDateTime', 'EndDateTime', 'WeatherCategoryCode', 'WeatherCategory', 'Minutes']] = None
+            non_ip_data = define_latent_and_non_ip(incidents, prior_ip_data, non_ip_start_hrs)
 
-            non_ip_data.Critical_EndDateTime = \
-                non_ip_data.Critical_StartDateTime + datetime.timedelta(days=latent_period)
-            non_ip_data.Critical_StartDateTime = \
-                non_ip_data.Critical_EndDateTime + datetime.timedelta(hours=non_ip_start_hrs)
-            non_ip_data.Critical_Period = non_ip_data.apply(
-                lambda x: pd.date_range(x.Critical_StartDateTime, x.Critical_EndDateTime, normalize=True), axis=1)
+            non_ip_weather_stats = get_non_ip_weather_stats(non_ip_data, prior_ip_data)
 
-            non_ip_weather_stats = non_ip_data.apply(
-                lambda x: pd.Series(integrator.integrate_nip_gridded_weather_obs(
-                    x.Weather_Grid, x.Critical_Period, x.StanoxSection, weather_obs, prior_ip_data)),
-                axis=1)
+            non_ip_radtob_stats = get_non_ip_radtob_stats(non_ip_data, prior_ip_data)
 
-            non_ip_weather_stats.columns = w_col_names
-            non_ip_weather_stats['Temperature_Change_max'] = \
-                abs(non_ip_weather_stats.Maximum_Temperature_max - non_ip_weather_stats.Minimum_Temperature_min)
-            non_ip_weather_stats['Temperature_Change_min'] = \
-                abs(non_ip_weather_stats.Maximum_Temperature_min - non_ip_weather_stats.Minimum_Temperature_max)
-
-            non_ip_data = non_ip_data.join(non_ip_weather_stats)
-
-            non_ip_radtob_stats = non_ip_data.apply(
-                lambda x: pd.Series(integrator.integrate_nip_midas_radtob(
-                    x.Met_SRC_ID, x.Critical_Period, x.StanoxSection, irad_obs, prior_ip_data)),
-                axis=1)
-
-            non_ip_radtob_stats.columns = r_col_names
-
-            non_ip_data = non_ip_data.join(non_ip_radtob_stats)
+            non_ip_data = non_ip_data.join(non_ip_weather_stats).join(non_ip_radtob_stats)
 
             non_ip_data['Incident_Reported'] = 0
 
@@ -268,25 +366,89 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
             # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
             incident_location_weather = incident_location_weather.join(
-                categorise_track_orientations(incident_location_weather[['StartNE', 'EndNE']]))
+                categorise_track_orientations(incident_location_weather))
 
             # Categorise temperature: 25, 26, 27, 28, 29, 30
             incident_location_weather = incident_location_weather.join(
                 categorise_temperatures(incident_location_weather, column_name='Maximum_Temperature_max'))
 
+            # incident_location_weather.dropna(subset=w_col_names, inplace=True)
+
             save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
 
         except Exception as e:
-            print("Failed to get Incidents with Weather conditions. {}.".format(e))
+            print("Failed to get weather conditions for the incident locations. {}.".format(e))
             incident_location_weather = pd.DataFrame()
 
     return incident_location_weather
+
+
+def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=True, update=False, verbose=False,
+                               save_as=".tif", dpi=None):
+    """
+
+    **Example**::
+
+        from models.prototype.heat import plot_temperature_deviation
+
+        route_name  = 'Anglia'
+        nip_ip_gap  = -14
+        add_err_bar = True
+        update      = False
+        verbose     = True
+        save_as     = None  # ".tif"
+        dpi         = None  # 600
+    """
+
+    gap = np.abs(nip_ip_gap)
+
+    incident_location_weather = [
+        get_incident_location_weather(route_name, latent_period=-d, update=update, verbose=verbose)
+        for d in range(1, gap + 1)]
+
+    time_and_iloc = ['StartDateTime', 'EndDateTime', 'StanoxSection', 'IncidentDescription']
+    selected_cols, data = time_and_iloc + ['Temperature_max'], incident_location_weather[0]
+    ip_temperature_max = data[data.IncidentReported == 1][selected_cols]
+
+    diff_means, diff_std = [], []
+    for i in range(0, gap):
+        data = incident_location_weather[i]
+        nip_temperature_max = data[data.IncidentReported == 0][selected_cols]
+        temp_diffs = pd.merge(ip_temperature_max, nip_temperature_max, on=time_and_iloc, suffixes=('_ip', '_nip'))
+        temp_diff = temp_diffs.Temperature_max_ip - temp_diffs.Temperature_max_nip
+        diff_means.append(temp_diff.abs().mean())
+        diff_std.append(temp_diff.abs().std())
+
+    plt.figure(figsize=(10, 5))
+    if add_err_bar:
+        container = plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std, capsize=4,
+                            width=0.7, color='#9FAFBE')
+        connector, cap_lines, (vertical_lines,) = container.errorbar.lines
+        vertical_lines.set_color('#666666')
+        for cap in cap_lines:
+            cap.set_color('#da8067')
+    else:
+        plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7, color='#9FAFBE')
+        plt.grid(False)
+    plt.xticks(np.arange(1, len(diff_means) + 1), fontsize=14)
+    plt.xlabel('Latent period (Number of days)', fontsize=14)
+    plt.ylabel('Temperature deviation (°C)', fontsize=14)
+    plt.tight_layout()
+
+    if save_as:
+        path_to_fig = cdd_intermediate_heat_trial(0, "Temp deviation" + save_as)
+        save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
 # == Modelling trials =================================================================================
 
 
 def specify_explanatory_variables():
+    """
+    Specify the explanatory variables considered in this model.
+    :return:
+    """
+
     return [
         # 'Maximum_Temperature_max',
         # 'Maximum_Temperature_min',
@@ -303,7 +465,7 @@ def specify_explanatory_variables():
         # 'Temperature_Change_min',
         # 'GLBL_IRAD_AMT_max',
         # 'GLBL_IRAD_AMT_iqr',
-        # 'GLBL_IRAD_AMT_total',
+        'GLBL_IRAD_AMT_total',
         # 'Track_Orientation_E_W',
         'Track_Orientation_NE_SW',
         'Track_Orientation_NW_SE',
@@ -319,61 +481,75 @@ def specify_explanatory_variables():
     ]
 
 
-# Describe basic statistics about the main explanatory variables
-def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None):
+def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None, verbose=False):
+    """
+    Describe basic statistics about the main explanatory variables.
+
+    :param train_set:
+    :param save_as:
+    :param dpi:
+    :param verbose:
+    :return:
+
+    **Example**::
+
+        train_set = incident_location_weather.copy()
+    """
+
     plt.figure(figsize=(13, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
     ax1 = plt.subplot2grid((1, 8), (0, 0))
     train_set.Temperature_Change_max.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
     ax1.set_xticklabels('')
-    plt.xlabel('Temp.\nChange', fontsize=13, labelpad=39)
+    plt.xlabel('Temperature change', fontsize=13, labelpad=40)
     plt.ylabel('(°C)', fontsize=12, rotation=0)
     ax1.yaxis.set_label_coords(0.05, 1.01)
 
     ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
     train_set.Temperature_Category.value_counts().plot.bar(color='#537979', rot=-90, fontsize=12)
-    plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'], fontsize=12)
-    plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
-    plt.ylabel('No.', fontsize=12, rotation=0)
+    plt.xticks(range(0, 8), ['<24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥30°C'],
+               rotation=-45, fontsize=12)
+    plt.xlabel('Maximum Temperature', fontsize=13, labelpad=10)
+    plt.ylabel('Frequency', fontsize=12, rotation=0)
     ax2.yaxis.set_label_coords(0.0, 1.01)
 
     ax3 = plt.subplot2grid((1, 8), (0, 3), colspan=2)
     track_orientation = train_set.Track_Orientation.value_counts()
     track_orientation.index = [i.replace('_', '-') for i in track_orientation.index]
-    track_orientation.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
-    plt.xlabel('Track orientation', fontsize=13)
+    track_orientation.plot.bar(color='#a72a3d', rot=-45, fontsize=12)
+    plt.xlabel('Track orientation', fontsize=13, labelpad=7)
     plt.ylabel('No.', fontsize=12, rotation=0)
     ax3.yaxis.set_label_coords(0.0, 1.01)
 
     ax4 = plt.subplot2grid((1, 8), (0, 5))
     train_set.GLBL_IRAD_AMT_max.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
     ax4.set_xticklabels('')
-    plt.xlabel('Max.\nirradiation', fontsize=13, labelpad=29)
-    plt.ylabel('(KJ/m$\\^2$)', fontsize=12, rotation=0)
+    plt.xlabel('Max.\nirradiation', fontsize=13, labelpad=30)
+    plt.ylabel('(KJ/m$^2$)', fontsize=12, rotation=0)
     ax4.yaxis.set_label_coords(0.2, 1.01)
 
     ax5 = plt.subplot2grid((1, 8), (0, 6))
-    train_set.Rainfall_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
+    train_set.Precipitation_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
     ax5.set_xticklabels('')
-    plt.xlabel('Max.\nPrecip.', fontsize=13, labelpad=29)
+    plt.xlabel('Max.\nprecipitation', fontsize=13, labelpad=30)
     plt.ylabel('(mm)', fontsize=12, rotation=0)
     ax5.yaxis.set_label_coords(0.0, 1.01)
 
     ax6 = plt.subplot2grid((1, 8), (0, 7))
     hottest_heretofore = train_set.Hottest_Heretofore.value_counts()
     hottest_heretofore.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
-    plt.xlabel('Hottest\nheretofore', fontsize=13)
-    plt.ylabel('No.', fontsize=12, rotation=0)
+    plt.xlabel('Hottest\nheretofore', fontsize=13, labelpad=15)
+    plt.ylabel('Frequency', fontsize=12, rotation=0)
     ax6.yaxis.set_label_coords(0.0, 1.01)
 
     plt.tight_layout()
 
-    if save_as == ".svg":
-        save_fig(cd_intermediate_fig_pub("Variables" + save_as), dpi)
+    if save_as:
+        path_to_fig_file = cd_intermediate_fig_pub("Variables" + save_as)
+        save_fig(path_to_fig_file, dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
-#
 def logistic_regression_model(trial_id,
                               route=None, weather_category='Heat', season='summer',
                               prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
@@ -384,39 +560,41 @@ def logistic_regression_model(trial_id,
                               save_as=".svg", dpi=None,
                               verbose=True):
     """
-    Testing parameters:
-    e.g.
-        trial_id
-        route=None
-        weather_category='Heat'
-        season='summer'
-        prior_ip_start_hrs=-0
-        latent_period=-5
-        non_ip_start_hrs=-0
-        outlier_pctl=100
-        describe_var=False
-        add_const=True
-        seed=0
-        model='logit',
-        plot_roc=False
-        plot_predicted_likelihood=False
-        save_as=".tif"
-        dpi=None
-        verbose=True
+    Train/test a logistic regression model for predicting heat-related incidents.
 
-    IncidentReason  IncidentReasonName   IncidentReasonDescription
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IncidentReason | IncidentReasonName | IncidentReasonDescription
+    -------------- | ------------------ | ------------------------------------------------------------------------------
+    IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
+    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, Takeback Pumps, ...
+    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind given Group Standards
+    Q1             |   TKB PUMPS        | Takeback Pumps
+    X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
+    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure the responsibility of NR
+    XX             |   MISC OBS         | Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    -------------- | ------------------ | ------------------------------------------------------------------------------
 
-    IQ              TRACK SIGN           Trackside sign blown down/light out etc.
-    IW              COLD                 Non severe - Snow/Ice/Frost affecting infrastructure equipment',
-                                         'Takeback Pumps'
-    OF              HEAT/WIND            Blanket speed restriction for extreme heat or high wind in accordance with
-                                         the Group Standards
-    Q1              TKB PUMPS            Takeback Pumps
-    X4              BLNK REST            Blanket speed restriction for extreme heat or high wind
-    XW              WEATHER              Severe Weather not snow affecting infrastructure the responsibility of NR
-    XX              MISC OBS             Msc items on line (incl trees) due to effects of Weather responsibility of RT
+    **Example**::
 
+        trial_id                  = 0
+        route_name                = 'Anglia'
+        weather_category          = 'Heat'
+        season                    = 'summer'
+        prior_ip_start_hrs        = -0
+        latent_period             = -5
+        non_ip_start_hrs          = -0
+        outlier_pctl              = 100
+        describe_var              = False
+        add_const                 = True
+        seed                      = 0
+        model                     = 'logit',
+        plot_roc                  = False
+        plot_predicted_likelihood = False
+        save_as                   = ".tif"
+        dpi                       = None
+        verbose                   = True
     """
+
     # Get the m_data for modelling
     m_data = get_incident_location_weather(route, weather_category, season,
                                            prior_ip_start_hrs, latent_period, non_ip_start_hrs)
@@ -452,6 +630,7 @@ def logistic_regression_model(trial_id,
         describe_explanatory_variables(train_set, save_as=save_as, dpi=dpi)
 
     np.random.seed(seed)
+
     try:
         if model == 'logit':
             mod = sm_dcm.Logit(train_set.Incident_Reported, train_set[explanatory_variables])
@@ -486,6 +665,7 @@ def logistic_regression_model(trial_id,
         incident_accuracy = np.divide(test_acc.sum(), len(test_acc))
         print("Incident accuracy: %f" % incident_accuracy) if verbose else print("")
 
+        # Plot ROC
         if plot_roc:
             plt.figure()
             plt.plot(fpr, tpr, label="ROC curve (area = %0.2f)" % auc, color='#6699cc', lw=2.5)
@@ -501,7 +681,8 @@ def logistic_regression_model(trial_id,
             plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_intermediate_heat_trial(trial_id, "ROC" + save_as), dpi=dpi)
+                path_to_roc_fig = cdd_intermediate_heat_trial(trial_id, "ROC" + save_as)
+                save_fig(path_to_roc_fig, dpi=dpi, verbose=verbose)
 
         # Plot incident delay minutes against predicted probabilities
         if plot_predicted_likelihood:
@@ -523,7 +704,8 @@ def logistic_regression_model(trial_id,
             plt.yticks(fontsize=13)
             plt.tight_layout()
             if save_as:
-                save_fig(cdd_intermediate_heat_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+                path_to_pred_fig = cdd_intermediate_heat_trial(trial_id, "Predicted-likelihood" + save_as)
+                save_fig(path_to_pred_fig, dpi=dpi, verbose=verbose)
 
     except Exception as e:
         print(e)
