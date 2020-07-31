@@ -372,6 +372,7 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
 
         from weather.ukcp import query_ukcp09_by_grid_datetime
 
+        dat_dir = None
         update = False
         verbose = True
 
@@ -389,7 +390,7 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
     # Make a pickle filename
     pickle_filename = "{}-{}.pickle".format(
         "".join(str(x)[0] + str(x)[-1] for x in grids),
-        "-".join(x.strftime('%Y%m%d%H%M') for x in period))
+        "-".join([period.min().strftime('%Y%m%d%H'), period.max().strftime('%Y%m%d%H')]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
     dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
@@ -402,9 +403,10 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         # Create an engine to the MSSQL server
         conn_metex = create_mssql_connectable_engine(database_name='Weather')
         # Specify database sql query
-        grids_ = tuple(grids)
+        grids_ = tuple(grids) if len(grids) > 1 else grids[0]
         period_ = tuple(x.strftime('%Y-%m-%d %H:%M:%S') for x in period)
-        sql_query = "SELECT * FROM dbo.[UKCP09] WHERE [Pseudo_Grid_ID] IN {} AND [Date] IN {};".format(grids_, period_)
+        sql_query = "SELECT * FROM dbo.[UKCP09] WHERE [Pseudo_Grid_ID] {} {} AND [Date] IN {};".format(
+            'IN' if len(grids) > 1 else '=', grids_, period_)
         # Query the weather data
         ukcp09_dat = pd.read_sql(sql_query, conn_metex)
 
@@ -452,8 +454,8 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=pickle_it, verbose=verbose)
     """
 
-    p_start = period.min().strftime('%Y-%m-%d')
     y_start = datetime_truncate.truncate_year(period.min()).strftime('%Y-%m-%d')
+    p_start = period.min().strftime('%Y-%m-%d')
 
     # Make a pickle filename
     pickle_filename = "{}-{}.pickle".format(
@@ -471,10 +473,11 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         # Create an engine to the MSSQL server
         conn_metex = create_mssql_connectable_engine(database_name='Weather')
         # Specify database sql query
-        grids_ = tuple(grids)
+        grids_ = tuple(grids) if len(grids) > 1 else grids[0]
         sql_query = "SELECT * FROM dbo.[UKCP09] " \
-                    "WHERE [Pseudo_Grid_ID] IN {} AND " \
-                    "[Date] >= '{}' AND [Date] <= '{}';".format(grids_, y_start, p_start)
+                    "WHERE [Pseudo_Grid_ID] {} {} " \
+                    "AND [Date] >= '{}' AND [Date] <= '{}';".format('IN' if len(grids) > 1 else '=', grids_,
+                                                                    y_start, p_start)
         # Query the weather data
         ukcp09_dat = pd.read_sql(sql_query, conn_metex)
 
