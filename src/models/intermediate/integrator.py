@@ -1,24 +1,35 @@
 import itertools
 
-import datetime_truncate
 import numpy as np
 import scipy.stats
 import shapely.geometry
 import shapely.ops
 
+from weather.midas import query_midas_radtob_by_grid_datetime
+from weather.ukcp import query_ukcp09_by_grid_datetime, query_ukcp09_by_grid_datetime_
 
-def find_closest_weather_grid(x, observation_grids, centroids_geom):
+
+def find_closest_weather_grid(x, obs_grids, obs_centroid_geom):
     """
     Find the closest grid centroid and return the corresponding (pseudo) grid id.
 
     :param x: e.g. Incidents.StartNE.iloc[0]
-    :param observation_grids:
-    :param centroids_geom: i.e. obs_cen_geom
+    :param obs_grids:
+    :param obs_centroid_geom:
     :return:
+
+    **Example**::
+
+        import copy
+
+        x = incidents.StartXY.iloc[0]
     """
 
-    pseudo_id = np.where(observation_grids.Centroid_XY == shapely.ops.nearest_points(x, centroids_geom)[1])
-    return pseudo_id[0][0]
+    x_ = shapely.ops.nearest_points(x, obs_centroid_geom)[1]
+
+    pseudo_id = [i for i, y in enumerate(obs_grids.Centroid_XY) if y.equals(x_)]
+
+    return pseudo_id[0]
 
 
 def create_circle_buffer_upon_weather_grid(start, end, midpoint, whisker=500):
@@ -40,9 +51,9 @@ def create_circle_buffer_upon_weather_grid(start, end, midpoint, whisker=500):
 
         whisker = 0
 
-        start = incidents.StartNE.iloc[0]
-        end = incidents.EndNE.iloc[0]
-        midpoint = incidents.MidpointNE.iloc[0]
+        start = incidents.StartXY.iloc[0]
+        end = incidents.EndXY.iloc[0]
+        midpoint = incidents.MidpointXY.iloc[0]
     """
 
     if start == end:
@@ -53,20 +64,29 @@ def create_circle_buffer_upon_weather_grid(start, end, midpoint, whisker=500):
     return buffer_circle
 
 
-def find_intersecting_weather_grid(x, observation_grids, grids_geom, as_grid_id=True):
+def find_intersecting_weather_grid(x, obs_grids, obs_grids_geom, as_grid_id=True):
     """
     Find all intersecting geom objects.
 
-    :param x: e.g. Incidents.Buffer_Zone.iloc[0]
-    :param observation_grids:
-    :param grids_geom: i.e. obs_grids_geom
-    :param as_grid_id: [bool] whether to return grid id number
+    :param x:
+    :param obs_grids:
+    :param obs_grids_geom:
+    :param as_grid_id: whether to return grid id number
+    :type as_grid_id: bool
     :return:
+
+    **Example**::
+
+        x = incidents.Buffer_Zone.iloc[0]
+        as_grid_id = True
     """
 
-    intxn_grids = [grid for grid in grids_geom if x.intersects(grid)]
+    intxn_grids = [grid for grid in obs_grids_geom if x.intersects(grid)]
+
     if as_grid_id:
-        intxn_grids = [observation_grids[observation_grids.Grid == g].index[0] for g in intxn_grids]
+        x_ = shapely.ops.cascaded_union(intxn_grids)
+        intxn_grids = [i for i, y in enumerate(obs_grids.Grid) if y.within(x_)]
+
     return intxn_grids
 
 
@@ -74,14 +94,26 @@ def find_closest_met_stn(x, met_stations, met_stations_geom):
     """
     Find the closest grid centroid and return the corresponding (pseudo) grid id.
 
-    :param x: e.g. Incidents.MidpointNE.iloc[0]
+    :param x:
     :param met_stations:
     :param met_stations_geom:
     :return:
+
+    **Example**::
+
+        x = incidents.MidpointXY.iloc[0]
     """
 
-    idx = np.where(met_stations.E_N_GEOM == shapely.ops.nearest_points(x, met_stations_geom)[1])[0]
-    src_id = met_stations.index[idx].tolist()
+    x_1 = shapely.ops.nearest_points(x, met_stations_geom)[1]
+
+    # rest = shapely.geometry.MultiPoint([p for p in met_stations_geom if not p.equals(x_1)])
+    # x_2 = shapely.ops.nearest_points(x, rest)[1]
+    # rest = shapely.geometry.MultiPoint([p for p in rest if not p.equals(x_2)])
+    # x_3 = shapely.ops.nearest_points(x, rest)[1]
+
+    idx = [i for i, y in enumerate(met_stations.EN_GEOM) if y.equals(x_1)]
+    src_id = met_stations.index[idx].to_list()
+
     return src_id
 
 
@@ -95,7 +127,8 @@ def specify_weather_stats_calculations():
     weather_stats_calculations = {'Maximum_Temperature': (max, min, np.average),
                                   'Minimum_Temperature': (max, min, np.average),
                                   'Temperature_Change': np.average,
-                                  'Rainfall': (max, min, np.average)}
+                                  'Precipitation': (max, min, np.average)}
+
     return weather_stats_calculations
 
 
@@ -109,8 +142,11 @@ def specify_weather_variable_names(calc):
 
     var_stats_names = [[k, [i.__name__ for i in v] if isinstance(v, tuple) else [v.__name__]]
                        for k, v in calc.items()]
+
     weather_variable_names = [['_'.join([x, z]) for z in y] for x, y in var_stats_names]
+
     weather_variable_names = list(itertools.chain.from_iterable(weather_variable_names))
+
     return weather_variable_names
 
 
@@ -124,8 +160,10 @@ def calculate_weather_stats(weather_data):
 
     # Specify calculations
     weather_stats_computations = specify_weather_stats_calculations()
+
     if weather_data.empty:
         weather_stats_info = [np.nan] * sum(map(np.count_nonzero, weather_stats_computations.values()))
+
     else:
         # Create a pseudo id for groupby() & aggregate()
         weather_data['Pseudo_ID'] = 0
@@ -137,61 +175,64 @@ def calculate_weather_stats(weather_data):
         # else:
         #     stats_info = [np.nan] * len(weather_stats.columns)
         weather_stats_info = weather_stats.values[0].tolist()
+
     return weather_stats_info
 
 
-def integrate_pip_gridded_weather_obs(grids, period, weather_obs):
+def integrate_pip_ukcp09_data(grids, period):
     """
     Gather gridded weather observations of the given period for each incident record.
 
-    :param grids: e.g. grids = Incidents.Weather_Grid.iloc[0]
-    :param period: e.g. period = Incidents.Critical_Period.iloc[0]
-    :param weather_obs:
+    :param grids: e.g. grids = incidents.Weather_Grid.iloc[0]
+    :param period: e.g. period = incidents.Critical_Period.iloc[0]
     :return:
 
-    if not isinstance(period, list) and isinstance(period, datetime.date):
-        period = [period]
-    import itertools
-    temp = pd.DataFrame(list(itertools.product(grids, period)), columns=['Pseudo_Grid_ID', 'Date'])
+    **Example**::
+
+        grids = incidents.Weather_Grid.iloc[0]
+        period = incidents.Critical_Period.iloc[0]
 
     """
+
     # Find Weather data for the specified period
-    prior_ip_weather = weather_obs[weather_obs.Pseudo_Grid_ID.isin(grids) & weather_obs.Date.isin(period)]
+    prior_ip_weather = query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
     # Calculate the max/min/avg for Weather parameters during the period
     weather_stats = calculate_weather_stats(prior_ip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = weather_obs[
-        (weather_obs.Date < min(period)) &
-        (weather_obs.Date > datetime_truncate.truncate_year(min(period))) &
-        weather_obs.Pseudo_Grid_ID.isin(grids)]  # Or weather_obs.Date > pd.datetime(min(period).year, 6, 1)
+    obs_by_far = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
 
 
-def integrate_nip_gridded_weather_obs(grids, period, stanox_section, weather_obs, prior_ip_data):
+def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     """
     Gather gridded Weather observations of the corresponding non-incident period for each incident record.
 
-    :param grids: e.g. grids = non_ip_data.Weather_Grid.iloc[12]
-    :param period: e.g. period = non_ip_data.Critical_Period.iloc[12]
-    :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[12]
-    :param weather_obs:
+    :param grids:
+    :param period:
+    :param stanox_section:
     :param prior_ip_data:
     :return:
+
+    **Example**::
+
+        grids = non_ip_data.Weather_Grid.iloc[0]
+        period = non_ip_data.Critical_Period.iloc[0]
+        stanox_section = non_ip_data.StanoxSection.iloc[0]
     """
 
     # Get non-IP Weather data about where and when the incident occurred
-    nip_weather = weather_obs[(weather_obs.Pseudo_Grid_ID.isin(grids)) & (weather_obs.Date.isin(period))]
+    nip_weather = query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
         (prior_ip_data.StanoxSection == stanox_section) &
-        (((prior_ip_data.Critical_StartDateTime <= min(period)) &
-          (prior_ip_data.Critical_EndDateTime >= min(period))) |
-         ((prior_ip_data.Critical_StartDateTime <= max(period)) &
-          (prior_ip_data.Critical_EndDateTime >= max(period))))]
+        (((prior_ip_data.Critical_StartDateTime <= period.min()) &
+          (prior_ip_data.Critical_EndDateTime >= period.min())) |
+         ((prior_ip_data.Critical_StartDateTime <= period.max()) &
+          (prior_ip_data.Critical_EndDateTime >= period.max())))]
     # Skip data of Weather causing Incidents at around the same time; but
     if not ip_overlap.empty:
         nip_weather = nip_weather[
@@ -201,23 +242,31 @@ def integrate_nip_gridded_weather_obs(grids, period, stanox_section, weather_obs
     weather_stats = calculate_weather_stats(nip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = weather_obs[
-        (weather_obs.Date < min(period)) &
-        (weather_obs.Date > datetime_truncate.truncate_year(min(period))) &
-        weather_obs.Pseudo_Grid_ID.isin(grids)]  # Or weather_obs.Date > pd.datetime(min(period).year, 6, 1)
+    obs_by_far = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
 
 
-# Specify the statistics needed for radiation only
 def specify_radtob_stats_calculations():
+    """
+    Specify the statistics needed for radiation only.
+
+    :return:
+    """
+
     radtob_stats_calculations = {'GLBL_IRAD_AMT': (max, scipy.stats.iqr)}
     return radtob_stats_calculations
 
 
-# Calculate the statistics for the radiation variables
 def calculate_radtob_variables_stats(radtob_dat):
+    """
+    Calculate the statistics for the radiation variables.
+
+    :param radtob_dat:
+    :return:
+    """
+
     # Solar irradiation amount (Kjoules/ sq metre over the observation period)
     radtob_stats_calculations = specify_radtob_stats_calculations()
     if radtob_dat.empty:
@@ -237,39 +286,59 @@ def calculate_radtob_variables_stats(radtob_dat):
 
 
 # Gather solar radiation of the given period for each incident record
-def integrate_pip_midas_radtob(met_stn_id, period, irad_obs):
+def integrate_pip_midas_radtob(met_stn_id, period):
     """
-    :param met_stn_id: e.g. met_stn_id = Incidents.Met_SRC_ID.iloc[1]
-    :param period: e.g. period = Incidents.Critical_Period.iloc[1]
-    :param irad_obs:
+    :param met_stn_id:
+    :param period:
     :return:
+
+    **Example**::
+
+        met_stn_id = incidents.Met_SRC_ID.iloc[4]
+        period = incidents.Critical_Period.iloc[4]
     """
-    prior_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
+
+    # irad_obs_ = irad_obs[irad_obs.SRC_ID.isin(met_stn_id)]
+    #
+    # try:
+    #     prior_ip_radtob = irad_obs_.set_index('OB_END_DATE').loc[period]
+    # except KeyError:
+    #     prior_ip_radtob = pd.DataFrame()
+
+    prior_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=True)
+
     radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
+
     return radtob_stats
 
 
-def integrate_nip_midas_radtob(met_stn_id, period, stanox_section, irad_obs, prior_ip_data):
+def integrate_nip_midas_radtob(met_stn_id, period, prior_ip_data, stanox_section):
     """
     Gather solar radiation of the corresponding non-incident period for each incident record.
 
     :param met_stn_id: e.g. met_stn_id = non_ip_data.Met_SRC_ID.iloc[1]
     :param period: e.g. period = non_ip_data.Critical_Period.iloc[1]
     :param stanox_section: e.g. location = non_ip_data.StanoxSection.iloc[0]
-    :param irad_obs:
     :param prior_ip_data:
     :return:
     """
 
-    non_ip_radtob = irad_obs[irad_obs.SRC_ID.isin(met_stn_id) & irad_obs.OB_END_DATE.isin(period)]
+    # irad_obs_ = irad_obs[irad_obs.SRC_ID.isin(met_stn_id)]
+    #
+    # try:
+    #     non_ip_radtob = irad_obs_.set_index('OB_END_DATE').loc[period]
+    # except KeyError:
+    #     non_ip_radtob = pd.DataFrame()
+
+    non_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
         (prior_ip_data.StanoxSection == stanox_section) &
-        (((prior_ip_data.Critical_StartDateTime <= min(period)) &
-          (prior_ip_data.Critical_EndDateTime >= min(period))) |
-         ((prior_ip_data.Critical_StartDateTime <= max(period)) &
-          (prior_ip_data.Critical_EndDateTime >= max(period))))]
+        (((prior_ip_data.Critical_StartDateTime <= period.min()) &
+          (prior_ip_data.Critical_EndDateTime >= period.min())) |
+         ((prior_ip_data.Critical_StartDateTime <= period.max()) &
+          (prior_ip_data.Critical_EndDateTime >= period.max())))]
     # Skip data of Weather causing Incidents at around the same time; but
     if not ip_overlap.empty:
         non_ip_radtob = non_ip_radtob[
