@@ -1,14 +1,18 @@
 """ Met Office RADTOB (Radiation values currently being reported) """
 
+import gc
 import os
+import tempfile
 import zipfile
 
 import natsort
 import pandas as pd
 import shapely.geometry
+import sqlalchemy.types
 from pyhelpers.geom import wgs84_to_osgb36
 from pyhelpers.store import load_pickle, save_pickle
 
+from mssqlserver.tools import create_mssql_connectable_engine
 from settings import pd_preferences
 from utils import cdd_weather
 
@@ -129,7 +133,7 @@ def parse_midas_radtob(filename, headers, daily=False, rad_stn=False):
     return ro_data_
 
 
-def make_radtob_pickle_path(data_filename, daily, rad_stn):
+def make_midas_radtob_pickle_path(data_filename, daily, rad_stn):
     """
     Make a full path to the pickle file of radiation data.
 
@@ -148,7 +152,7 @@ def make_radtob_pickle_path(data_filename, daily, rad_stn):
     return path_to_radtob_pickle
 
 
-def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False, verbose=False):
+def get_midas_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False, verbose=False):
     """
     Get MIDAS RADTOB (Radiation data).
 
@@ -165,17 +169,17 @@ def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False
 
     **Example**::
 
-        from weather.midas import get_radtob
+        from weather.midas import get_midas_radtob
 
         data_filename = "midas-radtob-2006-2019"
         daily = False
         update = True
         verbose = True
 
-        radtob = get_radtob(data_filename, daily, update, verbose)
+        radtob = get_midas_radtob(data_filename, daily, update, verbose)
     """
 
-    path_to_pickle = make_radtob_pickle_path(data_filename, daily, rad_stn=False)
+    path_to_pickle = make_midas_radtob_pickle_path(data_filename, daily, rad_stn=False)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -202,3 +206,114 @@ def get_radtob(data_filename="midas-radtob-2006-2019", daily=False, update=False
 
         except Exception as e:
             print("Failed to get the radiation observations. {}".format(e))
+
+
+def dump_midas_radtob_to_mssql(table_name='MIDAS_RADTOB', if_exists='append', chunk_size=100000, update=False,
+                               verbose=False):
+    """
+    See also [`DUDTM <https://stackoverflow.com/questions/50689082>`_].
+
+    :param table_name:
+    :param if_exists:
+    :param chunk_size:
+    :param update:
+    :param verbose:
+    :return:
+
+    **Example**::
+
+        table_name = 'MIDAS_RADTOB'
+        if_exists = 'append'
+        chunk_size = 100000
+        update = False
+        verbose = False
+    """
+
+    midas_radtob = get_midas_radtob(update=update, verbose=verbose)
+    midas_radtob.reset_index(inplace=True)
+
+    midas_radtob_engine = create_mssql_connectable_engine(database_name='Weather')
+
+    print("Importing MIDAS RADTOB data to MSSQL Server", end=" ... ")
+
+    temp_file = tempfile.NamedTemporaryFile()
+    csv_filename = temp_file.name + ".csv"
+    midas_radtob.to_csv(csv_filename, index=False, chunksize=chunk_size)
+
+    tsql_chunksize = 2097 // len(midas_radtob.columns)
+    temp_file_ = pd.read_csv(csv_filename, chunksize=tsql_chunksize)
+    for chunk in temp_file_:
+        # e.g. chunk = temp_file_.get_chunk(tsql_chunksize)
+        chunk.to_sql(table_name, midas_radtob_engine, schema='dbo', if_exists=if_exists, index=False,
+                     dtype={'OB_END_DATE_TIME': sqlalchemy.types.DATETIME, 'OB_END_DATE': sqlalchemy.types.DATE},
+                     method='multi')
+        gc.collect()
+
+    temp_file.close()
+
+    os.remove(csv_filename)
+
+    print("Done. ")
+
+
+def query_midas_radtob_by_grid_datetime(met_stn_id, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+    """
+    Get MIDAS RADTOB (Radiation data) by met station ID (Query from the database) for the given ``period``.
+
+    :param met_stn_id: met station ID
+    :type met_stn_id: list
+    :param period: prior-incident / non-incident period
+    :type period:
+    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :type update: bool
+    :param dat_dir: directory where the queried data is saved, defaults to ``None``
+    :type dat_dir: str, None
+    :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
+    :type pickle_it: bool
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: UKCP09 data by ``grids`` and ``period``
+    :rtype: pandas.DataFrame
+
+    **Examples**::
+
+        from weather.midas import query_midas_radtob_by_grid_datetime
+
+        update = False
+        verbose = True
+
+        pickle_it = False
+        met_stn_id = incidents.Met_SRC_ID.iloc[0]
+        period = incidents.Critical_Period.iloc[0]
+        midas_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, verbose=verbose)
+
+        pickle_it = True
+        met_stn_id = incidents.Met_SRC_ID.iloc[1]
+        period = incidents.Critical_Period.iloc[1]
+        midas_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=pickle_it, verbose=verbose)
+    """
+
+    # Make a pickle filename
+    pickle_filename = "{}-{}.pickle".format(str(met_stn_id[0]), "-".join(x.strftime('%Y%m%d%H%M') for x in period))
+
+    # Specify a directory/path to store the pickle file (if appropriate)
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("midas", "dat")
+    path_to_pickle = cdd_weather(dat_dir, pickle_filename)
+
+    if os.path.isfile(path_to_pickle) and not update:
+        midas_radtob = load_pickle(path_to_pickle)
+
+    else:
+        # Create an engine to the MSSQL server
+        conn_metex = create_mssql_connectable_engine(database_name='Weather')
+        # Specify database sql query
+        ms_id = met_stn_id[0]
+        dates = tuple(x.strftime('%Y-%m-%d') for x in period)
+        sql_query = "SELECT * FROM dbo.[MIDAS_RADTOB] WHERE [SRC_ID] = {} AND [OB_END_DATE] IN {};".format(ms_id, dates)
+        # Query the weather data
+        midas_radtob = pd.read_sql(sql_query, conn_metex)
+
+        if pickle_it:
+            save_pickle(midas_radtob, path_to_pickle, verbose=verbose)
+
+    return midas_radtob
