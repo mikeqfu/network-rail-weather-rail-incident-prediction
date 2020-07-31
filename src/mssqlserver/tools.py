@@ -167,7 +167,6 @@ def create_mssql_db_cursor(database_name):
 
 # == Functions to retrieve information ================================================================
 
-
 def get_table_names(database_name, schema_name='dbo', table_type='TABLE'):
     """
     Get a list of table names in a database.
@@ -251,7 +250,6 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
 
 
 # == Functions to read table data =====================================================================
-
 
 def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=None, chunk_size=None, index_col=None,
                        save_as=None, data_dir=None, **kwargs):
