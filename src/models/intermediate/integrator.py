@@ -1,7 +1,7 @@
 import itertools
 
 import numpy as np
-import scipy.stats
+import pandas as pd
 import shapely.geometry
 import shapely.ops
 
@@ -229,10 +229,10 @@ def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
         (prior_ip_data.StanoxSection == stanox_section) &
-        (((prior_ip_data.Critical_StartDateTime <= period.min()) &
-          (prior_ip_data.Critical_EndDateTime >= period.min())) |
-         ((prior_ip_data.Critical_StartDateTime <= period.max()) &
-          (prior_ip_data.Critical_EndDateTime >= period.max())))]
+        (((prior_ip_data.Critical_StartDateTime <= period.left.to_pydatetime()[0]) &
+          (prior_ip_data.Critical_EndDateTime >= period.left.to_pydatetime()[0])) |
+         ((prior_ip_data.Critical_StartDateTime <= period.right.to_pydatetime()[0]) &
+          (prior_ip_data.Critical_EndDateTime >= period.right.to_pydatetime()[0])))]
     # Skip data of Weather causing Incidents at around the same time; but
     if not ip_overlap.empty:
         nip_weather = nip_weather[
@@ -255,47 +255,59 @@ def specify_radtob_stats_calculations():
     :return:
     """
 
-    radtob_stats_calculations = {'GLBL_IRAD_AMT': (max, scipy.stats.iqr)}
+    radtob_stats_calculations = {'GLBL_IRAD_AMT': sum}
     return radtob_stats_calculations
 
 
-def calculate_radtob_variables_stats(radtob_dat):
+def calculate_radtob_variables_stats(midas_radtob):
     """
     Calculate the statistics for the radiation variables.
 
-    :param radtob_dat:
-    :return:
-    """
-
-    # Solar irradiation amount (Kjoules/ sq metre over the observation period)
-    radtob_stats_calculations = specify_radtob_stats_calculations()
-    if radtob_dat.empty:
-        stats_info = [np.nan] * (sum(map(np.count_nonzero, radtob_stats_calculations.values())) + 1)
-    else:
-        if 24 not in list(radtob_dat.OB_HOUR_COUNT):
-            radtob_dat = radtob_dat.append(radtob_dat.iloc[-1, :])
-            radtob_dat.VERSION_NUM.iloc[-1] = 0
-            radtob_dat.OB_HOUR_COUNT.iloc[-1] = radtob_dat.OB_HOUR_COUNT.iloc[0:-1].sum()
-            radtob_dat.GLBL_IRAD_AMT.iloc[-1] = radtob_dat.GLBL_IRAD_AMT.iloc[0:-1].sum()
-
-        radtob_stats = radtob_dat.groupby('OB_HOUR_COUNT').aggregate(radtob_stats_calculations)
-        stats_info = radtob_stats.values.flatten().tolist()[0:-1]
-        # if len(radtob_stats) != 2:
-        #     stats_info = radtob_stats.values.flatten().tolist() + [np.nan]
-    return stats_info
-
-
-# Gather solar radiation of the given period for each incident record
-def integrate_pip_midas_radtob(met_stn_id, period):
-    """
-    :param met_stn_id:
-    :param period:
+    :param midas_radtob:
     :return:
 
     **Example**::
 
-        met_stn_id = incidents.Met_SRC_ID.iloc[4]
-        period = incidents.Critical_Period.iloc[4]
+        midas_radtob = prior_ip_radtob.copy()
+    """
+
+    # Solar irradiation amount (Kjoules/ sq metre over the observation period)
+    radtob_stats_calculations = specify_radtob_stats_calculations()
+    if midas_radtob.empty:
+        stats_info = [np.nan] * (sum(map(np.count_nonzero, radtob_stats_calculations.values())))
+
+    else:
+        # if 24 not in midas_radtob.OB_HOUR_COUNT:
+        #     midas_radtob = midas_radtob.append(midas_radtob.iloc[-1, :])
+        #     midas_radtob.VERSION_NUM.iloc[-1] = 0
+        #     midas_radtob.OB_HOUR_COUNT.iloc[-1] = midas_radtob.OB_HOUR_COUNT.iloc[0:-1].sum()
+        #     midas_radtob.GLBL_IRAD_AMT.iloc[-1] = midas_radtob.GLBL_IRAD_AMT.iloc[0:-1].sum()
+
+        if 24 in midas_radtob.OB_HOUR_COUNT.to_list():
+            temp = midas_radtob[midas_radtob.OB_HOUR_COUNT == 24]
+            midas_radtob = pd.concat([temp, midas_radtob.loc[temp.last_valid_index() + 1:]])
+
+        radtob_stats = midas_radtob.groupby('SRC_ID').aggregate(radtob_stats_calculations)
+        stats_info = radtob_stats.values.flatten().tolist()
+
+    return stats_info
+
+
+# Gather solar radiation of the given period for each incident record
+def integrate_pip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat):
+    """
+
+    :param met_stn_id:
+    :param period:
+    :param route_name:
+    :param use_suppl_dat:
+    :return:
+
+    **Example**::
+
+        met_stn_id = incidents.Met_SRC_ID.iloc[1]
+        period = incidents.Critical_Period.iloc[1]
+        use_suppl_dat = False
     """
 
     # irad_obs_ = irad_obs[irad_obs.SRC_ID.isin(met_stn_id)]
@@ -305,19 +317,21 @@ def integrate_pip_midas_radtob(met_stn_id, period):
     # except KeyError:
     #     prior_ip_radtob = pd.DataFrame()
 
-    prior_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=True)
+    prior_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat, pickle_it=True)
 
     radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
 
     return radtob_stats
 
 
-def integrate_nip_midas_radtob(met_stn_id, period, prior_ip_data, stanox_section):
+def integrate_nip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat, prior_ip_data, stanox_section):
     """
     Gather solar radiation of the corresponding non-incident period for each incident record.
 
     :param met_stn_id: e.g. met_stn_id = non_ip_data.Met_SRC_ID.iloc[1]
     :param period: e.g. period = non_ip_data.Critical_Period.iloc[1]
+    :param route_name:
+    :param use_suppl_dat:
     :param stanox_section: e.g. location = non_ip_data.StanoxSection.iloc[0]
     :param prior_ip_data:
     :return:
@@ -330,15 +344,15 @@ def integrate_nip_midas_radtob(met_stn_id, period, prior_ip_data, stanox_section
     # except KeyError:
     #     non_ip_radtob = pd.DataFrame()
 
-    non_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=True)
+    non_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat, pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
         (prior_ip_data.StanoxSection == stanox_section) &
-        (((prior_ip_data.Critical_StartDateTime <= period.min()) &
-          (prior_ip_data.Critical_EndDateTime >= period.min())) |
-         ((prior_ip_data.Critical_StartDateTime <= period.max()) &
-          (prior_ip_data.Critical_EndDateTime >= period.max())))]
+        (((prior_ip_data.Critical_StartDateTime <= period.left.to_pydatetime()[0]) &
+          (prior_ip_data.Critical_EndDateTime >= period.left.to_pydatetime()[0])) |
+         ((prior_ip_data.Critical_StartDateTime <= period.right.to_pydatetime()[0]) &
+          (prior_ip_data.Critical_EndDateTime >= period.right.to_pydatetime()[0])))]
     # Skip data of Weather causing Incidents at around the same time; but
     if not ip_overlap.empty:
         non_ip_radtob = non_ip_radtob[
