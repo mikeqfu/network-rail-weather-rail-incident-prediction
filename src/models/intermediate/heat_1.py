@@ -619,7 +619,7 @@ def logistic_regression_model(trial_id,
         describe_var              = False
         add_const                 = True
         seed                      = 0
-        model                     = 'logit',
+        model                     = 'logit'
         plot_roc                  = False
         plot_predicted_likelihood = False
         save_as                   = None
