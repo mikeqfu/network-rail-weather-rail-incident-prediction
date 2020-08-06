@@ -48,8 +48,7 @@ def define_prior_ip(incidents, prior_ip_start_hrs):
     incidents.insert(incidents.columns.get_loc('Critical_EndDateTime'), 'Critical_StartDateTime', critical_start_dt)
     # Prior-IP dates of each incident
     incidents['Critical_Period'] = incidents.apply(
-        lambda x: pd.date_range(x.Critical_StartDateTime, x.Critical_EndDateTime, normalize=True),
-        axis=1)
+        lambda x: pd.interval_range(x.Critical_StartDateTime, x.Critical_EndDateTime), axis=1)
 
     return incidents
 
@@ -80,24 +79,25 @@ def get_prior_ip_ukcp09_stats(incidents):
     return prior_ip_weather_stats
 
 
-def get_prior_ip_radtob_stats(incidents):
+def get_prior_ip_radtob_stats(incidents, use_suppl_dat=False):
     """
     Get prior-IP statistics of radiation data for each incident.
 
     :param incidents: data of incidents
     :type incidents: pandas.DataFrame
+    :param use_suppl_dat:
+    :type use_suppl_dat:
     :return: statistics of radiation data for each incident record during the prior IP
     :rtype: pandas.DataFrame
     """
 
     prior_ip_radtob_stats = incidents.apply(
-        lambda x: pd.Series(integrator.integrate_pip_midas_radtob(x.Met_SRC_ID, x.Critical_Period)),
-        axis=1)
+        lambda x: pd.Series(integrator.integrate_pip_midas_radtob(
+            x.Met_SRC_ID, x.Critical_Period, x.Route, use_suppl_dat)), axis=1)
 
-    r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
-    r_col_names += ['GLBL_IRAD_AMT_total']
-
-    prior_ip_radtob_stats.columns = r_col_names
+    # r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
+    # r_col_names += ['GLBL_IRAD_AMT_total']
+    prior_ip_radtob_stats.columns = ['GLBL_IRAD_AMT_total']  # r_col_names
 
     return prior_ip_radtob_stats
 
@@ -113,34 +113,55 @@ def define_latent_and_non_ip(incidents, prior_ip_data, non_ip_start_hrs):
 
     non_ip_data = incidents.copy(deep=True)  # Get Weather data that did not cause any incident
 
-    def define_latent_period(ip_max_temp_max, ip_start_dt, non_ip_start_hrs_):
+    def define_latent_period(route_name, ip_max_temp_max, ip_start_dt, non_ip_start_hrs_):
         """
         Determine latent period for a given date/time and the maximum temperature.
 
+        :param route_name:
         :param ip_max_temp_max:
         :param ip_start_dt:
         :param non_ip_start_hrs_:
         :return:
         """
 
-        if ip_max_temp_max < 24:
-            lp = -3
-        elif 24 <= ip_max_temp_max < 26:
-            lp = -4
-        elif 26 <= ip_max_temp_max < 29:
-            lp = -5
-        else:  # ip_max_temp_max >= 29:
-            lp = -6
+        if route_name == 'Anglia':
+            if 24 <= ip_max_temp_max <= 28:
+                lp = -20
+            elif ip_max_temp_max > 28:
+                lp = -13
+            else:
+                lp = 0
+        elif route_name == 'Wessex':
+            if 24 <= ip_max_temp_max <= 28:
+                lp = -30
+            elif ip_max_temp_max > 28:
+                lp = -25
+            else:
+                lp = 0
+        elif route_name == 'North and East':
+            if 24 <= ip_max_temp_max <= 28:
+                lp = -18
+            elif ip_max_temp_max > 28:
+                lp = -16
+            else:
+                lp = 0
+        else:  # route_name == 'Wales':
+            if 24 <= ip_max_temp_max <= 28:
+                lp = -19
+            elif ip_max_temp_max > 28:
+                lp = -5
+            else:
+                lp = 0
 
         critical_end_dt = ip_start_dt + datetime.timedelta(days=lp)
         critical_start_dt = critical_end_dt + datetime.timedelta(hours=non_ip_start_hrs_)
-        critical_period = pd.date_range(critical_start_dt, critical_end_dt, normalize=True)
+        critical_period = pd.interval_range(critical_start_dt, critical_end_dt)
 
         return critical_start_dt, critical_end_dt, critical_period
 
     non_ip_data[['Critical_StartDateTime', 'Critical_EndDateTime', 'Critical_Period']] = prior_ip_data.apply(
         lambda x: pd.Series(
-            define_latent_period(x.Maximum_Temperature_max, x.Critical_StartDateTime, non_ip_start_hrs)),
+            define_latent_period(x.Route, x.Maximum_Temperature_max, x.Critical_StartDateTime, non_ip_start_hrs)),
         axis=1)
 
     return non_ip_data
@@ -175,7 +196,7 @@ def get_non_ip_weather_stats(non_ip_data, prior_ip_data):
     return non_ip_weather_stats
 
 
-def get_non_ip_radtob_stats(non_ip_data, prior_ip_data):
+def get_non_ip_radtob_stats(non_ip_data, prior_ip_data, use_suppl_dat):
     """
     Get prior-IP statistics of radiation data for each incident.
 
@@ -183,17 +204,28 @@ def get_non_ip_radtob_stats(non_ip_data, prior_ip_data):
     :type non_ip_data: pandas.DataFrame
     :param prior_ip_data: prior-IP data
     :type prior_ip_data: pandas.DataFrame
+    :param use_suppl_dat:
+    :type use_suppl_dat:
     :return: statistics of radiation data for each incident record during the non-incident period
     :rtype: pandas.DataFrame
     """
 
     non_ip_radtob_stats = non_ip_data.apply(
         lambda x: pd.Series(integrator.integrate_nip_midas_radtob(
-            x.Met_SRC_ID, x.Critical_Period, prior_ip_data, x.StanoxSection)), axis=1)
+            x.Met_SRC_ID, x.Critical_Period, x.Route, use_suppl_dat, prior_ip_data, x.StanoxSection)), axis=1)
 
-    r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
-    r_col_names += ['GLBL_IRAD_AMT_total']
-    non_ip_radtob_stats.columns = r_col_names
+    for i in range(len(non_ip_data)):
+        try:
+            integrator.integrate_nip_midas_radtob(
+                non_ip_data.Met_SRC_ID.iloc[i], non_ip_data.Critical_Period.iloc[i], non_ip_data.Route.iloc[i],
+                False, prior_ip_data, non_ip_data.StanoxSection.iloc[i])
+        except Exception as e:
+            print(i, e)
+            break
+
+    # r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
+    # r_col_names += ['GLBL_IRAD_AMT_total']
+    non_ip_radtob_stats.columns = ['GLBL_IRAD_AMT_total']  # r_col_names
 
     return non_ip_radtob_stats
 
@@ -201,7 +233,7 @@ def get_non_ip_radtob_stats(non_ip_data, prior_ip_data):
 # == Data of weather conditions =======================================================================
 
 def get_incident_location_weather(route_name=None, weather_category='Heat', season='summer',
-                                  prior_ip_start_hrs=-24, latent_period=-5, non_ip_start_hrs=-24,
+                                  prior_ip_start_hrs=-24, non_ip_start_hrs=-24,
                                   trial_only=True, random_state=None, illustrate_buf_cir=False,
                                   update=False, verbose=False):
     """
@@ -213,9 +245,8 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
         weather_category   = 'Heat'
         season             = 'summer'
         prior_ip_start_hrs = -24
-        latent_period      = -5
         non_ip_start_hrs   = -24
-        trial_only         = True
+        trial_only         = False
         random_state       = None
         illustrate_buf_cir = False
         update             = False
@@ -229,7 +260,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
     pickle_filename = make_filename("weather", route_name, None,
                                     "_".join([season] if isinstance(season, str) else season),
-                                    prior_ip_start_hrs, str(latent_period) + 'd', non_ip_start_hrs,
+                                    str(prior_ip_start_hrs) + 'h', str(non_ip_start_hrs) + 'h',
                                     "trial" if trial_only else "", sep="_")
     path_to_pickle = cdd_intermediate_heat(pickle_filename)
 
@@ -343,7 +374,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
             prior_ip_weather_stats = get_prior_ip_ukcp09_stats(incidents)
 
             # Get prior-IP statistics of radiation data for each incident.
-            prior_ip_radtob_stats = get_prior_ip_radtob_stats(incidents)
+            prior_ip_radtob_stats = get_prior_ip_radtob_stats(incidents, use_suppl_dat=True)
 
             prior_ip_data = incidents.join(prior_ip_weather_stats).join(prior_ip_radtob_stats)
 
@@ -355,7 +386,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
             non_ip_weather_stats = get_non_ip_weather_stats(non_ip_data, prior_ip_data)
 
-            non_ip_radtob_stats = get_non_ip_radtob_stats(non_ip_data, prior_ip_data)
+            non_ip_radtob_stats = get_non_ip_radtob_stats(non_ip_data, prior_ip_data, use_suppl_dat=True)
 
             non_ip_data = non_ip_data.join(non_ip_weather_stats).join(non_ip_radtob_stats)
 
@@ -436,7 +467,7 @@ def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=
     plt.tight_layout()
 
     if save_as:
-        path_to_fig = cdd_intermediate_heat_trial(0, "Temp deviation" + save_as)
+        path_to_fig = cdd_intermediate_heat_trial(0, "Temperature deviation" + save_as)
         save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
@@ -457,14 +488,12 @@ def specify_explanatory_variables():
         # 'Minimum_Temperature_min',
         # 'Minimum_Temperature_average',
         # 'Temperature_Change_average',
-        'Rainfall_max',
-        # 'Rainfall_min',
-        # 'Rainfall_average',
+        'Precipitation_max',
+        # 'Precipitation_min',
+        # 'Precipitation_average',
         'Hottest_Heretofore',
         'Temperature_Change_max',
         # 'Temperature_Change_min',
-        # 'GLBL_IRAD_AMT_max',
-        # 'GLBL_IRAD_AMT_iqr',
         'GLBL_IRAD_AMT_total',
         # 'Track_Orientation_E_W',
         'Track_Orientation_NE_SW',
@@ -493,55 +522,59 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None, verbose=
 
     **Example**::
 
-        train_set = incident_location_weather.copy()
+        train_set = incident_location_weather.dropna().copy()
     """
 
-    plt.figure(figsize=(13, 5))
+    plt.figure(figsize=(14, 5))
     colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
-    ax1 = plt.subplot2grid((1, 8), (0, 0))
-    train_set.Temperature_Change_max.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
-    ax1.set_xticklabels('')
-    plt.xlabel('Temperature change', fontsize=13, labelpad=40)
-    plt.ylabel('(°C)', fontsize=12, rotation=0)
-    ax1.yaxis.set_label_coords(0.05, 1.01)
-
-    ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
-    train_set.Temperature_Category.value_counts().plot.bar(color='#537979', rot=-90, fontsize=12)
-    plt.xticks(range(0, 8), ['<24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥30°C'],
-               rotation=-45, fontsize=12)
-    plt.xlabel('Maximum Temperature', fontsize=13, labelpad=10)
+    ax1 = plt.subplot2grid((1, 9), (0, 0), colspan=3)
+    train_set.Temperature_Category.value_counts().plot.bar(color='#537979', rot=0, fontsize=12)
+    plt.xticks(range(0, 8), ['<24', '24', '25', '26', '27', '28', '29', '≥30'], rotation=0, fontsize=12)
+    ax1.text(7.5, -0.2, '(°C)', fontsize=12)
+    plt.xlabel('Maximum temperature', fontsize=13, labelpad=8)
     plt.ylabel('Frequency', fontsize=12, rotation=0)
-    ax2.yaxis.set_label_coords(0.0, 1.01)
+    ax1.yaxis.set_label_coords(0.0, 1.01)
 
-    ax3 = plt.subplot2grid((1, 8), (0, 3), colspan=2)
-    track_orientation = train_set.Track_Orientation.value_counts()
+    ax2 = plt.subplot2grid((1, 9), (0, 3))
+    train_set.Temperature_Change_max.plot.box(color=colour, ax=ax2, widths=0.5, fontsize=12)
+    ax2.set_xticklabels('')
+    plt.xlabel('Temperature\nchange', fontsize=13, labelpad=10)
+    plt.ylabel('(°C)', fontsize=12, rotation=0)
+    ax2.yaxis.set_label_coords(0.05, 1.01)
+
+    ax3 = plt.subplot2grid((1, 9), (0, 4), colspan=2)
+    orient_cats = [x.replace('Track_Orientation_', '') for x in train_set.columns if x.startswith('Track_Orientation_')]
+    track_orientation = pd.Series([sum(train_set.Track_Orientation == x) for x in orient_cats], index=orient_cats)
     track_orientation.index = [i.replace('_', '-') for i in track_orientation.index]
-    track_orientation.plot.bar(color='#a72a3d', rot=-45, fontsize=12)
-    plt.xlabel('Track orientation', fontsize=13, labelpad=7)
-    plt.ylabel('No.', fontsize=12, rotation=0)
+    track_orientation.plot.bar(color='#a72a3d', rot=0, fontsize=12)
+    # ax3.set_yticks(range(0, track_orientation.max() + 1, 100))
+    plt.xlabel('Track orientation', fontsize=13, labelpad=8)
+    plt.ylabel('Count', fontsize=12, rotation=0)
     ax3.yaxis.set_label_coords(0.0, 1.01)
 
-    ax4 = plt.subplot2grid((1, 8), (0, 5))
-    train_set.GLBL_IRAD_AMT_max.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
+    ax4 = plt.subplot2grid((1, 9), (0, 6))
+    train_set.GLBL_IRAD_AMT_total.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
     ax4.set_xticklabels('')
-    plt.xlabel('Max.\nirradiation', fontsize=13, labelpad=30)
+    plt.xlabel('Maximum\nirradiation', fontsize=13, labelpad=10)
     plt.ylabel('(KJ/m$^2$)', fontsize=12, rotation=0)
     ax4.yaxis.set_label_coords(0.2, 1.01)
 
-    ax5 = plt.subplot2grid((1, 8), (0, 6))
+    ax5 = plt.subplot2grid((1, 9), (0, 7))
     train_set.Precipitation_max.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
     ax5.set_xticklabels('')
-    plt.xlabel('Max.\nprecipitation', fontsize=13, labelpad=30)
+    plt.xlabel('Maximum\nprecipitation', fontsize=13, labelpad=10)
     plt.ylabel('(mm)', fontsize=12, rotation=0)
     ax5.yaxis.set_label_coords(0.0, 1.01)
 
-    ax6 = plt.subplot2grid((1, 8), (0, 7))
+    ax6 = plt.subplot2grid((1, 9), (0, 8))
     hottest_heretofore = train_set.Hottest_Heretofore.value_counts()
-    hottest_heretofore.plot.bar(color='#a72a3d', rot=-90, fontsize=12)
-    plt.xlabel('Hottest\nheretofore', fontsize=13, labelpad=15)
+    hottest_heretofore.plot.bar(color='#a72a3d', rot=0, fontsize=12)
+    plt.xlabel('Hottest\nheretofore', fontsize=13, labelpad=5)
     plt.ylabel('Frequency', fontsize=12, rotation=0)
     ax6.yaxis.set_label_coords(0.0, 1.01)
+    # ax6.set_yticks(range(0, hottest_heretofore.max() + 1, 100))
+    ax6.set_xticklabels(['False', 'True'], rotation=0)
 
     plt.tight_layout()
 
@@ -552,7 +585,7 @@ def describe_explanatory_variables(train_set, save_as=".pdf", dpi=None, verbose=
 
 def logistic_regression_model(trial_id,
                               route=None, weather_category='Heat', season='summer',
-                              prior_ip_start_hrs=-0, latent_period=-5, non_ip_start_hrs=-0,
+                              prior_ip_start_hrs=-0, non_ip_start_hrs=-0,
                               outlier_pctl=100,
                               describe_var=False,
                               add_const=True, seed=0, model='logit',
@@ -581,28 +614,29 @@ def logistic_regression_model(trial_id,
         weather_category          = 'Heat'
         season                    = 'summer'
         prior_ip_start_hrs        = -0
-        latent_period             = -5
         non_ip_start_hrs          = -0
-        outlier_pctl              = 100
+        outlier_pctl              = 95
         describe_var              = False
         add_const                 = True
         seed                      = 0
         model                     = 'logit',
         plot_roc                  = False
         plot_predicted_likelihood = False
-        save_as                   = ".tif"
+        save_as                   = None
         dpi                       = None
         verbose                   = True
+
+        m_data = incident_location_weather.copy()
     """
 
     # Get the m_data for modelling
-    m_data = get_incident_location_weather(route, weather_category, season,
-                                           prior_ip_start_hrs, latent_period, non_ip_start_hrs)
+    m_data = get_incident_location_weather(route, weather_category, season, prior_ip_start_hrs, non_ip_start_hrs)
 
     # temp_data = [load_pickle(cdd_mod_heat_inter("Slices", f)) for f in os.listdir(cdd_mod_heat_inter("Slices"))]
     # m_data = pd.concat(temp_data, ignore_index=True, sort=False)
 
-    m_data.dropna(subset=['GLBL_IRAD_AMT_max', 'GLBL_IRAD_AMT_iqr', 'GLBL_IRAD_AMT_total'], inplace=True)
+    m_data.dropna(subset=['GLBL_IRAD_AMT_total'], inplace=True)
+    m_data.GLBL_IRAD_AMT_total = m_data.GLBL_IRAD_AMT_total / 1000
 
     # Select features
     explanatory_variables = specify_explanatory_variables()
@@ -611,20 +645,23 @@ def logistic_regression_model(trial_id,
         if not m_data[m_data[v].isna()].empty:
             m_data.dropna(subset=[v], inplace=True)
 
-    m_data = m_data[explanatory_variables + ['Incident_Reported', 'StartDateTime', 'EndDateTime', 'Minutes']]
+    m_data = m_data[explanatory_variables + ['Incident_Reported', 'StartDateTime', 'EndDateTime', 'DelayMinutes']]
 
     # Remove outliers
     if 95 <= outlier_pctl <= 100:
-        m_data = m_data[m_data.Minutes <= np.percentile(m_data.Minutes, outlier_pctl)]
+        m_data = m_data[m_data.DelayMinutes <= np.percentile(m_data.DelayMinutes, outlier_pctl)]
 
     # Add the intercept
     if add_const:
         m_data = sm_tools.tools.add_constant(m_data, prepend=True, has_constant='skip')  # data['const'] = 1.0
         explanatory_variables = ['const'] + explanatory_variables
 
+    # m_data = m_data.loc[:, (m_data != 0).any(axis=0)]
+    # explanatory_variables = [x for x in explanatory_variables if x in m_data.columns]
+
     # Select data before 2014 as training data set, with the rest being test set
-    train_set = m_data[m_data.StartDateTime < pd.datetime(2013, 1, 1)]
-    test_set = m_data[m_data.StartDateTime >= pd.datetime(2013, 1, 1)]
+    train_set = m_data[m_data.StartDateTime < datetime.datetime(2016, 1, 1)]
+    test_set = m_data[m_data.StartDateTime >= datetime.datetime(2016, 1, 1)]
 
     if describe_var:
         describe_explanatory_variables(train_set, save_as=save_as, dpi=dpi)
@@ -689,7 +726,7 @@ def logistic_regression_model(trial_id,
             incident_ind = test_set.Incident_Reported == 1
             plt.figure()
             ax = plt.subplot2grid((1, 1), (0, 0))
-            ax.scatter(test_set[incident_ind].incident_prob, test_set[incident_ind].Minutes,
+            ax.scatter(test_set[incident_ind].incident_prob, test_set[incident_ind].DelayMinutes,
                        c='#D87272', edgecolors='k', marker='o', linewidths=1.5, s=80,  # alpha=.5,
                        label="Heat-related incident (2014/15)")
             plt.axvline(x=threshold, label="Threshold: %.2f" % threshold, color='#e5c100', linewidth=2)
