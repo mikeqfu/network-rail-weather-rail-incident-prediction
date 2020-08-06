@@ -1,6 +1,7 @@
 """ Met Office RADTOB (Radiation values currently being reported) """
 
 import gc
+import glob
 import os
 import tempfile
 import zipfile
@@ -256,7 +257,74 @@ def dump_midas_radtob_to_mssql(table_name='MIDAS_RADTOB', if_exists='append', ch
     print("Done. ")
 
 
-def query_midas_radtob_by_grid_datetime(met_stn_id, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+def process_midas_supplement(update=False, verbose=False):
+    path_to_pickle = cdd_weather("midas\\suppl", "suppl-dat.pickle")
+
+    if os.path.isfile(path_to_pickle) and not update:
+        supplement_data = load_pickle(path_to_pickle)
+
+    else:
+        rad_stations_info = get_radiation_stations_information()
+
+        try:
+            suppl_dat = []
+            for f in glob.glob(cdd_weather("midas\\suppl", "*.csv")):
+                dat = pd.read_csv(f, names=['OB_END_DATE', 'GLBL_IRAD_AMT'], skiprows=1)
+
+                filename = os.path.basename(f)
+
+                src_id = (rad_stations_info.StationName == filename.split('_')[0].upper()).idxmax()
+                dat.insert(0, 'SRC_ID', src_id)
+                dat.insert(2, 'OB_HOUR_COUNT', 24)
+
+                if 'Wattisham' in filename:
+                    dat['Route'] = 'Anglia'
+                if 'Hurn' in filename:
+                    dat['Route'] = 'Wessex'
+                if 'Valley' in filename:
+                    dat['Route'] = 'Wales'
+                if 'Durham' in filename:
+                    dat['Route'] = 'North and East'
+
+                suppl_dat.append(dat)
+
+            supplement_data = pd.concat(suppl_dat)
+
+            save_pickle(supplement_data, path_to_pickle, verbose=verbose)
+
+        except Exception as e:
+            print(e)
+            supplement_data = None
+
+    return supplement_data
+
+
+def dump_midas_supplement_to_mssql(table_name='MIDAS_RADTOB_suppl', if_exists='replace', update=False, verbose=False):
+    """
+
+    :param table_name:
+    :param if_exists:
+    :param update:
+    :param verbose:
+
+    **Example**::
+
+        table_name = 'MIDAS_RADTOB_suppl'
+        if_exists = 'replace'
+        update = True
+        verbose = True
+    """
+
+    supplement_data = process_midas_supplement(update=update, verbose=verbose)
+
+    if supplement_data is not None and not supplement_data.empty:
+        midas_radtob_engine = create_mssql_connectable_engine(database_name='Weather')
+        supplement_data.to_sql(table_name, midas_radtob_engine, schema='dbo', if_exists=if_exists, index=False,
+                               dtype={'OB_END_DATE': sqlalchemy.types.DATE})
+
+
+def query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat=False, update=False, dat_dir=None,
+                                        pickle_it=False, verbose=False):
     """
     Get MIDAS RADTOB (Radiation data) by met station ID (Query from the database) for the given ``period``.
 
@@ -264,6 +332,10 @@ def query_midas_radtob_by_grid_datetime(met_stn_id, period, update=False, dat_di
     :type met_stn_id: list
     :param period: prior-incident / non-incident period
     :type period:
+    :param route_name: name of Route
+    :type route_name: str
+    :param use_suppl_dat: defaults to ``False``
+    :type use_suppl_dat: bool
     :param update: whether to check on update and proceed to update the package data, defaults to ``False``
     :type update: bool
     :param dat_dir: directory where the queried data is saved, defaults to ``None``
@@ -281,20 +353,25 @@ def query_midas_radtob_by_grid_datetime(met_stn_id, period, update=False, dat_di
 
         update = False
         verbose = True
+        dat_dir = None
 
         pickle_it = False
         met_stn_id = incidents.Met_SRC_ID.iloc[0]
         period = incidents.Critical_Period.iloc[0]
+        route_name = incidents.Route.iloc[0]
         midas_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, verbose=verbose)
 
         pickle_it = True
-        met_stn_id = incidents.Met_SRC_ID.iloc[1]
-        period = incidents.Critical_Period.iloc[1]
+        met_stn_id = incidents.Met_SRC_ID.iloc[3]
+        period = incidents.Critical_Period.iloc[3]
+        route_name = incidents.Route.iloc[3]
         midas_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, pickle_it=pickle_it, verbose=verbose)
     """
 
+    p_start, p_end = period.left.min().strftime('%Y%m%d%H'), period.right.max().strftime('%Y%m%d%H')
+
     # Make a pickle filename
-    pickle_filename = "{}-{}.pickle".format(str(met_stn_id[0]), "-".join(x.strftime('%Y%m%d%H%M') for x in period))
+    pickle_filename = "{}-{}.pickle".format(str(met_stn_id[0]), "-".join([p_start, p_end]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
     dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("midas", "dat")
@@ -308,10 +385,19 @@ def query_midas_radtob_by_grid_datetime(met_stn_id, period, update=False, dat_di
         conn_metex = create_mssql_connectable_engine(database_name='Weather')
         # Specify database sql query
         ms_id = met_stn_id[0]
-        dates = tuple(x.strftime('%Y-%m-%d') for x in period)
-        sql_query = "SELECT * FROM dbo.[MIDAS_RADTOB] WHERE [SRC_ID] = {} AND [OB_END_DATE] IN {};".format(ms_id, dates)
+        dates = tuple(x.strftime('%Y-%m-%d %H:%M:%S') for x in [period.left.min(), period.right.max()])
+        sql_query = "SELECT * FROM dbo.[MIDAS_RADTOB] " \
+                    "WHERE [SRC_ID] = {} " \
+                    "AND [OB_END_DATE_TIME] BETWEEN '{}' AND '{}';".format(ms_id, dates[0], dates[1])
         # Query the weather data
         midas_radtob = pd.read_sql(sql_query, conn_metex)
+
+        if midas_radtob.empty and use_suppl_dat:
+            dates = tuple(x.strftime('%Y-%m-%d') for x in [period.left.min(), period.right.max()])
+            sql_query = "SELECT * FROM dbo.[MIDAS_RADTOB_suppl] " \
+                        "WHERE [Route] = '{}' " \
+                        "AND [OB_END_DATE] BETWEEN '{}' AND '{}';".format(route_name, dates[0], dates[1])
+            midas_radtob = pd.read_sql(sql_query, conn_metex)
 
         if pickle_it:
             save_pickle(midas_radtob, path_to_pickle, verbose=verbose)
