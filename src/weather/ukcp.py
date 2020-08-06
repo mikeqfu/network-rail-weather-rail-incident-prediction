@@ -387,10 +387,12 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         ukcp09_dat = query_ukcp09_by_grid_datetime(grids, period, pickle_it=pickle_it, verbose=verbose)
     """
 
+    period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
+
     # Make a pickle filename
     pickle_filename = "{}-{}.pickle".format(
-        "".join(str(x)[0] + str(x)[-1] for x in grids),
-        "-".join([period.min().strftime('%Y%m%d%H'), period.max().strftime('%Y%m%d%H')]))
+        "-".join([str(grids[0]), str(len(grids) * sum(grids[1:-1])), str(grids[-1])]),
+        "-".join([period.min().strftime('%Y%m%d'), period.max().strftime('%Y%m%d')]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
     dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
@@ -404,7 +406,7 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         conn_metex = create_mssql_connectable_engine(database_name='Weather')
         # Specify database sql query
         grids_ = tuple(grids) if len(grids) > 1 else grids[0]
-        period_ = tuple(x.strftime('%Y-%m-%d %H:%M:%S') for x in period)
+        period_ = tuple(x.strftime('%Y-%m-%d') for x in period)
         sql_query = "SELECT * FROM dbo.[UKCP09] WHERE [Pseudo_Grid_ID] {} {} AND [Date] IN {};".format(
             'IN' if len(grids) > 1 else '=', grids_, period_)
         # Query the weather data
@@ -454,12 +456,13 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=pickle_it, verbose=verbose)
     """
 
+    period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
     y_start = datetime_truncate.truncate_year(period.min()).strftime('%Y-%m-%d')
     p_start = period.min().strftime('%Y-%m-%d')
 
     # Make a pickle filename
     pickle_filename = "{}-{}.pickle".format(
-        "".join(str(x)[0] + str(x)[-1] for x in grids),
+        "-".join([str(grids[0]), str(len(grids) * sum(grids[1:-1])), str(grids[-1])]),
         "-".join([y_start.replace("-", ""), p_start.replace("-", "")]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
