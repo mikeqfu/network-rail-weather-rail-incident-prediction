@@ -1,287 +1,28 @@
 """ Testing models """
 
-import gc
-import os
-import random
-
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import sklearn
-import sklearn.metrics
 import statsmodels.discrete.discrete_model as sm_dcm
-from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
+from pyhelpers.store import save_fig, save_svg_as_emf
+from sklearn import metrics
 
-import models.tools
-import mssqlserver.metex
-import settings
+from models.intermediate.heat1 import get_incident_location_weather
+from models.intermediate.integrator import *
+from models.tools import cdd_intermediate_heat_trial
+from settings import mpl_preferences, pd_preferences
 
-settings.pd_preferences()
-settings.mpl_preferences(reset=False)
+pd_preferences()
+mpl_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
 
-# Change directory to "Models\\intermediate\\heat" and sub-directories
-def cd_intermediate_heat(*sub_dir):
-    path = models.tools.cdd_intermediate("heat")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-# Change directory to "Models\\intermediate\\heat\\data" and sub-directories
-def cdd_intermediate_heat(*sub_dir):
-    path = cd_intermediate_heat("data")
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-# Change directory to "Models\\intermediate\\heat\\?" and sub-directories
-def cdd_prototype_heat_mod(trial_id, *sub_dir):
-    path = cd_intermediate_heat("{}".format(trial_id))
-    os.makedirs(path, exist_ok=True)
-    for x in sub_dir:
-        path = os.path.join(path, x)
-    return path
-
-
-# ====================================================================================================================
-""" Integrate data of Incidents and Weather """
-
-
-#
-def get_incident_location_weather(route_name=None, weather_category='Heat',
-                                  on_region=True, on_reason=None, on_season='summer',
-                                  test_only=False, random_select=False,
-                                  use_buffer_zone=False, illustrate_buf_cir=False,
-                                  ip_hours=24, lp_days=5, non_ip_hours=24,
-                                  update=False):
-    """
-    Testing parameters:
-    e.g.
-        route_name=None
-        weather_category='Heat'
-        on_region=True
-        on_reason=None
-        on_season='summer'
-        test_only=False
-        random_select=False
-        use_buffer_zone=False
-        illustrate_buf_cir=False
-        ip_hours=24
-        lp_days=5
-        non_ip_hours=24
-        update=False
-    """
-    # Specify a path to save pickle file
-    pickle_filename = mssqlserver.metex.make_filename(
-        "", route_name, weather_category, "regional" if on_region else "",
-        "_".join([on_season] if isinstance(on_season, str) else on_season), "trial" if test_only else "",
-        ip_hours, lp_days, non_ip_hours, sep="_")
-    path_to_pickle = cdd_intermediate_heat(pickle_filename)
-
-    if os.path.isfile(path_to_pickle) and not update:
-        return load_pickle(path_to_pickle)
-    else:
-        try:
-            # Incidents data
-            incidents_data = mssqlserver.metex.view_schedule8_costs_by_datetime_location_reason(route_name)
-            incidents = incidents_data.copy()
-            incidents = incidents[incidents.WeatherCategory.isin(['', weather_category])]
-
-            # Investigate only the following incident reasons
-            if on_reason is not None:
-                reason_codes = mssqlserver.metex.get_incident_reason_metadata().index.tolist()
-                assert all(x for x in on_reason if x in reason_codes) and isinstance(on_reason, list)
-            else:
-                on_reason = ['IR', 'XH', 'IB', 'JH']
-            incidents = incidents[incidents.IncidentReasonCode.isin(on_reason)]
-
-            # Select data for specific seasons
-            incidents = models.tools.get_data_by_season(incidents, on_season)
-
-            # Select data for specific regions
-            if on_region:
-                incidents = incidents[incidents.Route.isin(['South East', 'Anglia', 'Wessex'])]
-
-            if test_only:  # For preliminary test
-                test_only = int(input("Number of records for testing: ")) if test_only is True else 10
-                if random_select:
-                    incidents = incidents.iloc[random.sample(range(len(incidents)), test_only), :]
-                else:
-                    incidents = incidents.iloc[-test_only - 1:-1, :]
-
-            # --------------------------------------------------------------------------------------------------------
-            """ In the spatial context """
-
-            if use_buffer_zone:
-                # Make a buffer zone for gathering data of weather observations
-                print("Creating a buffer zone for each incident location ... ", end="")
-                incidents['Buffer_Zone'] = incidents.apply(
-                    lambda x: models.tools.create_circle_buffer_upon_weather_cell(
-                        x.MidLonLat, x.StartLonLat, x.EndLonLat, whisker_km=0.0), axis=1)
-                print("Done.")
-
-                # Find all weather observation grids intersecting with the buffer zone for each incident location
-                print("Delimiting zone for calculating weather statistics  ... ", end="")
-                incidents['WeatherCell_Ext'] = incidents.Buffer_Zone.map(
-                    lambda x: models.tools.find_intersecting_weather_cells(x))
-                print("Done.")
-
-                if illustrate_buf_cir:
-                    # Example 1
-                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[12], incidents.EndLonLat.iloc[12]
-                    x_midpoint = incidents.MidLonLat.iloc[12]
-                    models.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
-                                                          whisker_km=0.0, legend_loc='upper left')
-                    save_fig(models.tools.cdd_intermediate("Heat", "Buffer_circle_example_1.png"), dpi=1200)
-                    # Example 2
-                    x_incident_start, x_incident_end = incidents.StartLonLat.iloc[16], incidents.EndLonLat.iloc[16]
-                    x_midpoint = incidents.MidLonLat.iloc[16]
-                    models.tools.illustrate_buffer_circle(x_midpoint, x_incident_start, x_incident_end,
-                                                          whisker_km=0.0, legend_loc='lower right')
-                    save_fig(models.tools.cdd_intermediate("Heat", "Buffer_circle_example_2.png"), dpi=1200)
-
-            # --------------------------------------------------------------------------------------------------------
-            """ In the temporal context """
-
-            incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-            # Incident period (IP)
-            incidents['Critical_StartDateTime'] = incidents.StartDateTime.map(
-                lambda x: x.replace(hour=0, minute=0, second=0)) - pd.DateOffset(hours=ip_hours)
-            incidents['Critical_EndDateTime'] = incidents.StartDateTime.map(
-                lambda x: x.replace(minute=0) + pd.Timedelta(hours=1) if x.minute > 45 else x.replace(minute=0))
-            incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
-
-            # --------------------------------------------------------------------------------------------------------
-            """ Calculations """
-
-            # Specify the statistics needed for Weather observations (except radiation)
-            def specify_weather_statistics_calculations():
-                weather_stats_calc = {
-                    'Temperature': (np.nanmax, np.nanmin, np.nanmean, np.nanstd, np.nanvar, np.nanmedian),
-                    'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
-                    'WindSpeed': (np.nanmax, np.nanmin),
-                    'WindGust': (np.nanmax, np.nanmin),
-                    'Snowfall': (np.nanmax, np.nansum),
-                    'TotalPrecipitation': (np.nanmax, np.nansum)}
-                return weather_stats_calc
-
-            weather_statistics_calculations = specify_weather_statistics_calculations()
-
-            # Calculate weather statistics based on the retrieved weather observation data
-            def get_weather_stats_for_ip(weather_cell_id, start_dt, end_dt):
-                """
-                Testing parameters:
-                e.g.
-                    weather_cell_id=incidents.WeatherCell.iloc[0]
-                    start_dt=incidents.Critical_StartDateTime.iloc[0]
-                    end_dt=incidents.Critical_EndDateTime.iloc[0]
-                """
-                # Specify a directory to pickle slices of weather observation data
-                weather_dat_dir = models.tools.cd_intermediate_dat("weather-slices")
-                # Query weather observations
-                ip_weather = mssqlserver.metex.fetch_weather_by_id_datetime(
-                    weather_cell_id, start_dt, end_dt, pickle_it=False, dat_dir=weather_dat_dir)
-                # Calculate basic statistics of the weather observations
-                weather_stats = models.tools.calculate_intermediate_weather_statistics(
-                    ip_weather, weather_statistics_calculations, values_only=True)
-                return weather_stats
-
-            # Prior-IP ---------------------------------------------------
-            print("Calculating weather statistics for IPs (LP = {}) ... ".format(lp_days), end="")
-            weather_variable_names = models.tools.get_weather_variable_names(weather_statistics_calculations)
-            incidents[weather_variable_names] = incidents.apply(
-                lambda x: pd.Series(get_weather_stats_for_ip(
-                    x.WeatherCell_Ext if use_buffer_zone else x.WeatherCell,
-                    x.Critical_StartDateTime, x.Critical_EndDateTime)), axis=1)
-            print("Done.")
-
-            gc.collect()
-
-            incidents['Incident_Reported'] = 1
-
-            # Non-IP -----------------------------------------------------------------------------------------------
-            non_ip_data = incidents.copy(deep=True)
-
-            non_ip_data.Critical_StartDateTime = \
-                incidents.Critical_StartDateTime - pd.DateOffset(hours=non_ip_hours + lp_days * 24)
-            # non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + pd.DateOffset(hours=non_ip)
-            non_ip_data.Critical_EndDateTime = non_ip_data.Critical_StartDateTime + incidents.Critical_Period
-
-            # Gather gridded Weather observations of the corresponding non-incident period for each incident record
-            def get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section):
-                """
-                :param weather_cell_id: weather_cell_id = non_ip_data.WeatherCell.iloc[0]
-                :param nip_start: e.g. start_dt = non_ip_data.Critical_StartDateTime.iloc[0]
-                :param nip_end: e.g. end_dt = non_ip_data.Critical_EndDateTime.iloc[0]
-                :param stanox_section: e.g. stanox_section = non_ip_data.StanoxSection.iloc[0]
-                :return:
-                """
-                # Specify a directory to pickle slices of weather observation data
-                weather_dat_dir = models.tools.cd_intermediate_dat("weather-slices")
-                # Query weather observations
-                non_ip_weather = mssqlserver.metex.fetch_weather_by_id_datetime(
-                    weather_cell_id, nip_start, nip_end, pickle_it=False, dat_dir=weather_dat_dir)
-                # Get all incident period data on the same section
-                ip_overlap = incidents[
-                    (incidents.StanoxSection == stanox_section) &
-                    (((incidents.Critical_StartDateTime <= nip_start) & (incidents.Critical_EndDateTime >= nip_start)) |
-                     ((incidents.Critical_StartDateTime <= nip_end) & (incidents.Critical_EndDateTime >= nip_end)))]
-                # Skip data of Weather causing Incidents at around the same time; but
-                if not ip_overlap.empty:
-                    non_ip_weather = non_ip_weather[
-                        (non_ip_weather.DateTime < min(ip_overlap.Critical_StartDateTime)) |
-                        (non_ip_weather.DateTime > max(ip_overlap.Critical_EndDateTime))]
-                # Calculate weather statistics
-                weather_stats = models.tools.calculate_intermediate_weather_statistics(
-                    non_ip_weather, weather_statistics_calculations, values_only=True)
-                return weather_stats
-
-            print("Calculating weather statistics for Non-IPs (LP = {}) ... ".format(lp_days), end="")
-            non_ip_data[weather_variable_names] = non_ip_data.apply(
-                lambda x: pd.Series(get_non_ip_weather_stats(
-                    x.WeatherCell_Ext if use_buffer_zone else x.WeatherCell,
-                    x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection)), axis=1)
-            print("Done.")
-
-            gc.collect()
-
-            non_ip_data['Incident_Reported'] = 0
-            non_ip_data.DelayMinutes = 0.0
-            non_ip_data.DelayCost = 0.0
-
-            # Combine IP data and Non-IP data ----------------------------------------------------
-            incidents_location_weather = pd.concat([non_ip_data, incidents], axis=0, ignore_index=True)
-            incidents_location_weather.dropna(inplace=True)
-
-            # Get track orientation
-            track_orientations = models.tools.categorise_track_orientations(
-                incidents_location_weather, 'StartLongitude', 'StartLatitude', 'EndLongitude', 'EndLatitude')
-            incidents_location_weather = pd.concat([incidents_location_weather, track_orientations], axis=1)
-
-            # Create temperature categories
-            temperature_categories = models.tools.categorise_temperatures(incidents_location_weather, 'Temperature_max')
-            incidents_location_weather = pd.concat([incidents_location_weather, temperature_categories], axis=1)
-
-            # Save the derived data
-            save_pickle(incidents_location_weather, path_to_pickle)
-
-            return incidents_location_weather
-
-        except Exception as e:
-            print("Failed to get \"{}.\" {}".format(os.path.splitext(pickle_filename), e))
-
-
-def plot_temperature_deviation(route_name=None, lp_day_range=14, add_err_bar=True, update=False,
+def plot_temperature_deviation(route_name=None, on_region=True, on_reason=None, lp_day_range=14,
+                               add_err_bar=True, update=False,
                                save_as=None, dpi=None):
     """
     Testing parameters:
     e.g.
         route_name=None
+        on_region=True
+        on_reason=None
         lp_day_range=14
         add_err_bar=True
         update=False
@@ -290,7 +31,7 @@ def plot_temperature_deviation(route_name=None, lp_day_range=14, add_err_bar=Tru
     """
 
     incident_location_weather = [
-        get_incident_location_weather(route_name, weather_category='Heat', on_region=True, on_reason=None,
+        get_incident_location_weather(route_name, weather_category='Heat', on_region=on_region, on_reason=on_reason,
                                       on_season='summer', ip_hours=24, lp_days=d, non_ip_hours=24, update=update)
         for d in range(1, lp_day_range + 1)]
 
@@ -323,8 +64,29 @@ def plot_temperature_deviation(route_name=None, lp_day_range=14, add_err_bar=Tru
     plt.tight_layout()
 
     if save_as:
-        save_fig(cdd_prototype_heat_mod(0, "Temp deviation" + save_as), dpi=dpi)
+        save_fig(cdd_intermediate_heat_trial(0, "Temp deviation" + save_as), dpi=dpi)
 
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['IR'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['XH'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['IB'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['IR', 'XH', 'IB'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['JH'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['IR', 'XH', 'IB', 'JH'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
+
+plot_temperature_deviation(route_name=None, on_region=True, on_reason=['IR', 'IB'], lp_day_range=14,
+                           add_err_bar=True, update=False, save_as=None, dpi=None)
 
 # ====================================================================================================================
 """ Model trials """
@@ -438,14 +200,13 @@ def describe_explanatory_variables(trial_id, regional, train_set, save_as=".tif"
     plt.tight_layout()
 
     if save_as:
-        path_to_file_weather = cdd_prototype_heat_mod("{}".format(trial_id),
-                                                      "Variables" + ("-regional" if regional else "") + save_as)
+        path_to_file_weather = cdd_intermediate_heat_trial(
+            "{}".format(trial_id), "Variables" + ("-regional" if regional else "") + save_as)
         save_fig(path_to_file_weather, dpi=dpi)
         if save_as == ".svg":
             save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
 
 
-# Logistic regression model
 def logistic_regression_model(trial_id=0, update=True, regional=True, reason=None,
                               season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=100,
                               describe_var=False,
@@ -538,8 +299,8 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 - the number of correct positive predictions divided by the total number of positives
                 - (i.e. the number of items correctly identified as positive out of total true positives)
             """
-            fpr, tpr, thresholds = sklearn.metrics.roc_curve(test_set.Incident_Reported, test_set.incident_prob)
-            auc = sklearn.metrics.auc(fpr, tpr)  # Area under the curve (AUC)
+            fpr, tpr, thresholds = metrics.roc_curve(test_set.Incident_Reported, test_set.incident_prob)
+            auc = metrics.auc(fpr, tpr)  # Area under the curve (AUC)
             idx = list(np.where((tpr + 1 - fpr) == np.max(tpr + np.ones(tpr.shape) - fpr))[0])
             optimal_thr = np.min(thresholds[idx])
             if show:
@@ -558,7 +319,7 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 plt.tight_layout()
                 if save_plot:
                     roc_plot_filename = "ROC" + ("-regional" if regional else "") + save_as
-                    save_fig(cdd_prototype_heat_mod("{}".format(trial_id), roc_plot_filename), dpi=dpi)
+                    save_fig(cdd_intermediate_heat_trial("{}".format(trial_id), roc_plot_filename), dpi=dpi)
             return optimal_thr
 
         optimal_threshold = compute_roc(show=plot_roc, save_plot=save_as)
@@ -618,7 +379,7 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
                 plt.yticks(fontsize=13)
                 plt.tight_layout()
                 if save_plot:
-                    path_to_fig = cdd_prototype_heat_mod(
+                    path_to_fig = cdd_intermediate_heat_trial(
                         "{}".format(trial_id), "Predicted-likelihood" + ("-regional" if regional else "") + save_as)
                     save_fig(path_to_fig, dpi=dpi)
 
@@ -649,6 +410,7 @@ def logistic_regression_model(trial_id=0, update=True, regional=True, reason=Non
 3. 'IR', 'XH', 'IB'
 4. 'JH'
 5. 'IR', 'XH', 'IB', 'JH'
+6. 'IR', 'IB'
 """
 
 """ 'IR' - Broken/cracked/twisted/buckled/flawed rail ============================================================ """
@@ -659,7 +421,7 @@ def test_ir():
     data_11, train_set_11, test_set_11, _, _, _, _, _ = \
         logistic_regression_model(trial_id=1, update=False, regional=True,
                                   reason=['IR'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -667,7 +429,7 @@ def test_ir():
     # Country-wide
     data_12, train_12, test_set_12, _, _, _, _, _ = \
         logistic_regression_model(trial_id=1, update=False, regional=False, reason=['IR'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -683,7 +445,7 @@ def test_xh():
     data_21, train_21, test_set_21, _, _, _, _, _ = \
         logistic_regression_model(trial_id=2, update=False, regional=True,
                                   reason=['XH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -691,7 +453,7 @@ def test_xh():
     # Country-wide
     data_22, train_22, test_set_22, _, _, _, _, _ = \
         logistic_regression_model(trial_id=2, update=False, regional=False, reason=['XH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -706,7 +468,7 @@ def test_ib():
     data_31, train_31, test_set_31, _, _, _, _, _ = \
         logistic_regression_model(trial_id=3, update=False, regional=True,
                                   reason=['IB'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -715,7 +477,7 @@ def test_ib():
     data_32, train_32, test_set_32, _, _, _, _, _ = \
         logistic_regression_model(trial_id=3, update=False, regional=False,
                                   reason=['IB'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -729,7 +491,7 @@ def test_ir_xh_ib():
     # Regional
     data_41, train_41, test_set_41, _, _, _, _, _ = \
         logistic_regression_model(trial_id=4, update=False, regional=True, reason=['IR', 'XH', 'IB'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -738,7 +500,7 @@ def test_ir_xh_ib():
     # Country-wide
     data_42, train_42, test_set_42, _, _, _, _, _ = \
         logistic_regression_model(trial_id=4, update=False, regional=False, reason=['IR', 'XH', 'IB'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -753,7 +515,7 @@ def test_jh():
     data_51, train_51, test_set_51, _, _, _, _, _ = \
         logistic_regression_model(trial_id=5, update=False, regional=True,
                                   reason=['JH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -761,7 +523,7 @@ def test_jh():
     # Country-wide
     data_52, train_52, test_set_52, _, _, _, _, _ = \
         logistic_regression_model(trial_id=5, update=False, regional=False, reason=['JH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -775,7 +537,7 @@ def test_ir_xh_ib_jh():
     # Regional
     data_61, train_61, test_set_61, _, _, _, _, _ = \
         logistic_regression_model(trial_id=6, update=False, regional=True, reason=['IR', 'XH', 'IB', 'JH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
@@ -784,7 +546,30 @@ def test_ir_xh_ib_jh():
     data_62, train_62, test_set_62, _, _, _, _, _ = \
         logistic_regression_model(trial_id=6, update=False, regional=False,
                                   reason=['IR', 'XH', 'IB', 'JH'],
-                                  season='summer', lp_days=5 * 24, non_ip_hours=24, outlier_pctl=95,
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
+                                  describe_var=True,
+                                  add_const=True, seed=0, model='logit',
+                                  plot_roc=True, plot_pred_likelihood=True,
+                                  save_as=".tif", dpi=None, verbose=True)
+
+
+""" 'IR', 'IB' =================================================================================================== """
+
+
+def test_ir_ib():
+    # Regional
+    data_61, train_61, test_set_61, _, _, _, _, _ = \
+        logistic_regression_model(trial_id=7, update=False, regional=True, reason=['IR', 'IB'],
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
+                                  describe_var=True,
+                                  add_const=True, seed=0, model='logit',
+                                  plot_roc=True, plot_pred_likelihood=True,
+                                  save_as=".tif", dpi=None, verbose=True)
+    # Country-wide
+    data_62, train_62, test_set_62, _, _, _, _, _ = \
+        logistic_regression_model(trial_id=7, update=False, regional=False,
+                                  reason=['IR', 'IB'],
+                                  season='summer', ip_hours=24, lp_days=5, non_ip_hours=24, outlier_pctl=95,
                                   describe_var=True,
                                   add_const=True, seed=0, model='logit',
                                   plot_roc=True, plot_pred_likelihood=True,
