@@ -1,12 +1,243 @@
+import functools
 import itertools
 
+import geopandas as gpd
+import geopy.distance
+import matplotlib.font_manager
+import matplotlib.patches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pyproj
 import shapely.geometry
 import shapely.ops
+from pyhelpers.geom import wgs84_to_osgb36
 
-from weather.midas import query_midas_radtob_by_grid_datetime
-from weather.ukcp import query_ukcp09_by_grid_datetime, query_ukcp09_by_grid_datetime_
+from mssqlserver import metex
+from weather import midas, ukcp
+
+
+def find_weather_cell_id(longitude, latitude):
+    """
+    Find weather cell ID.
+
+    :param longitude: longitude
+    :type longitude: int, float
+    :param latitude: latitude
+    :type latitude: int, float
+    :return: list, int
+    """
+
+    weather_cell = metex.get_weather_cell()
+
+    ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
+    ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_lon, weather_cell.ul_lat)]
+    ur = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
+    lr = [shapely.geometry.Point(xy) for xy in zip(weather_cell.lr_lon, weather_cell.lr_lat)]
+
+    poly_list = [[ll[i], ul[i], ur[i], lr[i]] for i in range(len(weather_cell))]
+
+    cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in range(len(weather_cell))]
+
+    pt = shapely.geometry.Point(longitude, latitude)
+
+    id_set = set(weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
+    if len(id_set) == 1:
+        weather_cell_id = list(id_set)[0]
+    else:
+        weather_cell_id = list(id_set)
+
+    return weather_cell_id
+
+
+def create_start_end_shapely_points(incidents_data, verbose=False):
+    """
+    Create shapely.points for 'StartLocation's and 'EndLocation's.
+
+    :param incidents_data: data of incident records
+    :type incidents_data: pandas.DataFrame
+    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :type verbose: bool, int
+    :return: incident data with shapely.geometry.Points of start and end locations
+    """
+
+    print("Creating shapely.geometry.Points for each incident location ... ", end="") if verbose else ""
+    data = incidents_data.copy()
+    # Make shapely.geometry.points in longitude and latitude
+    data.insert(data.columns.get_loc('StartLatitude') + 1, 'StartLonLat',
+                gpd.points_from_xy(data.StartLongitude, data.StartLatitude))
+    data.insert(data.columns.get_loc('EndLatitude') + 1, 'EndLonLat',
+                gpd.points_from_xy(data.EndLongitude, data.EndLatitude))
+    data.insert(data.columns.get_loc('EndLonLat') + 1, 'MidLonLat',
+                data[['StartLonLat', 'EndLonLat']].apply(
+                    lambda x: shapely.geometry.LineString([x.StartLonLat, x.EndLonLat]).centroid, axis=1))
+    # Add Easting and Northing points  # Start
+    start_xy = [wgs84_to_osgb36(data.StartLongitude[i], data.StartLatitude[i]) for i in data.index]
+    data = pd.concat([data, pd.DataFrame(start_xy, columns=['StartEasting', 'StartNorthing'])], axis=1)
+    data['StartXY'] = gpd.points_from_xy(data.StartEasting, data.StartNorthing)
+    # End
+    end_xy = [wgs84_to_osgb36(data.EndLongitude[i], data.EndLatitude[i]) for i in data.index]
+    data = pd.concat([data, pd.DataFrame(end_xy, columns=['EndEasting', 'EndNorthing'])], axis=1)
+    data['EndXY'] = gpd.points_from_xy(data.EndEasting, data.EndNorthing)
+    # data[['StartEasting', 'StartNorthing']] = data[['StartLongitude', 'StartLatitude']].apply(
+    #     lambda x: pd.Series(wgs84_to_osgb36(x.StartLongitude, x.StartLatitude)), axis=1)
+    # data['StartEN'] = gpd.points_from_xy(data.StartEasting, data.StartNorthing)
+    # data[['EndEasting', 'EndNorthing']] = data[['EndLongitude', 'EndLatitude']].apply(
+    #     lambda x: pd.Series(wgs84_to_osgb36(x.EndLongitude, x.EndLatitude)), axis=1)
+    # data['EndEN'] = gpd.points_from_xy(data.EndEasting, data.EndNorthing)
+    print("Done.") if verbose else ""
+    return data
+
+
+def create_circle_buffer_upon_weather_cell(midpoint, start_loc, end_loc, whisker_km=0.008, as_geom=True):
+    """
+    Create a circle buffer for an incident location.
+
+    See also [`CCBUWC <https://gis.stackexchange.com/questions/289044/>`_]
+
+    :param midpoint: midpoint or centre
+    :type midpoint: shapely.geometry.Point
+    :param start_loc: start location of an incident
+    :type start_loc: shapely.geometry.Point
+    :param end_loc: end location of an incident
+    :type end_loc: shapely.geometry.Point
+    :param whisker_km: extended length to diameter (i.e. on both sides of start/end locations), defaults to ``0.008``
+    :type whisker_km: int, float
+    :param as_geom: whether to return the buffer circle as shapely.geometry.Polygon, defaults to ``True``
+    :type as_geom: bool
+    :return: a buffer circle
+    :rtype: shapely.geometry.Polygon; list of tuples
+
+    **Example**::
+
+        from models.tools import create_circle_buffer_upon_weather_cell
+
+        midpoint = incidents.MidLonLat.iloc[0]
+        incident_start = incidents.StartLonLat.iloc[0]
+        incident_end = incidents.EndLonLat.iloc[0]
+
+        whisker_km = 0.008
+        as_geom = True
+        buffer_circle = create_circle_buffer_upon_weather_cell(midpoint, incident_start, incident_end,
+                                                               whisker_km, as_geom)
+
+    """
+
+    # Azimuthal equidistant projection
+    aeqd_proj = '+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0'
+    project = functools.partial(
+        pyproj.transform, pyproj.Proj(aeqd_proj.format(lon=midpoint.x, lat=midpoint.y)), pyproj.Proj(init='epsg:4326'))
+
+    if start_loc != end_loc:
+        radius_km = geopy.distance.distance(start_loc.coords, end_loc.coords).km / 2 + whisker_km
+    else:
+        radius_km = 2
+
+    buffer = shapely.ops.transform(project, shapely.geometry.Point(0, 0).buffer(radius_km * 1000))
+    buffer_circle = buffer if as_geom else buffer.exterior.coords[:]
+
+    return buffer_circle
+
+
+def find_intersecting_weather_cells(x, as_geom=False):
+    """
+    Find all intersecting weather cells.
+
+    :param x: e.g. x = incidents.Buffer_Zone.iloc[0]
+    :type: x: shapely.geometry.Point
+    :param as_geom: whether to return shapely.geometry.Polygon of intersecting weather cells
+    :type as_geom: bool
+    :return: intersecting weather cells
+    :rtype: tuple
+
+    **Example**::
+
+        x = incidents.Buffer_Zone.iloc[0]
+
+        as_geom = False
+        intxn_weather_cell_ids = find_intersecting_weather_cells(x, as_geom)
+
+        as_geom = True
+        intxn_weather_cell_ids = find_intersecting_weather_cells(x, as_geom)
+    """
+
+    weather_cell_geoms = metex.get_weather_cell().Polygon_WGS84
+    intxn_weather_cells = tuple(cell for cell in weather_cell_geoms if x.intersects(cell))
+    if as_geom:
+        return intxn_weather_cells
+    else:
+        intxn_weather_cell_ids = tuple(weather_cell_geoms[weather_cell_geoms == cell].index[0]
+                                       for cell in intxn_weather_cells)
+        if len(intxn_weather_cell_ids) == 1:
+            intxn_weather_cell_ids = intxn_weather_cell_ids[0]
+        return intxn_weather_cell_ids
+
+
+def illustrate_buffer_circle_on_weather_cell(midpoint, start_loc, end_loc, whisker_km=0.008, legend_pos='best'):
+    """
+    Illustration of the buffer circle.
+
+    :param midpoint: e.g. midpoint = incidents.MidLonLat.iloc[2]
+    :type midpoint:
+    :param start_loc: e.g. incident_start = incidents.StartLonLat.iloc[2]
+    :type start_loc:
+    :param end_loc: e.g. incident_end = incidents.EndLonLat.iloc[2]
+    :type end_loc:
+    :param whisker_km: defaults to ``0.008``
+    :type whisker_km: float
+    :param legend_pos: defaults to ``'best'``
+    :type legend_pos: str
+    """
+
+    buffer_circle = create_circle_buffer_upon_weather_cell(midpoint, start_loc, end_loc, whisker_km)
+    i_weather_cells = find_intersecting_weather_cells(buffer_circle, as_geom=True)
+    plt.figure(figsize=(6, 6))
+    ax = plt.subplot2grid((1, 1), (0, 0))
+    for g in i_weather_cells:
+        x, y = g.exterior.xy
+        ax.plot(x, y, color='#433f3f')
+        polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#D5EAFF', ec='#4b4747', alpha=0.5)
+        plt.gca().add_patch(polygons)
+    ax.plot([], 's', label="Weather cell", ms=16, color='#D5EAFF', markeredgecolor='#4b4747')
+
+    x_, y_ = buffer_circle.exterior.xy
+    ax.plot(x_, y_)
+
+    sx, sy, ex, ey = start_loc.xy + end_loc.xy
+    if start_loc == end_loc:
+        ax.plot(sx, sy, 'b', marker='o', markersize=10, linestyle='None', label='Incident location')
+    else:
+        ax.plot(sx, sy, 'b', marker='o', markersize=10, linestyle='None', label='Start location')
+        ax.plot(ex, ey, 'g', marker='o', markersize=10, linestyle='None', label='End location')
+    ax.set_xlabel('Longitude')  # ax.set_xlabel('Easting')
+    ax.set_ylabel('Latitude')  # ax.set_ylabel('Northing')
+    font = matplotlib.font_manager.FontProperties(family='Times New Roman', weight='normal', size=14)
+    legend = plt.legend(numpoints=1, loc=legend_pos, prop=font, fancybox=True, labelspacing=0.5)
+    frame = legend.get_frame()
+    frame.set_edgecolor('k')
+    plt.tight_layout()
+
+
+def get_angle_of_line_between(p1, p2, in_degrees=False):
+    """
+    Get Angle of Line between two points.
+
+    :param p1: a point
+    :type p1:
+    :param p2: another point
+    :type p2:
+    :param in_degrees: whether return a value in degrees, defaults to ``False``
+    :type in_degrees: bool
+    :return:
+    :rtype:
+    """
+
+    x_diff = p2.x - p1.x
+    y_diff = p2.y - p1.y
+    angle = np.arctan2(y_diff, x_diff)  # in radians
+    if in_degrees:
+        angle = np.degrees(angle)
+    return angle
 
 
 def find_closest_weather_grid(x, obs_grids, obs_centroid_geom):
@@ -195,12 +426,12 @@ def integrate_pip_ukcp09_data(grids, period):
     """
 
     # Find Weather data for the specified period
-    prior_ip_weather = query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
+    prior_ip_weather = ukcp.query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
     # Calculate the max/min/avg for Weather parameters during the period
     weather_stats = calculate_weather_stats(prior_ip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
+    obs_by_far = ukcp.query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
@@ -224,7 +455,7 @@ def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     """
 
     # Get non-IP Weather data about where and when the incident occurred
-    nip_weather = query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
+    nip_weather = ukcp.query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
@@ -242,7 +473,7 @@ def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     weather_stats = calculate_weather_stats(nip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
+    obs_by_far = ukcp.query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
@@ -293,9 +524,9 @@ def calculate_radtob_variables_stats(midas_radtob):
     return stats_info
 
 
-# Gather solar radiation of the given period for each incident record
 def integrate_pip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat):
     """
+    Gather solar radiation of the given period for each incident record.
 
     :param met_stn_id:
     :param period:
@@ -317,7 +548,8 @@ def integrate_pip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat):
     # except KeyError:
     #     prior_ip_radtob = pd.DataFrame()
 
-    prior_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat, pickle_it=True)
+    prior_ip_radtob = midas.query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
+                                                                pickle_it=True)
 
     radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
 
@@ -344,7 +576,8 @@ def integrate_nip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat, pr
     # except KeyError:
     #     non_ip_radtob = pd.DataFrame()
 
-    non_ip_radtob = query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat, pickle_it=True)
+    non_ip_radtob = midas.query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
+                                                              pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
