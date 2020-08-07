@@ -11,8 +11,7 @@ from pyrcs.line_data import ELRMileages
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage
 
 from models.tools import cd_prototype_dat
-from mssqlserver.metex import view_metex_schedule8_incident_locations
-from mssqlserver.vegetation import view_nr_vegetation_furlong_data
+from mssqlserver import metex, vegetation
 from utils import cdd_railway_codes, get_subset, make_filename
 
 
@@ -301,11 +300,11 @@ def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shif
     else:
         try:
             # Get data about for which the 'StartELR' and 'EndELR' are THE SAME
-            incident_locations = view_metex_schedule8_incident_locations(
+            incident_locations = metex.view_metex_schedule8_incident_locations(
                 route_name, weather_category, start_and_end_elr='same', verbose=verbose)
 
             # Get furlong information as reference
-            ref_furlongs = view_nr_vegetation_furlong_data(verbose=verbose)
+            ref_furlongs = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
 
             # Calculate adjusted furlong locations for each incident (for extracting vegetation conditions)
             adjusted_mileages = incident_locations.apply(
@@ -374,7 +373,7 @@ def get_furlongs_same_start_end_elrs(route_name=None, weather_category=None, shi
                                                                  verbose=verbose)
 
         try:
-            nr_furlong_data = view_nr_vegetation_furlong_data(verbose=verbose)
+            nr_furlong_data = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
             # Form a list containing all the furlong IDs
             furlong_ids = list(set(itertools.chain(*adj_mileages.Critical_FurlongIDs)))
             # Select critical (i.e. incident) furlongs
@@ -433,7 +432,7 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
     else:
         try:
             # Get data for which the 'StartELR' and 'EndELR' are DIFFERENT
-            incident_locations_diff_start_end_elr = view_metex_schedule8_incident_locations(
+            incident_locations_diff_start_end_elr = metex.view_metex_schedule8_incident_locations(
                 route_name, weather_category, start_and_end_elr='diff', verbose=verbose)
             # Get connecting points for different (ELRs, mileages)
             connecting_nodes = get_connecting_nodes(incident_locations_diff_start_end_elr,
@@ -455,7 +454,7 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
             locations_conn[num_conn_colnames] = locations_conn[str_conn_colnames].applymap(nr_mileage_str_to_num)
 
             # Get furlong information
-            nr_furlong_data = view_nr_vegetation_furlong_data(verbose=verbose)
+            nr_furlong_data = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
 
             adjusted_conn_elr_mileages = locations_conn.apply(
                 lambda x: adjust_incident_mileages(nr_furlong_data, x.ConnELR, x.ConnELR_StartMileage_num,
@@ -563,7 +562,7 @@ def get_furlongs_diff_start_end_elrs(route_name=None, weather_category=None, shi
 
         try:
             # Get furlong information
-            nr_furlong_data = view_nr_vegetation_furlong_data(verbose=verbose)
+            nr_furlong_data = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
             # Form a list containing all the furlong IDs
             furlong_ids = list(set(itertools.chain(*adj_mileages.Critical_FurlongIDs)))
 
@@ -718,7 +717,8 @@ def get_incident_location_furlongs(route_name=None, weather_category=None, shift
                 route_name, weather_category, shift_yards_diff_elr, verbose=verbose)
             ilf_diff = adjusted_mileages_diff_start_end_elrs[['Section_Length_Adj', 'Critical_FurlongIDs']]
 
-            incident_locations = view_metex_schedule8_incident_locations(route_name, weather_category, verbose=verbose)
+            incident_locations = metex.view_metex_schedule8_incident_locations(route_name, weather_category,
+                                                                               verbose=verbose)
 
             # Merge the above data sets
             incident_location_furlongs = incident_locations.join(pd.concat([ilf_same, ilf_diff]), how='right')
