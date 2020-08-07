@@ -3,13 +3,10 @@
 import datetime
 import itertools
 import os
-import re
 import time
 
 import datetime_truncate
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import statsmodels.discrete.discrete_model as sm_dcm
 from pyhelpers.dir import cdd
 from pyhelpers.ops import get_variable_names
@@ -18,75 +15,17 @@ from sklearn import metrics
 from sklearn.utils import extmath
 
 from models.prototype.furlong import get_furlongs_data, get_incident_location_furlongs
-from models.tools import calculate_prototype_weather_statistics, cd_prototype_fig_pub, cdd_prototype
-from models.tools import get_data_by_season_, get_weather_variable_names
+from models.prototype.integrator import *
+from models.tools import cd_prototype_fig_pub, cdd_prototype_wind, cdd_prototype_wind_trial, get_data_by_season_
 from mssqlserver import metex
 from settings import mpl_preferences, pd_preferences
 from utils import make_filename
-
-# == Apply the preferences ============================================================================
 
 mpl_preferences(use_cambria=True, reset=False)
 pd_preferences(reset=False)
 
 
-# == Change directories ===============================================================================
-
-def cdd_prototype_wind(*sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file.
-
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\prototype\\wind\\dat\\" and sub-directories / a file
-    :rtype: str
-    """
-
-    path = cdd_prototype("wind", *sub_dir, mkdir=mkdir)
-
-    return path
-
-
-def cdd_prototype_wind_trial(trial_id, *sub_dir, mkdir=False):
-    """
-    Change directory to "..\\data\\models\\prototype\\wind\\<``trial_id``>" and sub-directories / a file.
-
-    :param trial_id:
-    :type trial_id:
-    :param sub_dir: name of directory or names of directories (and/or a filename)
-    :type sub_dir: str
-    :param mkdir: whether to create a directory, defaults to ``False``
-    :type mkdir: bool
-    :return: full path to "..\\data\\models\\prototype\\wind\\data\\" and sub-directories / a file
-    :rtype: str
-    """
-
-    path = cdd_prototype("wind", "{}".format(trial_id), *sub_dir, mkdir=mkdir)
-
-    return path
-
-
-# == Calculations for weather data ====================================================================
-
-def specify_weather_stats_calculations():
-    """
-    Specify the weather statistics that need to be computed.
-
-    :return: a dictionary for calculations of weather statistics
-    :rtype: dict
-    """
-
-    weather_stats_calculations = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
-                                  'RelativeHumidity': np.nanmax,
-                                  'WindSpeed': np.nanmax,
-                                  'WindGust': np.nanmax,
-                                  'Snowfall': np.nanmax,
-                                  'TotalPrecipitation': np.nanmax}
-
-    return weather_stats_calculations
-
+# == Data of weather conditions =======================================================================
 
 def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                                   ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
@@ -248,45 +187,7 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-# == Calculations for vegetation data =================================================================
-
-def specify_vegetation_stats_calculations(features):
-    """
-    Specify the statistics that need to be computed.
-
-    :param features:
-    :type features:
-    :return:
-    :rtype:
-    """
-
-    # "CoverPercent..."
-    cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
-    veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
-    veg_stats_calc.update({'AssetNumber': np.count_nonzero,
-                           'TreeNumber': np.nansum,
-                           'TreeNumberUp': np.nansum,
-                           'TreeNumberDown': np.nansum,
-                           'Electrified': np.any,
-                           'DateOfMeasure': lambda x: tuple(x),
-                           # 'AssetDesc1': np.all,
-                           # 'IncidentReported': np.any
-                           'HazardTreeNumber': lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
-
-    # variables for hazardous trees
-    hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
-    hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
-    hazard_rest = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
-    # Computations for hazardous trees variables
-    hazard_calc = [dict(zip(hazard_rest, [lambda x: tuple(x)] * len(hazard_rest))),
-                   dict(zip(hazard_min, [np.min] * len(hazard_min))),
-                   dict(zip(hazard_max, [np.max] * len(hazard_max)))]
-
-    # Update vegetation_stats_computations
-    veg_stats_calc.update({k: v for d in hazard_calc for k, v in d.items()})
-
-    return cover_percents, hazard_rest, veg_stats_calc
-
+# == Data of vegetation conditions ====================================================================
 
 def get_incident_location_vegetation(route_name='Anglia',
                                      shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
