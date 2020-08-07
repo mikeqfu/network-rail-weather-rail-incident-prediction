@@ -5,9 +5,6 @@ import os
 
 import matplotlib.font_manager
 import matplotlib.patches
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import shapely.geometry
 import shapely.ops
 import statsmodels.discrete.discrete_model as sm_dcm
@@ -16,10 +13,10 @@ from pyhelpers.geom import get_geometric_midpoint
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 from sklearn import metrics
 
-from models.intermediate import integrator
+from models.intermediate.integrator import *
 from models.tools import categorise_temperatures, categorise_track_orientations, get_data_by_season
 from models.tools import cd_intermediate_fig_pub, cdd_intermediate_heat, cdd_intermediate_heat_trial
-from mssqlserver.metex import view_schedule8_costs_by_datetime_location_reason
+from mssqlserver import metex
 from settings import mpl_preferences, pd_preferences
 from utils import make_filename
 from weather import midas, ukcp
@@ -29,7 +26,7 @@ pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
 
-# == Tools ============================================================================================
+# == Processors =======================================================================================
 
 def define_prior_ip(incidents, prior_ip_start_hrs):
     """
@@ -64,10 +61,9 @@ def get_prior_ip_ukcp09_stats(incidents):
     """
 
     prior_ip_weather_stats = incidents.apply(
-        lambda x: pd.Series(integrator.integrate_pip_ukcp09_data(x.Weather_Grid, x.Critical_Period)), axis=1)
+        lambda x: pd.Series(integrate_pip_ukcp09_data(x.Weather_Grid, x.Critical_Period)), axis=1)
 
-    w_col_names = integrator.specify_weather_variable_names(
-        integrator.specify_weather_stats_calculations()) + ['Hottest_Heretofore']
+    w_col_names = specify_weather_variable_names(specify_weather_stats_calculations()) + ['Hottest_Heretofore']
 
     prior_ip_weather_stats.columns = w_col_names
 
@@ -92,7 +88,7 @@ def get_prior_ip_radtob_stats(incidents, use_suppl_dat=False):
     """
 
     prior_ip_radtob_stats = incidents.apply(
-        lambda x: pd.Series(integrator.integrate_pip_midas_radtob(
+        lambda x: pd.Series(integrate_pip_midas_radtob(
             x.Met_SRC_ID, x.Critical_Period, x.Route, use_suppl_dat)), axis=1)
 
     # r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
@@ -180,11 +176,10 @@ def get_non_ip_weather_stats(non_ip_data, prior_ip_data):
     """
 
     non_ip_weather_stats = non_ip_data.apply(
-        lambda x: pd.Series(integrator.integrate_nip_ukcp09_data(
+        lambda x: pd.Series(integrate_nip_ukcp09_data(
             x.Weather_Grid, x.Critical_Period, prior_ip_data, x.StanoxSection)), axis=1)
 
-    w_col_names = integrator.specify_weather_variable_names(
-        integrator.specify_weather_stats_calculations()) + ['Hottest_Heretofore']
+    w_col_names = specify_weather_variable_names(specify_weather_stats_calculations()) + ['Hottest_Heretofore']
 
     non_ip_weather_stats.columns = w_col_names
 
@@ -211,17 +206,8 @@ def get_non_ip_radtob_stats(non_ip_data, prior_ip_data, use_suppl_dat):
     """
 
     non_ip_radtob_stats = non_ip_data.apply(
-        lambda x: pd.Series(integrator.integrate_nip_midas_radtob(
+        lambda x: pd.Series(integrate_nip_midas_radtob(
             x.Met_SRC_ID, x.Critical_Period, x.Route, use_suppl_dat, prior_ip_data, x.StanoxSection)), axis=1)
-
-    for i in range(len(non_ip_data)):
-        try:
-            integrator.integrate_nip_midas_radtob(
-                non_ip_data.Met_SRC_ID.iloc[i], non_ip_data.Critical_Period.iloc[i], non_ip_data.Route.iloc[i],
-                False, prior_ip_data, non_ip_data.StanoxSection.iloc[i])
-        except Exception as e:
-            print(i, e)
-            break
 
     # r_col_names = integrator.specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
     # r_col_names += ['GLBL_IRAD_AMT_total']
@@ -271,7 +257,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
         try:
             # -- Incidents data -----------------------------------------------------------------------
 
-            metex_incidents = view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
+            metex_incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
             # incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
             incidents_by_season = get_data_by_season(metex_incidents, season)
             incidents = incidents_by_season[
@@ -302,8 +288,7 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
             # Make a buffer zone for Weather data aggregation
             incidents['Buffer_Zone'] = incidents.apply(
-                lambda x: integrator.create_circle_buffer_upon_weather_grid(
-                    x.StartXY, x.EndXY, x.MidpointXY, whisker=0), axis=1)
+                lambda x: create_circle_buffer_upon_weather_grid(x.StartXY, x.EndXY, x.MidpointXY, whisker=0), axis=1)
 
             # -- Weather data -------------------------------------------------------------------------
 
@@ -317,11 +302,11 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
             # -- Data integration in the spatial context ----------------------------------------------
 
             incidents['Start_Pseudo_Grid_ID'] = incidents.StartXY.map(  # Start
-                lambda x: integrator.find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
+                lambda x: find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
             incidents = incidents.join(obs_grids, on='Start_Pseudo_Grid_ID')
 
             incidents['End_Pseudo_Grid_ID'] = incidents.EndXY.map(  # End
-                lambda x: integrator.find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
+                lambda x: find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
             incidents = incidents.join(obs_grids, on='End_Pseudo_Grid_ID', lsuffix='_Start', rsuffix='_End')
 
             # Modify column names
@@ -332,17 +317,15 @@ def get_incident_location_weather(route_name=None, weather_category='Heat', seas
 
             # Find all Weather observation grids that intersect with the created buffer zone for each incident location
             incidents['Weather_Grid'] = incidents.Buffer_Zone.map(
-                lambda x: integrator.find_intersecting_weather_grid(x, obs_grids, obs_grids_geom))
+                lambda x: find_intersecting_weather_grid(x, obs_grids, obs_grids_geom))
 
             incidents['Met_SRC_ID'] = incidents.MidpointXY.map(
-                lambda x: integrator.find_closest_met_stn(x, met_stations, met_stations_geom))
+                lambda x: find_closest_met_stn(x, met_stations, met_stations_geom))
 
             if illustrate_buf_cir:  # Illustration of the buffer circle
                 start_point, end_point, midpoint = incidents[['StartXY', 'EndXY', 'MidpointXY']].iloc[0]
-                bf_circle = integrator.create_circle_buffer_upon_weather_grid(
-                    start_point, end_point, midpoint, whisker=0)
-                i_obs_grids = integrator.find_intersecting_weather_grid(
-                    bf_circle, obs_grids, obs_grids_geom, as_grid_id=False)
+                bf_circle = create_circle_buffer_upon_weather_grid(start_point, end_point, midpoint, whisker=0)
+                i_obs_grids = find_intersecting_weather_grid(bf_circle, obs_grids, obs_grids_geom, as_grid_id=False)
                 plt.figure(figsize=(7, 6))
                 ax = plt.subplot2grid((1, 1), (0, 0))
                 for g in i_obs_grids:
