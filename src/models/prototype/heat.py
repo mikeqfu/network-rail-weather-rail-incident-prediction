@@ -5,16 +5,14 @@ import os
 
 import datetime_truncate
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import shapely.geometry
 import statsmodels.discrete.discrete_model as sm
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 from sklearn import metrics
 
+from models.prototype.integrator import *
 from models.prototype.wind import get_incident_location_vegetation
-from models.tools import calculate_prototype_weather_statistics, categorise_track_orientations
-from models.tools import cdd_prototype_heat, cdd_prototype_heat_trial, get_data_by_season, get_weather_variable_names
+from models.tools import categorise_track_orientations, cdd_prototype_heat, cdd_prototype_heat_trial, get_data_by_season
 from mssqlserver import metex
 from settings import mpl_preferences, pd_preferences
 from utils import make_filename
@@ -24,25 +22,7 @@ pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
 
 
-# == Calculations for weather data ====================================================================
-
-def specify_weather_stats_calculations():
-    """
-    Specify the weather statistics that need to be computed.
-
-    :return: a dictionary for calculations of weather statistics
-    :rtype: dict
-    """
-
-    weather_stats_calculations = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
-                                  'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
-                                  'WindSpeed': np.nanmax,
-                                  'WindGust': np.nanmax,
-                                  'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
-                                  'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
-
-    return weather_stats_calculations
-
+# == Data of weather conditions =======================================================================
 
 def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                                   ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
