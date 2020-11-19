@@ -1,4 +1,6 @@
-""" Exploratory analysis """
+"""
+Exploratory analysis.
+"""
 
 import itertools
 
@@ -7,10 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
 import pandas as pd
-from pyhelpers.dir import cdd
-from pyhelpers.geom import find_closest_points_between, get_midpoint, wgs84_to_osgb36
-from pyhelpers.settings import pd_preferences
-from pyhelpers.store import save
+from pyhelpers import cdd, find_closest_points, get_midpoint, pd_preferences, save, wgs84_to_osgb36
 
 from models.prototype.hotspots_vis import get_shp_coordinates
 from mssqlserver import metex
@@ -183,7 +182,7 @@ def find_midpoint_of_each_incident_location(incident_data):
                                     as_geom=False)
 
     # Find the "midpoint" of each incident location
-    midpoints = find_closest_points_between(pseudo_midpoints, railway_coordinates)
+    midpoints = find_closest_points(pseudo_midpoints, railway_coordinates)
 
     data[['MidLongitude', 'MidLatitude']] = pd.DataFrame(midpoints)
     data['MidEasting'], data['MidNorthing'] = wgs84_to_osgb36(data.MidLongitude.values, data.MidLatitude.values)
