@@ -1,4 +1,6 @@
-""" UKCP gridded weather observations: maximum temperature, minimum temperature and precipitation """
+"""
+UKCP gridded weather observations: maximum temperature, minimum temperature and precipitation.
+"""
 
 import gc
 import os
@@ -10,9 +12,7 @@ import natsort
 import pandas as pd
 import shapely.geometry
 import sqlalchemy.types
-from pyhelpers.geom import osgb36_to_wgs84
-from pyhelpers.settings import pd_preferences
-from pyhelpers.store import load_pickle, save_pickle
+from pyhelpers import osgb36_to_wgs84, pd_preferences, load_pickle, save_pickle
 
 from mssqlserver.tools import create_mssql_connectable_engine
 from utils import cdd_weather
