@@ -1,9 +1,12 @@
-""" Tools for communicating with the databases of NR_METEX_* and NR_Vegetation_*.
+"""
+Tools for communicating with the databases of NR_METEX_* and NR_Vegetation_*.
 
-In order to connect to the database you use the connect method of the Connection object. To get connected:
+In order to connect to the database you use the connect method of the Connection object.
+To get connected:
 
 - Using pyodbc (or pypyodbc)
-    connect_string = 'driver={drivername};server=servername;database=databaseName;uid=username;pwd=password'
+    connect_string = 'driver={drivername};server=servername;database=databaseName;uid=username;' \
+                     'pwd=password'
     conn = pyodbc.connect(connect_string)  # equivalent to: pypyodbc.connect(connect_string)
 - Using SQLAlchemy connectable,
     conn_string = 'mssql+pyodbc:///?odbc_connect=%s' % quote_plus(connect_string)
@@ -21,18 +24,18 @@ import pandas as pd
 import pyodbc
 import shapely.wkt
 import sqlalchemy
-from pyhelpers.store import save
+from pyhelpers import save
 
 
-# == Functions to establish a connection to a database server =========================================
+# == Functions to establish a connection to a database server ====================================
 
 def use_windows_authentication():
     """
     Windows authentication for reading data from the databases.
 
-    The trusted_connection setting indicates whether to use Windows Authentication Mode for login validation or not.
-    'Trusted_Connection=yes' specifies the user used to establish this connection. In Microsoft implementations,
-    this user account is a Windows user account.
+    The trusted_connection setting indicates whether to use Windows Authentication Mode for login
+    validation or not. 'Trusted_Connection=yes' specifies the user used to establish this
+    connection. In Microsoft implementations, this user account is a Windows user account.
 
     :return: whether to use Windows authentication
     :rtype: str
@@ -59,8 +62,8 @@ def specify_database_driver():
             - {ODBC Driver 13.1 for SQL Server} - supports SQL Server 2008 through 2016
             - {ODBC Driver 17 for SQL Server} - supports SQL Server 2008 through 2017
 
-        The "SQL Server Native Client ..." and earlier drivers are deprecated and should not be used for
-        new development.
+        The "SQL Server Native Client ..." and earlier drivers are deprecated and should not
+        be used for new development.
 
     .. seealso::
 
@@ -125,7 +128,8 @@ def create_mssql_connectable_engine(database_name):
         specify_server_name() + \
         specify_database_name(database_name) + \
         use_windows_authentication()
-    db_engine = sqlalchemy.create_engine('mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(conn_str))
+    db_engine = sqlalchemy.create_engine(
+        'mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(conn_str))
     return db_engine
 
 
@@ -165,15 +169,15 @@ def create_mssql_db_cursor(database_name):
     return db_cursor
 
 
-# == Functions to retrieve information ================================================================
+# == Functions to retrieve information ===========================================================
 
 def get_table_names(database_name, schema_name='dbo', table_type='TABLE'):
     """
     Get a list of table names in a database.
 
     This function gets a list of names of tables in a database, given a specific table type.
-    The table types could include 'TABLE', 'VIEW', 'SYSTEM TABLE', 'ALIAS', 'GLOBAL TEMPORARY', 'SYNONYM',
-    'LOCAL TEMPORARY', or a data source-specific type name.
+    The table types could include 'TABLE', 'VIEW', 'SYSTEM TABLE', 'ALIAS', 'GLOBAL TEMPORARY',
+    'SYNONYM', 'LOCAL TEMPORARY', or a data source-specific type name.
 
     :param database_name: name of the database queried (also the catalog name)
     :type database_name: str
@@ -234,12 +238,14 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
     try:
         db_cursor = create_mssql_db_cursor(database_name)
         # Get all table names
-        table_names = [table.table_name for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
+        table_names = [table.table_name
+                       for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
         # Get primary keys for each table
-        tbl_pks = [{k.table_name: k.column_name} for tbl_name in table_names for k in db_cursor.primaryKeys(tbl_name)]
+        tbl_pks = [{k.table_name: k.column_name} for tbl_name in table_names
+                   for k in db_cursor.primaryKeys(tbl_name)]
         # Close the cursor
         db_cursor.close()
-        # ( Each element of 'tbl_pks' (as a dict) is in the format of {'table_name': 'primary key'} )
+        # ( Each element of 'tbl_pks' (as a dict) is in the format of {'table_name':'primary key'} )
         tbl_names_set = functools.reduce(operator.or_, (set(d.keys()) for d in tbl_pks), set())
         # Find all primary keys for each table
         tbl_pk_dict = dict((tbl, [d[tbl] for d in tbl_pks if tbl in d]) for tbl in tbl_names_set)
@@ -249,10 +255,10 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
     return result_pks
 
 
-# == Functions to read table data =====================================================================
+# == Functions to read table data ================================================================
 
-def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=None, chunk_size=None, index_col=None,
-                       save_as=None, data_dir=None, **kwargs):
+def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=None,
+                       chunk_size=None, index_col=None, save_as=None, data_dir=None, **kwargs):
     """
     Get all data from a given table in a specific database.
 
@@ -273,7 +279,8 @@ def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=N
     :param data_dir: defaults to ``None``
     :type data_dir: str, None
     :param kwargs: optional parameters of
-        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+        `pandas.read_sql
+        <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
     :return: data of the queried table
     :rtype: pandas.DataFrame
     """
@@ -281,21 +288,23 @@ def read_table_by_name(database_name, table_name, schema_name='dbo', col_names=N
     # Connect to the queried database
     db_conn = establish_mssql_connection(database_name)
     # Create a pandas.DataFrame of the queried table_name
-    table_data = pd.read_sql_table(table_name=table_name, con=db_conn, schema=schema_name, columns=col_names,
-                                   index_col=index_col, chunksize=chunk_size, **kwargs)
+    table_data = pd.read_sql_table(table_name=table_name, con=db_conn, schema=schema_name,
+                                   columns=col_names, index_col=index_col, chunksize=chunk_size,
+                                   **kwargs)
     # Disconnect the database
     db_conn.close()
 
     if save_as:
-        path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
+        path_to_file = os.path.join(
+            os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
         save(table_data, path_to_file)
 
     # Return the data frame of the queried table
     return table_data
 
 
-def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=None, index_col=None, chunk_size=None,
-                        save_as=None, data_dir=None, **kwargs):
+def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=None,
+                        index_col=None, chunk_size=None, save_as=None, data_dir=None, **kwargs):
     """
     Get data from a table in a specific database by SQL query.
 
@@ -316,7 +325,8 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
     :param data_dir: defaults to ``None``
     :type data_dir: str, None
     :param kwargs: optional parameters of
-        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+        `pandas.read_sql
+        <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
     :return: data of the queried table
     :rtype: pandas.DataFrame
     """
@@ -340,30 +350,36 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
     geom_col_names = list(itertools.chain.from_iterable(geom_col_res)) if geom_col_res else []
 
     # Get a list of column names, excluding the 'geometry' one if it exists
-    table_col_names = [x for x in get_table_column_names(database_name, table_name) if x not in geom_col_names]
+    table_col_names = [x for x in get_table_column_names(database_name, table_name)
+                       if x not in geom_col_names]
 
     # Specify SQL query - read all non-geom columns
-    selected_col_names = [x for x in col_names if x not in geom_col_names] if col_names else table_col_names
+    selected_col_names = [x for x in col_names if x not in geom_col_names] if col_names \
+        else table_col_names
     sql_query = 'SELECT {} FROM {}."{}"'.format(
-        ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names), schema_name, table_name)
+        ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names),
+        schema_name, table_name)
     # Read the queried table_name into a pandas.DataFrame
-    table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, index_col=index_col, chunksize=chunk_size,
-                             **kwargs)
+    table_data = pd.read_sql(sql=sql_query, con=db_conn, columns=col_names, index_col=index_col,
+                             chunksize=chunk_size, **kwargs)
     if chunk_size:
         table_data = pd.concat([pd.DataFrame(tbl_dat) for tbl_dat in table_data], ignore_index=True)
 
     # Read geom column(s)
     if geom_col_names:
         if len(geom_col_names) == 1:
-            geom_sql_query = 'SELECT "{}".STAsText() FROM {}."{}"'.format(geom_col_names[0], schema_name, table_name)
+            geom_sql_query = 'SELECT "{}".STAsText() FROM {}."{}"'.format(
+                geom_col_names[0], schema_name, table_name)
         else:
             geom_sql_query = 'SELECT {} FROM {}."{}"'.format(
-                ', '.join('"' + x + '".STAsText()' for x in geom_col_names), schema_name, table_name)
+                ', '.join('"' + x + '".STAsText()' for x in geom_col_names),
+                schema_name, table_name)
         # Read geom data chunks into a pandas.DataFrame
         geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size, **kwargs)
         if chunk_size:
-            geom_data = pd.concat([pd.DataFrame(geom_dat).applymap(shapely.wkt.loads) for geom_dat in geom_data],
-                                  ignore_index=True)
+            geom_data = pd.concat(
+                [pd.DataFrame(geom_dat).applymap(shapely.wkt.loads) for geom_dat in geom_data],
+                ignore_index=True)
         geom_data.columns = geom_col_names
         #
         table_data = table_data.join(geom_data)
@@ -372,14 +388,16 @@ def read_table_by_query(database_name, table_name, schema_name='dbo', col_names=
     db_conn.close()
 
     if save_as:
-        path_to_file = os.path.join(os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
+        path_to_file = os.path.join(
+            os.path.realpath(data_dir if data_dir else ''), table_name + save_as)
         save(table_data, path_to_file)
 
     return table_data
 
 
-def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=None, index_col=None,
-                        chunk_size=1000000, save_as=".pickle", data_dir=None, **kwargs):
+def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=None,
+                        index_col=None, chunk_size=1000000, save_as=".pickle", data_dir=None,
+                        **kwargs):
     """
     Save a table chunk-wise from a database.
 
@@ -400,7 +418,8 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     :param data_dir: defaults to ``None``
     :type data_dir: str, None
     :param kwargs: optional parameters of
-        `pandas.read_sql <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
+        `pandas.read_sql
+        <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html>`_
     :return: data of the queried table
     :rtype: pandas.DataFrame
     """
@@ -423,13 +442,16 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     geom_col_names = list(itertools.chain.from_iterable(geom_col_res)) if geom_col_res else []
 
     # Get a list of column names, excluding the 'geometry' one if it exists
-    table_col_names = [x for x in get_table_column_names(database_name, table_name) if x not in geom_col_names]
+    table_col_names = [x for x in get_table_column_names(database_name, table_name)
+                       if x not in geom_col_names]
 
     # Specify SQL query - read all of the selected non-geom columns
-    selected_col_names = [x for x in col_names if x not in geom_col_names] if col_names else table_col_names
+    selected_col_names = [x for x in col_names if x not in geom_col_names] if col_names \
+        else table_col_names
 
     sql_query = 'SELECT {} FROM {}."{}"'.format(
-        ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names), schema_name, table_name)
+        ', '.join('"' + tbl_col_name + '"' for tbl_col_name in selected_col_names),
+        schema_name, table_name)
 
     dat_dir = os.path.realpath(data_dir if data_dir else 'temp_dat')
     if not geom_col_names:
@@ -446,10 +468,12 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
         tbl_chunks = [tbl_dat for tbl_dat in table_data]
 
         if len(geom_col_names) == 1:
-            geom_sql_query = 'SELECT "{}".STAsText() FROM {}."{}"'.format(geom_col_names[0], schema_name, table_name)
+            geom_sql_query = 'SELECT "{}".STAsText() FROM {}."{}"'.format(
+                geom_col_names[0], schema_name, table_name)
         else:
             geom_sql_query = 'SELECT {} FROM {}."{}"'.format(
-                ', '.join('"' + x + '".STAsText()' for x in geom_col_names), schema_name, table_name)
+                ', '.join('"' + x + '".STAsText()' for x in geom_col_names),
+                schema_name, table_name)
         geom_data = pd.read_sql(geom_sql_query, db_conn, chunksize=chunk_size, **kwargs)
         geom_chunks = [geom_dat.applymap(shapely.wkt.loads) for geom_dat in geom_data]
 
