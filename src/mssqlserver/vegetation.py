@@ -6,11 +6,8 @@ import re
 
 import numpy as np
 import pandas as pd
-from pyhelpers.geom import osgb36_to_wgs84
-from pyhelpers.ops import confirmed
-from pyhelpers.settings import pd_preferences
-from pyhelpers.store import load_pickle, save, save_pickle
-from pyhelpers.text import find_similar_str
+from pyhelpers import find_similar_str, confirmed, osgb36_to_wgs84, pd_preferences, load_pickle, \
+    save, save_pickle
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
 from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
@@ -23,7 +20,7 @@ def vegetation_database_name():
     return 'NR_Vegetation_20141031'
 
 
-# == Change directories ===============================================================================
+# == Change directories ==========================================================================
 
 def cdd_veg_db(*sub_dir, mkdir=False):
     """
@@ -74,10 +71,11 @@ def cdd_veg_db_views(*sub_dir, mkdir=False):
     return path
 
 
-# == Read table data from the database ================================================================
+# == Read table data from the database ===========================================================
 
 
-def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo', save_as=None, update=False,
+def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo', save_as=None,
+                   update=False,
                    **kwargs):
     """
     Read tables stored in NR_Vegetation_* database.
@@ -92,13 +90,15 @@ def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo
     :type schema_name: str
     :param save_as: file extension, defaults to ``None``
     :type save_as: str, None
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param kwargs: optional parameters of `pandas.read_sql`_
     :return: data of the queried table stored in NR_Vegetation_* database
     :rtype: pandas.DataFrame
 
-    .. _`pandas.read_sql`: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html
+    .. _`pandas.read_sql`:
+        https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html
 
     **Example**::
 
@@ -111,7 +111,8 @@ def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo
         save_as = ".pickle"
         update = False
 
-        data = vegetation.read_veg_table(table_name, index_col, route_name, schema_name, save_as, update)
+        data = vegetation.read_veg_table(table_name, index_col, route_name, schema_name, save_as,
+                                         update)
     """
 
     table = schema_name + '.' + table_name
@@ -120,7 +121,8 @@ def read_veg_table(table_name, index_col=None, route_name=None, schema_name='dbo
     if route_name is None:
         sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
     else:
-        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given a specific Route
+        # given a specific Route
+        sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)
     # Create a pd.DataFrame of the queried table
     data = pd.read_sql(sql=sql_query, con=conn_veg, index_col=index_col, **kwargs)
     # Disconnect the database
@@ -153,22 +155,25 @@ def get_veg_table_pk(table_name):
         print(pri_key)
     """
 
-    pri_key = get_table_primary_keys(database_name=vegetation_database_name(), table_name=table_name)
+    pri_key = get_table_primary_keys(database_name=vegetation_database_name(),
+                                     table_name=table_name)
     return pri_key
 
 
-# == Get table data ===================================================================================
+# == Get table data ==============================================================================
 
 
 def get_adverse_wind(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'AdverseWind'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'AdverseWind'
     :rtype: pandas.DataFrame, None
@@ -191,9 +196,11 @@ def get_adverse_wind(update=False, save_original_as=None, verbose=False):
         adverse_wind = load_pickle(path_to_pickle)
     else:
         try:
-            adverse_wind = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            adverse_wind = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                          update=update)
             update_nr_route_names(adverse_wind, route_col_name='Route')  # Update route names
-            adverse_wind = adverse_wind.groupby('Route').agg(list).applymap(lambda x: x if len(x) > 1 else x[0])
+            adverse_wind = adverse_wind.groupby('Route').agg(list).applymap(
+                lambda x: x if len(x) > 1 else x[0])
             save_pickle(adverse_wind, path_to_pickle, verbose=verbose)
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -205,11 +212,13 @@ def get_cutting_angle_class(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'CuttingAngleClass'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'CuttingAngleClass'
     :rtype: pandas.DataFrame, None
@@ -232,7 +241,8 @@ def get_cutting_angle_class(update=False, save_original_as=None, verbose=False):
         cutting_angle = load_pickle(path_to_pickle)
     else:
         try:
-            cutting_angle = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            cutting_angle = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                           save_as=save_original_as,
                                            update=update)
             save_pickle(cutting_angle, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -245,11 +255,13 @@ def get_cutting_depth_class(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'CuttingDepthClass'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'CuttingDepthClass'
     :rtype: pandas.DataFrame, None
@@ -272,7 +284,8 @@ def get_cutting_depth_class(update=False, save_original_as=None, verbose=False):
         cutting_depth = load_pickle(path_to_pickle)
     else:
         try:
-            cutting_depth = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            cutting_depth = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                           save_as=save_original_as,
                                            update=update)
             save_pickle(cutting_depth, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -287,11 +300,13 @@ def get_du_list(index=True, update=False, save_original_as=None, verbose=False):
 
     :param index: whether to set an index column
     :type index: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'DUList'
     :rtype: pandas.DataFrame, None
@@ -319,7 +334,8 @@ def get_du_list(index=True, update=False, save_original_as=None, verbose=False):
         du_list = load_pickle(path_to_pickle)
     else:
         try:
-            du_list = read_veg_table(table_name, index_col=get_veg_table_pk(table_name) if index else None,
+            du_list = read_veg_table(table_name,
+                                     index_col=get_veg_table_pk(table_name) if index else None,
                                      save_as=save_original_as, update=update)
             save_pickle(du_list, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -332,11 +348,13 @@ def get_path_route(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'PathRoute'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'PathRoute'
     :rtype: pandas.DataFrame, None
@@ -359,7 +377,8 @@ def get_path_route(update=False, save_original_as=None, verbose=False):
         path_route = load_pickle(path_to_pickle)
     else:
         try:
-            path_route = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            path_route = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                        save_as=save_original_as,
                                         update=update)
             save_pickle(path_route, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -372,11 +391,13 @@ def get_du_route(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'Routes'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'Routes'
     :rtype: pandas.DataFrame, None
@@ -399,13 +420,16 @@ def get_du_route(update=False, save_original_as=None, verbose=False):
     else:
         try:
             # (Note that 'Routes' table contains information about Delivery Units)
-            routes = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            routes = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                    save_as=save_original_as,
                                     update=update)
             # Replace values in (index) column 'DUName'
-            routes.index = routes.index.to_series().replace({'Lanc&Cumbria MDU - HR1': 'Lancashire & Cumbria MDU - HR1',
-                                                             'S/wel& Dud MDU - HS7': 'Sandwell & Dudley MDU - HS7'})
+            routes.index = routes.index.to_series().replace(
+                {'Lanc&Cumbria MDU - HR1': 'Lancashire & Cumbria MDU - HR1',
+                 'S/wel& Dud MDU - HS7': 'Sandwell & Dudley MDU - HS7'})
             # Replace values in column 'DUNameGIS'
-            routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'}, inplace=True)
+            routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'},
+                                     inplace=True)
             # Update route names
             update_nr_route_names(routes, route_col_name='Route')
             save_pickle(routes, path_to_pickle, verbose=verbose)
@@ -419,11 +443,13 @@ def get_s8data(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'S8Data'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'S8Data'
     :rtype: pandas.DataFrame, None
@@ -446,7 +472,8 @@ def get_s8data(update=False, save_original_as=None, verbose=False):
         s8data = load_pickle(path_to_pickle)
     else:
         try:
-            s8data = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            s8data = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                    save_as=save_original_as,
                                     update=update)
             update_nr_route_names(s8data, route_col_name='Route')
             save_pickle(s8data, path_to_pickle, verbose=verbose)
@@ -460,11 +487,13 @@ def get_tree_age_class(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'TreeAgeClass'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'TreeAgeClass'
     :rtype: pandas.DataFrame, None
@@ -500,11 +529,13 @@ def get_tree_size_class(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'TreeSizeClass'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'TreeSizeClass'
     :rtype: pandas.DataFrame, None
@@ -540,11 +571,13 @@ def get_tree_type(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'TreeType'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'TreeType'
     :rtype: pandas.DataFrame, None
@@ -567,7 +600,8 @@ def get_tree_type(update=False, save_original_as=None, verbose=False):
         tree_type = load_pickle(path_to_pickle)
     else:
         try:
-            tree_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            tree_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                       save_as=save_original_as,
                                        update=update)
             save_pickle(tree_type, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -580,11 +614,13 @@ def get_felling_type(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'FellingType'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'FellingType'
     :rtype: pandas.DataFrame, None
@@ -607,7 +643,8 @@ def get_felling_type(update=False, save_original_as=None, verbose=False):
         felling_type = load_pickle(path_to_pickle)
     else:
         try:
-            felling_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            felling_type = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                          save_as=save_original_as,
                                           update=update)
             save_pickle(felling_type, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -620,11 +657,13 @@ def get_area_work_type(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'AreaWorkType'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'AreaWorkType'
     :rtype: pandas.DataFrame, None
@@ -660,11 +699,13 @@ def get_service_detail(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'ServiceDetail'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'ServiceDetail'
     :rtype: pandas.DataFrame, None
@@ -700,11 +741,13 @@ def get_service_path(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'ServicePath'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'ServicePath'
     :rtype: pandas.DataFrame, None
@@ -727,7 +770,8 @@ def get_service_path(update=False, save_original_as=None, verbose=False):
         service_path = load_pickle(path_to_pickle)
     else:
         try:
-            service_path = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            service_path = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                          save_as=save_original_as,
                                           update=update)
             save_pickle(service_path, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -740,11 +784,13 @@ def get_supplier(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'Supplier'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'Supplier'
     :rtype: pandas.DataFrame, None
@@ -767,7 +813,8 @@ def get_supplier(update=False, save_original_as=None, verbose=False):
         supplier = load_pickle(path_to_pickle)
     else:
         try:
-            supplier = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            supplier = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                      save_as=save_original_as,
                                       update=update)
             save_pickle(supplier, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -780,11 +827,13 @@ def get_supplier_costs(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'SupplierCosts'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'SupplierCosts'
     :rtype: pandas.DataFrame, None
@@ -807,7 +856,8 @@ def get_supplier_costs(update=False, save_original_as=None, verbose=False):
         supplier_costs = load_pickle(path_to_pickle)
     else:
         try:
-            supplier_costs = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            supplier_costs = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                            update=update)
             update_nr_route_names(supplier_costs, route_col_name='Route')
             supplier_costs.set_index(get_veg_table_pk(table_name), inplace=True)
             save_pickle(supplier_costs, path_to_pickle, verbose=verbose)
@@ -821,11 +871,13 @@ def get_supplier_costs_area(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'SupplierCostsArea'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'SupplierCostsArea'
     :rtype: pandas.DataFrame, None
@@ -848,7 +900,8 @@ def get_supplier_costs_area(update=False, save_original_as=None, verbose=False):
         costs_area = load_pickle(path_to_pickle)
     else:
         try:
-            costs_area = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            costs_area = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                        update=update)
             update_nr_route_names(costs_area, route_col_name='Route')
             costs_area.set_index(get_veg_table_pk(table_name), inplace=True)
             save_pickle(costs_area, path_to_pickle, verbose=verbose)
@@ -862,11 +915,13 @@ def get_supplier_cost_simple(update=False, save_original_as=None, verbose=False)
     """
     Get data of the table 'SupplierCostsSimple'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'SupplierCostsSimple'
     :rtype: pandas.DataFrame, None
@@ -889,7 +944,8 @@ def get_supplier_cost_simple(update=False, save_original_as=None, verbose=False)
         costs_simple = load_pickle(path_to_pickle)
     else:
         try:
-            costs_simple = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            costs_simple = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                          update=update)
             update_nr_route_names(costs_simple, route_col_name='Route')
             costs_simple.set_index(get_veg_table_pk(table_name), inplace=True)
             save_pickle(costs_simple, path_to_pickle, verbose=verbose)
@@ -903,11 +959,13 @@ def get_tree_action_fractions(update=False, save_original_as=None, verbose=False
     """
     Get data of the table 'TreeActionFractions'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'TreeActionFractions'
     :rtype: pandas.DataFrame, None
@@ -920,7 +978,8 @@ def get_tree_action_fractions(update=False, save_original_as=None, verbose=False
         save_original_as = None
         verbose = True
 
-        tree_action_fractions = vegetation.get_tree_action_fractions(update, save_original_as, verbose)
+        tree_action_fractions = vegetation.get_tree_action_fractions(update, save_original_as,
+                                                                     verbose)
         print(tree_action_fractions)
     """
 
@@ -930,7 +989,8 @@ def get_tree_action_fractions(update=False, save_original_as=None, verbose=False
         tree_action_fractions = load_pickle(path_to_pickle)
     else:
         try:
-            tree_action_fractions = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+            tree_action_fractions = read_veg_table(table_name,
+                                                   index_col=get_veg_table_pk(table_name),
                                                    save_as=save_original_as, update=update)
             save_pickle(tree_action_fractions, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -943,11 +1003,13 @@ def get_veg_surv_type_class(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'VegSurvTypeClass'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'VegSurvTypeClass'
     :rtype: pandas.DataFrame, None
@@ -983,11 +1045,13 @@ def get_wb_factors(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'WBFactors'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'WBFactors'
     :rtype: pandas.DataFrame, None
@@ -1010,7 +1074,8 @@ def get_wb_factors(update=False, save_original_as=None, verbose=False):
         wb_factors = load_pickle(path_to_pickle)
     else:
         try:
-            wb_factors = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            wb_factors = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                        save_as=save_original_as,
                                         update=update)
             save_pickle(wb_factors, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -1023,11 +1088,13 @@ def get_weed_spray(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'Weedspray'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'Weedspray'
     :rtype: pandas.DataFrame, None
@@ -1050,7 +1117,8 @@ def get_weed_spray(update=False, save_original_as=None, verbose=False):
         weed_spray = load_pickle(path_to_pickle)
     else:
         try:
-            weed_spray = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            weed_spray = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                        update=update)
             update_nr_route_names(weed_spray, route_col_name='Route')
             weed_spray.set_index('RouteAlias', inplace=True)
             save_pickle(weed_spray, path_to_pickle, verbose=verbose)
@@ -1064,11 +1132,13 @@ def get_work_hours(update=False, save_original_as=None, verbose=False):
     """
     Get data of the table 'WorkHours'.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'WorkHours'
     :rtype: pandas.DataFrame, None
@@ -1091,7 +1161,8 @@ def get_work_hours(update=False, save_original_as=None, verbose=False):
         work_hours = load_pickle(path_to_pickle)
     else:
         try:
-            work_hours = read_veg_table(table_name, index_col=get_veg_table_pk(table_name), save_as=save_original_as,
+            work_hours = read_veg_table(table_name, index_col=get_veg_table_pk(table_name),
+                                        save_as=save_original_as,
                                         update=update)
             save_pickle(work_hours, path_to_pickle, verbose=verbose)
         except Exception as e:
@@ -1100,19 +1171,23 @@ def get_work_hours(update=False, save_original_as=None, verbose=False):
     return work_hours
 
 
-def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_original_as=None, verbose=False):
+def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_original_as=None,
+                     verbose=False):
     """
     Get data of the table 'FurlongData'.
 
     :param set_index: whether to set an index column, defaults to ``False``
     :type set_index: bool
-    :param pseudo_amendment: whether to make an amendment with external data, defaults to ``True``
+    :param pseudo_amendment: whether to make an amendment with external data,
+        defaults to ``True``
     :type pseudo_amendment: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'FurlongData'
     :rtype: pandas.DataFrame, None
@@ -1132,8 +1207,8 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
         save_original_as = None
         verbose = True
 
-        furlong_data = vegetation.get_furlong_data(set_index, pseudo_amendment, update, save_original_as,
-                                                   verbose)
+        furlong_data = vegetation.get_furlong_data(
+            set_index, pseudo_amendment, update, save_original_as, verbose)
         print(furlong_data)
     """
 
@@ -1145,10 +1220,12 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
 
     else:
         try:
-            furlong_data = read_veg_table(table_name, index_col=None, coerce_float=False, save_as=save_original_as,
+            furlong_data = read_veg_table(table_name, index_col=None, coerce_float=False,
+                                          save_as=save_original_as,
                                           update=update)
             # Re-format mileage data
-            furlong_data[['StartMileage', 'EndMileage']] = furlong_data[['StartMileage', 'EndMileage']].applymap(
+            furlong_data[['StartMileage', 'EndMileage']] = furlong_data[
+                ['StartMileage', 'EndMileage']].applymap(
                 nr_mileage_num_to_str)
 
             # Rename columns
@@ -1165,7 +1242,8 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
             # Edit the 'TEF' columns
             furlong_data.OtherVegScore.replace({-1: 0}, inplace=True)
             renamed_cols = list(renamed_cols_dict.values())
-            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(lambda x: 0 if np.isnan(x) else x + 1)
+            furlong_data[renamed_cols] = furlong_data[renamed_cols].applymap(
+                lambda x: 0 if np.isnan(x) else x + 1)
             # Re-format date of measure
             furlong_data.DateOfMeasure = furlong_data.DateOfMeasure.map(
                 lambda x: datetime.datetime.strptime(x, '%d/%m/%Y %H:%M'))
@@ -1183,7 +1261,8 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
                 temp = furlong_data[cp_cols].sum(1)
                 if not temp.empty:
 
-                    furlong_data.CoverPercentOther.loc[temp[temp == 0].index] = 100.0  # For all zero 'CoverPercent...'
+                    furlong_data.CoverPercentOther.loc[
+                        temp[temp == 0].index] = 100.0  # For all zero 'CoverPercent...'
                     idx = temp[~temp.isin([0.0, 100.0])].index  # For all non-100 'CoverPercent...'
 
                     nonzero_cols = furlong_data[cp_cols].loc[idx].apply(
@@ -1215,7 +1294,8 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
                                     furlong_data.CoverPercentOther.loc[[i]] = 0.0
                                     if len(features) == 1:
                                         feature = features[0]
-                                        furlong_data[feature].loc[[i]] = np.sum([furlong_data[feature].loc[i], err])
+                                        furlong_data[feature].loc[[i]] = np.sum(
+                                            [furlong_data[feature].loc[i], err])
                                     else:
                                         err = np.divide(err, len(features))
                                         furlong_data.loc[i, features] += err
@@ -1232,17 +1312,21 @@ def get_furlong_data(set_index=False, pseudo_amendment=True, update=False, save_
     return furlong_data
 
 
-def get_furlong_location(relevant_columns_only=True, update=False, save_original_as=None, verbose=False):
+def get_furlong_location(relevant_columns_only=True, update=False, save_original_as=None,
+                         verbose=False):
     """
     Get data of the table 'FurlongLocation'.
 
-    :param relevant_columns_only: whether to return only the columns relevant to the project, defaults to ``True``
+    :param relevant_columns_only: whether to return only the columns relevant to the project,
+        defaults to ``True``
     :type relevant_columns_only: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'FurlongLocation'
     :rtype: pandas.DataFrame, None
@@ -1266,7 +1350,8 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
     """
 
     table_name = 'FurlongLocation'
-    path_to_pickle = cdd_veg_db_tables(table_name + ("-cut" if relevant_columns_only else "") + ".pickle")
+    path_to_pickle = cdd_veg_db_tables(
+        table_name + ("-cut" if relevant_columns_only else "") + ".pickle")
 
     if os.path.isfile(path_to_pickle) and not update:
         furlong_location = load_pickle(path_to_pickle)
@@ -1288,8 +1373,9 @@ def get_furlong_location(relevant_columns_only=True, update=False, save_original
 
             # Select useful columns only?
             if relevant_columns_only:
-                furlong_location = furlong_location[['Route', 'RouteAlias', 'DU', 'ELR', 'StartMileage', 'EndMileage',
-                                                     'Electrified', 'HazardOnly']]
+                furlong_location = furlong_location[
+                    ['Route', 'RouteAlias', 'DU', 'ELR', 'StartMileage', 'EndMileage',
+                     'Electrified', 'HazardOnly']]
 
             save_pickle(furlong_location, path_to_pickle, verbose=verbose)
 
@@ -1306,19 +1392,22 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
 
     :param set_index: whether to set an index column, defaults to ``False``
     :type set_index: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param save_original_as: file extension for saving the original data, defaults to ``None``
     :type save_original_as: str, None
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of the table 'HazardTree'
     :rtype: pandas.DataFrame, None
 
     .. note::
 
-        Error data exists in 'FurlongID'. They could be cancelled out when the 'hazard_tree' data set is being merged
-        with other data sets on the 'FurlongID'. Errors also exist in 'Easting' and 'Northing' columns.
+        Error data exists in 'FurlongID'. They could be cancelled out when the 'hazard_tree' data
+        set is being merged with other data sets on the 'FurlongID'. Errors also exist in 'Easting'
+        and 'Northing' columns.
 
     **Examples**::
 
@@ -1345,7 +1434,8 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
 
     else:
         try:
-            hazard_tree = read_veg_table(table_name, index_col=None, save_as=save_original_as, update=update)
+            hazard_tree = read_veg_table(table_name, index_col=None, save_as=save_original_as,
+                                         update=update)
             # Re-format mileage data
             hazard_tree.Mileage = hazard_tree.Mileage.apply(nr_mileage_num_to_str)
 
@@ -1403,7 +1493,7 @@ def get_hazard_tree(set_index=False, update=False, save_original_as=None, verbos
             # Rearrange DataFrame index
             hazard_tree.index = range(len(hazard_tree))
 
-            # Add two columns of Latitudes and Longitudes corresponding to the Easting and Northing coordinates
+            # Add two columns of Latitudes and Longitudes corresponding to the Easting and Northing
             hazard_tree['Longitude'], hazard_tree['Latitude'] = osgb36_to_wgs84(
                 hazard_tree.Easting.values, hazard_tree.Northing.values)
 
@@ -1423,9 +1513,11 @@ def update_vegetation_table_pickles(update=True, verbose=True):
     """
     Update the local pickle files for all tables.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``True``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``True``
     :type verbose: bool, int
 
     **Example**::
@@ -1475,20 +1567,23 @@ def update_vegetation_table_pickles(update=True, verbose=True):
             print("\nUpdate finished.")
 
 
-# == Get views based on the NR_Vegetation data ========================================================
+# == Get views based on the NR_Vegetation data ===================================================
 
 
-def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
+def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_it=True,
+                                         verbose=False):
     """
     get a view of data of vegetation coverage per furlong (75247, 45).
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
     :type route_name: str, None
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
     :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of vegetation coverage per furlong
     :rtype: pandas.DataFrame, None
@@ -1502,8 +1597,8 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
         pickle_it = True
         verbose = True
 
-        furlong_vegetation_coverage = vegetation.view_vegetation_coverage_per_furlong(route_name, update,
-                                                                                      pickle_it, verbose)
+        furlong_vegetation_coverage = vegetation.view_vegetation_coverage_per_furlong(
+            route_name, update, pickle_it, verbose)
         print(furlong_vegetation_coverage)
     """
 
@@ -1525,7 +1620,8 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
                 join(cutting_angle_class,  # (75247, 49)
                      on='CuttingAngle', how='inner'). \
                 join(cutting_depth_class,  # (75247, 50)
-                     on='CuttingDepth', how='inner', lsuffix='_CuttingAngle', rsuffix='_CuttingDepth')
+                     on='CuttingDepth', how='inner', lsuffix='_CuttingAngle',
+                     rsuffix='_CuttingDepth')
 
             if route_name is not None:
                 route_name = find_similar_str(route_name, get_du_route().Route)
@@ -1538,7 +1634,8 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
 
             # Edit the merged data
             furlong_vegetation_coverage.drop(
-                labels=[f for f in furlong_vegetation_coverage.columns if re.match('.*_FurlongLocation$', f)],
+                labels=[f for f in furlong_vegetation_coverage.columns if
+                        re.match('.*_FurlongLocation$', f)],
                 axis=1, inplace=True)  # (75247, 45)
 
             # Rearrange
@@ -1549,7 +1646,8 @@ def view_vegetation_coverage_per_furlong(route_name=None, update=False, pickle_i
                 save_pickle(furlong_vegetation_coverage, path_to_pickle, verbose=verbose)
 
         except Exception as e:
-            print("Failed to fetch the information of vegetation coverage per furlong. {}".format(e))
+            print(
+                "Failed to fetch the information of vegetation coverage per furlong. {}".format(e))
             furlong_vegetation_coverage = None
 
     return furlong_vegetation_coverage
@@ -1561,11 +1659,13 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
     :type route_name: str, None
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
     :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of hazardous tress
     :rtype: pandas.DataFrame, None
@@ -1579,11 +1679,13 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
         verbose = True
 
         route_name = None
-        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it, verbose)
+        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it,
+                                                               verbose)
         print(hazardous_trees_data)
 
         route_name = 'Anglia'
-        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it, verbose)
+        hazardous_trees_data = vegetation.view_hazardous_trees(route_name, update, pickle_it,
+                                                               verbose)
         print(hazardous_trees_data)
     """
 
@@ -1605,12 +1707,15 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
                 join(tree_age_class,  # (22180, 69)
                      on='TreeAgeCatID', how='inner'). \
                 join(tree_size_class,  # (22180, 70)
-                     on='TreeSizeCatID', how='inner', lsuffix='_TreeAgeClass', rsuffix='_TreeSizeClass'). \
-                drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'], axis=1)
+                     on='TreeSizeCatID', how='inner', lsuffix='_TreeAgeClass',
+                     rsuffix='_TreeSizeClass'). \
+                drop(labels=['Route_FurlongLocation', 'DU_FurlongLocation', 'ELR_FurlongLocation'],
+                     axis=1)
 
             if route_name is not None:
                 route_name = find_similar_str(route_name, get_du_route().Route)
-                hazardous_trees_data = hazardous_trees_data.loc[hazardous_trees_data.Route == route_name]
+                hazardous_trees_data = hazardous_trees_data.loc[
+                    hazardous_trees_data.Route == route_name]
 
             # Edit the merged data
             hazardous_trees_data.drop(
@@ -1633,17 +1738,20 @@ def view_hazardous_trees(route_name=None, update=False, pickle_it=True, verbose=
     return hazardous_trees_data
 
 
-def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True, verbose=False):
+def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_it=True,
+                                          verbose=False):
     """
     get a view of vegetation data combined with information of hazardous trees (75247, 58).
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
     :type route_name: str, None
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
     :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: vegetation data combined with information of hazardous trees
     :rtype: pandas.DataFrame, None
@@ -1657,8 +1765,8 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
         pickle_it = True
         verbose = True
 
-        furlong_vegetation_data =vegetation.view_vegetation_condition_per_furlong(route_name, update,
-                                                                                  pickle_it, verbose)
+        furlong_vegetation_data = vegetation.view_vegetation_condition_per_furlong(
+            route_name, update, pickle_it, verbose)
         print(furlong_vegetation_data)
     """
 
@@ -1681,27 +1789,33 @@ def view_vegetation_condition_per_furlong(route_name=None, update=False, pickle_
                 'Treeprox3py': [lambda x: tuple(x), min, max]})  # (11320, 13)
 
             furlong_hazard_tree.columns = ['_'.join(x).strip() for x in furlong_hazard_tree.columns]
-            furlong_hazard_tree.rename(columns={'Haztreeid_count_nonzero': 'TreeNumber'}, inplace=True)
-            furlong_hazard_tree.columns = ['Hazard' + x.strip('_<lambda_0>') for x in furlong_hazard_tree.columns]
+            furlong_hazard_tree.rename(columns={'Haztreeid_count_nonzero': 'TreeNumber'},
+                                       inplace=True)
+            furlong_hazard_tree.columns = ['Hazard' + x.strip('_<lambda_0>') for x in
+                                           furlong_hazard_tree.columns]
 
             #
             furlong_vegetation_coverage = view_vegetation_coverage_per_furlong()  # (75247, 45)
 
             # Processing ...
             furlong_vegetation_data = furlong_vegetation_coverage.join(
-                furlong_hazard_tree, on=['ELR', 'DU', 'Route', 'StartMileage', 'EndMileage'], how='left')
-            furlong_vegetation_data.sort_values('StructuredPlantNumber', inplace=True)  # (75247, 58)
+                furlong_hazard_tree, on=['ELR', 'DU', 'Route', 'StartMileage', 'EndMileage'],
+                how='left')
+            furlong_vegetation_data.sort_values('StructuredPlantNumber',
+                                                inplace=True)  # (75247, 58)
 
             if route_name is not None:
                 route_name = find_similar_str(route_name, get_du_route().Route)
-                furlong_vegetation_data = hazardous_trees_data.loc[furlong_vegetation_data.Route == route_name]
+                furlong_vegetation_data = hazardous_trees_data.loc[
+                    furlong_vegetation_data.Route == route_name]
                 furlong_vegetation_data.index = range(len(furlong_vegetation_data))
 
             if pickle_it:
                 save_pickle(furlong_vegetation_data, path_to_pickle, verbose=verbose)
 
         except Exception as e:
-            print("Failed to fetch the information of vegetation condition per furlong. {}".format(e))
+            print(
+                "Failed to fetch the information of vegetation condition per furlong. {}".format(e))
             furlong_vegetation_data = None
 
     return furlong_vegetation_data
@@ -1711,11 +1825,13 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
     """
     Get a view of ELR and mileage data of furlong locations.
 
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
     :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: vegetation data combined with information of hazardous trees
     :rtype: pandas.DataFrame, None
@@ -1728,7 +1844,8 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
         pickle_it = True
         verbose = True
 
-        nr_vegetation_furlong_data = vegetation.view_nr_vegetation_furlong_data(update, pickle_it, verbose)
+        nr_vegetation_furlong_data = vegetation.view_nr_vegetation_furlong_data(
+            update, pickle_it, verbose)
         print(nr_vegetation_furlong_data)
     """
 
@@ -1750,9 +1867,11 @@ def view_nr_vegetation_furlong_data(update=False, pickle_it=True, verbose=False)
             elr_mileage_colnames = ['ELR'] + str_mileage_colnames
 
             nr_vegetation_furlong_data.drop_duplicates(elr_mileage_colnames, inplace=True)
-            empty_start_mileage_idx = nr_vegetation_furlong_data[nr_vegetation_furlong_data.StartMileage == ''].index
+            empty_start_mileage_idx = nr_vegetation_furlong_data[
+                nr_vegetation_furlong_data.StartMileage == ''].index
             nr_vegetation_furlong_data.loc[empty_start_mileage_idx, 'StartMileage'] = [
-                nr_vegetation_furlong_data.StructuredPlantNumber.loc[i][11:17] for i in empty_start_mileage_idx]
+                nr_vegetation_furlong_data.StructuredPlantNumber.loc[i][11:17] for i in
+                empty_start_mileage_idx]
 
             # Create two new columns of mileage data (as float)
             num_mileage_colnames = ['StartMileage_num', 'EndMileage_num']
@@ -1778,11 +1897,13 @@ def update_vegetation_view_pickles(route_name=None, update=True, pickle_it=True,
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
     :type route_name: str, None
-    :param update: whether to check on update and proceed to update the package data, defaults to ``True``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``True``
     :type update: bool
     :param pickle_it: whether to save the view as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
 
     **Example**::
