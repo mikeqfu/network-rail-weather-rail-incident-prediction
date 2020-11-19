@@ -10,7 +10,7 @@ from mssqlserver import metex
 from spreadsheet.incidents import get_schedule8_weather_incidents_02062006_31032014
 
 
-# == Task 1: Broad classification of incidents into weather-related and non-weather-related ===========
+# == Task 1: Broad classification of incidents into weather-related and non-weather-related ======
 
 def get_task_1_train_test_data(random_state=0, test_size=0.2):
     """
@@ -70,12 +70,13 @@ def get_task_1_train_test_data(random_state=0, test_size=0.2):
         train_data, test_data = data[data.FinancialYear < 2018], data[data.FinancialYear == 2018]
     else:
         # 'random_state' must be an integer
-        non_weather_related_dat, weather_related_dat = data[dat.weather_related == 0], data[dat.weather_related == 1]
+        non_weather_related_dat = data[dat.weather_related == 0]
+        weather_related_dat = data[dat.weather_related == 1]
 
-        train_dat_non, test_dat_non = train_test_split(non_weather_related_dat,
-                                                       random_state=random_state, test_size=test_size)
-        train_dat, test_dat = train_test_split(weather_related_dat,
-                                               random_state=random_state, test_size=test_size)
+        train_dat_non, test_dat_non = train_test_split(
+            non_weather_related_dat, random_state=random_state, test_size=test_size)
+        train_dat, test_dat = train_test_split(
+            weather_related_dat, random_state=random_state, test_size=test_size)
 
         train_data = pd.concat([train_dat_non, train_dat], axis=0)
         test_data = pd.concat([test_dat_non, test_dat], axis=0)
@@ -101,12 +102,14 @@ def classification_model_for_identifying_weather_related_incidents(random_state=
 
     Testing e.g.
 
-        from models.prototype.weather_attr import classification_model_for_identifying_weather_related_incidents
+        from models.prototype.weather_attr import \
+            classification_model_for_identifying_weather_related_incidents
 
         random_state = 0
         test_size = 0.2
 
-        model = classification_model_for_identifying_weather_related_incidents(random_state, test_size)
+        model = classification_model_for_identifying_weather_related_incidents(
+            random_state, test_size)
     """
 
     train_set, test_set = get_task_1_train_test_data(random_state, test_size)
@@ -122,7 +125,7 @@ def classification_model_for_identifying_weather_related_incidents(random_state=
     return model
 
 
-# == Task 2: Classification of weather-related incidents into different categories ====================
+# == Task 2: Classification of weather-related incidents into different categories ===============
 
 def get_task_2_train_test_data():
     """
@@ -145,8 +148,9 @@ def get_task_2_train_test_data():
 
     schedule8_weather_incidents = get_schedule8_weather_incidents_02062006_31032014()
     schedule8_weather_incidents = schedule8_weather_incidents['Data']
-    schedule8_weather_incidents.rename(columns={'Year': 'FinancialYear', 'IncidentReason': 'IncidentReasonCode'},
-                                       inplace=True)
+    schedule8_weather_incidents.rename(
+        columns={'Year': 'FinancialYear', 'IncidentReason': 'IncidentReasonCode'},
+        inplace=True)
 
     dat = metex.view_schedule8_costs_by_datetime_location_reason()
     dat.WeatherCategory.fillna('', inplace=True)
@@ -163,7 +167,8 @@ def get_task_2_train_test_data():
                 'WeatherCategory']
 
     dat_train = schedule8_weather_incidents[['WeatherCategory'] + features]
-    dat_test = dat[(dat.FinancialYear == 2014) & (dat.WeatherCategory != '')][['WeatherCategory'] + features]
+    dat_test = dat[
+        (dat.FinancialYear == 2014) & (dat.WeatherCategory != '')][['WeatherCategory'] + features]
 
     data = pd.DataFrame(pd.concat([dat_train, dat_test], ignore_index=True))
 
@@ -184,7 +189,8 @@ def get_task_2_train_test_data():
     train_data, test_data = data[data.FinancialYear < 2014], data[data.FinancialYear == 2014]
     idx_train, idx_test = train_data.index, test_data.index
 
-    train_set = dict(zip(['word_counter', 'data_frame'], [word_counter[0:max(idx_train) + 1], train_data]))
+    train_set = dict(zip(
+        ['word_counter', 'data_frame'], [word_counter[0:max(idx_train) + 1], train_data]))
     test_set = dict(zip(['word_counter', 'data_frame'], [word_counter[min(idx_test):], test_data]))
 
     return train_set, test_set
