@@ -2,9 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from pyhelpers.dir import cdd
-from pyhelpers.store import load_json
-from pyhelpers.text import find_similar_str
+from pyhelpers import cdd, load_json, find_similar_str
 
 
 # == Change directories ===============================================================================
