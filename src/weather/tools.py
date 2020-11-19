@@ -1,4 +1,6 @@
-""" Tools for manipulating weather data. """
+"""
+Tools for manipulating weather data.
+"""
 
 import pandas as pd
 
@@ -18,8 +20,8 @@ def create_grid(centre_point, side_length=5000, rotation=None):
 
     .. note::
 
-        Easting and northing coordinates are commonly measured in metres from the axes of some horizontal datum.
-        However, other units (e.g. survey feet) are also used.
+        Easting and northing coordinates are commonly measured in metres from the axes of some
+        horizontal datum. However, other units (e.g. survey feet) are also used.
     """
 
     assert isinstance(centre_point, (tuple, list)) and len(centre_point) == 2
