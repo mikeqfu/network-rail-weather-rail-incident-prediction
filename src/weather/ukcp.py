@@ -21,7 +21,7 @@ from weather.tools import create_grid
 pd_preferences()
 
 
-# == Observation grids ================================================================================
+# == Observation grids ===========================================================================
 
 def parse_observation_grids(filename):
     """
@@ -34,7 +34,8 @@ def parse_observation_grids(filename):
 
     **Example**::
 
-        filename = "ukcp09_gridded-land-obs-daily_timeseries_maximum-temperature_000000E_450000N_19600101-20161231.csv"
+        filename = "ukcp09_gridded-land-obs-daily_timeseries_maximum-" \
+                   "temperature_000000E_450000N_19600101-20161231.csv"
 
         obs_grids = parse_observation_grids(filename)
     """
@@ -59,9 +60,11 @@ def get_observation_grids(zip_filename="daily-precipitation.zip", update=False, 
 
     :param zip_filename: filename of a zipped file for the data of observation grids
     :type zip_filename: str
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: MIDAS RADTOB observation grids
     :rtype: pandas.DataFrame
@@ -107,7 +110,7 @@ def get_observation_grids(zip_filename="daily-precipitation.zip", update=False, 
     return observation_grids
 
 
-# == UKCP09 data ======================================================================================
+# == UKCP09 data =================================================================================
 
 def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01'):
     """
@@ -115,9 +118,11 @@ def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01')
 
     :param filename: filename of raw data
     :type filename: str
-    :param var_name: variable name, e.g. 'Maximum_Temperature', 'Minimum_Temperature', 'Precipitation'
+    :param var_name: variable name,
+        e.g. 'Maximum_Temperature', 'Minimum_Temperature', 'Precipitation'
     :type var_name: str
-    :param start_date: start date on which the observation data was collected, formatted as 'yyyy-mm-dd'
+    :param start_date: start date on which the observation data was collected,
+        formatted as 'yyyy-mm-dd'
     :type start_date: str
     :return: parsed data of the daily gridded weather observations
     :rtype: pandas.DataFrame
@@ -128,7 +133,8 @@ def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01')
     cartesian_centres = [tuple(x) for x in cartesian_centres_temp.T.values]
 
     # Temperature observations
-    timeseries_data = pd.read_csv(filename, header=None, skiprows=[0, 1], parse_dates=[0], dayfirst=True)
+    timeseries_data = pd.read_csv(filename, header=None, skiprows=[0, 1], parse_dates=[0],
+                                  dayfirst=True)
     timeseries_data[0] = timeseries_data[0].map(lambda x: x.date())
     if start_date is not None and isinstance(pd.to_datetime(start_date), pd.Timestamp):
         mask = (timeseries_data[0] >= pd.to_datetime(start_date).date())
@@ -136,7 +142,8 @@ def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01')
     timeseries_data.set_index(0, inplace=True)
 
     # Reshape the dataframe
-    idx = pd.MultiIndex.from_product([cartesian_centres, timeseries_data.index.tolist()], names=['Centroid', 'Date'])
+    idx = pd.MultiIndex.from_product([cartesian_centres, timeseries_data.index.tolist()],
+                                     names=['Centroid', 'Date'])
     data = pd.DataFrame(timeseries_data.T.values.flatten(), index=idx, columns=[var_name])
     # data.reset_index(inplace=True)
 
@@ -151,7 +158,8 @@ def parse_daily_gridded_weather_obs(filename, var_name, start_date='2006-01-01')
     # data['Grid'] = list(itertools.chain.from_iterable(itertools.repeat(x, num) for x in grid))
 
     # long_lat = [osgb36_to_wgs84(x[0], x[1]) for x in cartesian_centres]
-    # data['Centroid_LongLat'] = list(itertools.chain.from_iterable(itertools.repeat(x, num) for x in long_lat))
+    # data['Centroid_LongLat'] = list(
+    #     itertools.chain.from_iterable(itertools.repeat(x, num) for x in long_lat))
 
     return data
 
@@ -174,20 +182,24 @@ def make_ukcp_pickle_path(filename, start_date):
     return path_to_pickle
 
 
-def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseudo_grid_id=False, update=False,
-                       verbose=False):
+def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseudo_grid_id=False,
+                       update=False, verbose=False):
     """
-    :param zip_filename: "daily-maximum-temperature", "daily-minimum-temperature", or "daily-precipitation"
+    :param zip_filename: "daily-maximum-temperature", "daily-minimum-temperature",
+        or "daily-precipitation"
     :type zip_filename: str
     :param var_name: variable name; 'Precipitation' or 'Maximum_Temperature', 'Minimum_Temperature'
     :type var_name: str
-    :param start_date: start date from which the observation data was collected, defaults to ``'2006-01-01'``
+    :param start_date: start date from which the observation data was collected,
+        defaults to ``'2006-01-01'``
     :type start_date: str
     :param use_pseudo_grid_id: defaults to ``False``
     :type use_pseudo_grid_id: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of daily gridded weather observations
     :rtype: pandas.DataFrame
@@ -203,7 +215,8 @@ def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseu
         update = False
         verbose = True
 
-        gridded_obs = get_ukcp09_var_obs(zip_filename, var_name, start_date, use_pseudo_grid_id, update, verbose)
+        gridded_obs = get_ukcp09_var_obs(zip_filename, var_name, start_date, use_pseudo_grid_id,
+                                         update, verbose)
     """
 
     assert isinstance(pd.to_datetime(start_date), pd.Timestamp) or start_date is None
@@ -220,7 +233,8 @@ def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseu
 
             with zipfile.ZipFile(path_to_zip, 'r') as zf:
                 filename_list = natsort.natsorted(zf.namelist())
-                obs_data = [parse_daily_gridded_weather_obs(zf.open(f), var_name, start_date) for f in filename_list]
+                obs_data = [parse_daily_gridded_weather_obs(zf.open(f), var_name, start_date)
+                            for f in filename_list]
             zf.close()
 
             gridded_obs = pd.concat(obs_data, axis=0)
@@ -229,8 +243,10 @@ def get_ukcp09_var_obs(zip_filename, var_name, start_date='2006-01-01', use_pseu
             if use_pseudo_grid_id:
                 observation_grids = get_observation_grids(update=update)
                 observation_grids = observation_grids.reset_index().set_index('Centroid')
-                gridded_obs = gridded_obs.reset_index(level='Date').join(observation_grids[['Pseudo_Grid_ID']])
-                gridded_obs = gridded_obs.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
+                gridded_obs = gridded_obs.reset_index(level='Date').join(
+                    observation_grids[['Pseudo_Grid_ID']])
+                gridded_obs = gridded_obs.reset_index().set_index(
+                    ['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
             save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
 
@@ -245,13 +261,16 @@ def get_ukcp09_data(start_date='2006-01-01', use_pseudo_grid_id=True, update=Fal
     """
     Fetch integrated weather observations of different variables from local pickle.
 
-    :param start_date: start date from which the observation data was collected, defaults to ``'2006-01-01'``
+    :param start_date: start date from which the observation data was collected,
+        defaults to ``'2006-01-01'``
     :type start_date: str
     :param use_pseudo_grid_id: defaults to ``False``
     :type use_pseudo_grid_id: bool
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: data of integrated daily gridded weather observations
     :rtype: pandas.DataFrame
@@ -278,25 +297,31 @@ def get_ukcp09_data(start_date='2006-01-01', use_pseudo_grid_id=True, update=Fal
 
     else:
         try:
-            d_max_temp = get_ukcp09_var_obs("daily-maximum-temperature", 'Maximum_Temperature', start_date,
-                                            use_pseudo_grid_id=False, update=update, verbose=verbose)
-            d_min_temp = get_ukcp09_var_obs("daily-minimum-temperature", 'Minimum_Temperature', start_date,
-                                            use_pseudo_grid_id=False, update=update, verbose=verbose)
+            d_max_temp = get_ukcp09_var_obs("daily-maximum-temperature", 'Maximum_Temperature',
+                                            start_date, use_pseudo_grid_id=False, update=update,
+                                            verbose=verbose)
+            d_min_temp = get_ukcp09_var_obs("daily-minimum-temperature", 'Minimum_Temperature',
+                                            start_date, use_pseudo_grid_id=False, update=update,
+                                            verbose=verbose)
             d_precipitation = get_ukcp09_var_obs("daily-precipitation", 'Precipitation', start_date,
-                                                 use_pseudo_grid_id=False, update=update, verbose=verbose)
+                                                 use_pseudo_grid_id=False, update=update,
+                                                 verbose=verbose)
 
             ukcp09_data = pd.concat([d_max_temp, d_min_temp, d_precipitation], axis=1)
 
             del d_max_temp, d_min_temp, d_precipitation
             gc.collect()
 
-            ukcp09_data['Temperature_Change'] = abs(ukcp09_data.Maximum_Temperature - ukcp09_data.Minimum_Temperature)
+            ukcp09_data['Temperature_Change'] = abs(
+                ukcp09_data.Maximum_Temperature - ukcp09_data.Minimum_Temperature)
 
             if use_pseudo_grid_id:
                 observation_grids = get_observation_grids(update=update)
                 observation_grids = observation_grids.reset_index().set_index('Centroid')
-                ukcp09_data = ukcp09_data.reset_index('Date').join(observation_grids[['Pseudo_Grid_ID']])
-                ukcp09_data = ukcp09_data.reset_index().set_index(['Pseudo_Grid_ID', 'Centroid', 'Date'])
+                ukcp09_data = ukcp09_data.reset_index('Date').join(
+                    observation_grids[['Pseudo_Grid_ID']])
+                ukcp09_data = ukcp09_data.reset_index().set_index(
+                    ['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
             path_to_pickle = make_ukcp_pickle_path(filename, start_date)
             save_pickle(ukcp09_data, path_to_pickle, verbose=verbose)
@@ -308,8 +333,8 @@ def get_ukcp09_data(start_date='2006-01-01', use_pseudo_grid_id=True, update=Fal
     return ukcp09_data
 
 
-def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_size=100000, update=False,
-                              verbose=False):
+def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_size=100000,
+                              update=False, verbose=False):
     """
     See also [`DUDTM <https://stackoverflow.com/questions/50689082>`_].
 
@@ -326,7 +351,8 @@ def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_si
 
     ukcp09_engine = create_mssql_connectable_engine(database_name='Weather')
 
-    ukcp09_data_ = pd.DataFrame(ukcp09_data.Centroid.to_list(), columns=['Centroid_X', 'Centroid_Y'])
+    ukcp09_data_ = pd.DataFrame(ukcp09_data.Centroid.to_list(),
+                                columns=['Centroid_X', 'Centroid_Y'])
     ukcp09_data = pd.concat([ukcp09_data.drop('Centroid', axis=1), ukcp09_data_], axis=1)
 
     print("Importing UKCP09 data to MSSQL Server", end=" ... ")
@@ -349,7 +375,8 @@ def dump_ukcp09_data_to_mssql(table_name='UKCP091', if_exists='append', chunk_si
     print("Done. ")
 
 
-def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pickle_it=False,
+                                  verbose=False):
     """
     Get UKCP09 data by observation grids (Query from the database) for the given ``period``.
 
@@ -357,13 +384,15 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
     :type grids: list
     :param period: prior-incident / non-incident period
     :type period:
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param dat_dir: directory where the queried data is saved, defaults to ``None``
     :type dat_dir: str, None
     :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: UKCP09 data by ``grids`` and ``period``
     :rtype: pandas.DataFrame
@@ -384,7 +413,8 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         pickle_it = True
         grids = incidents.Weather_Grid.iloc[1]
         period = incidents.Critical_Period.iloc[1]
-        ukcp09_dat = query_ukcp09_by_grid_datetime(grids, period, pickle_it=pickle_it, verbose=verbose)
+        ukcp09_dat = query_ukcp09_by_grid_datetime(grids, period, pickle_it=pickle_it,
+                                                   verbose=verbose)
     """
 
     period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
@@ -395,7 +425,8 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         "-".join([period.min().strftime('%Y%m%d'), period.max().strftime('%Y%m%d')]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
-    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) \
+        else cdd_weather("ukcp", "dat")
     path_to_pickle = cdd_weather(dat_dir, pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -407,8 +438,9 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
         # Specify database sql query
         grids_ = tuple(grids) if len(grids) > 1 else grids[0]
         period_ = tuple(x.strftime('%Y-%m-%d') for x in period)
-        sql_query = "SELECT * FROM dbo.[UKCP09] WHERE [Pseudo_Grid_ID] {} {} AND [Date] IN {};".format(
-            'IN' if len(grids) > 1 else '=', grids_, period_)
+        sql_query = "SELECT * FROM dbo.[UKCP09] " \
+                    "WHERE [Pseudo_Grid_ID] {} {} " \
+                    "AND [Date] IN {};".format('IN' if len(grids) > 1 else '=', grids_, period_)
         # Query the weather data
         ukcp09_dat = pd.read_sql(sql_query, conn_metex)
 
@@ -418,7 +450,8 @@ def query_ukcp09_by_grid_datetime(grids, period, update=False, dat_dir=None, pic
     return ukcp09_dat
 
 
-def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pickle_it=False, verbose=False):
+def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pickle_it=False,
+                                   verbose=False):
     """
     Get UKCP09 data by observation grids and date (Query from the database)
     from the beginning of the year to the start of the ``period``.
@@ -427,13 +460,15 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
     :type grids: list
     :param period: prior-incident / non-incident period
     :type period:
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
     :param dat_dir: directory where the queried data is saved, defaults to ``None``
     :type dat_dir: str, None
     :param pickle_it: whether to save the queried data as a pickle file, defaults to ``True``
     :type pickle_it: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: UKCP09 data by ``grids`` and ``period``
     :rtype: pandas.DataFrame
@@ -453,7 +488,8 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         pickle_it = True
         grids = incidents.Weather_Grid.iloc[1]
         period = incidents.Critical_Period.iloc[1]
-        ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=pickle_it, verbose=verbose)
+        ukcp09_dat = query_ukcp09_by_grid_datetime_(grids, period, pickle_it=pickle_it,
+                                                    verbose=verbose)
     """
 
     period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
@@ -466,7 +502,8 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         "-".join([y_start.replace("-", ""), p_start.replace("-", "")]))
 
     # Specify a directory/path to store the pickle file (if appropriate)
-    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) else cdd_weather("ukcp", "dat")
+    dat_dir = dat_dir if isinstance(dat_dir, str) and os.path.isabs(dat_dir) \
+        else cdd_weather("ukcp", "dat")
     path_to_pickle = cdd_weather(dat_dir, pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -479,8 +516,8 @@ def query_ukcp09_by_grid_datetime_(grids, period, update=False, dat_dir=None, pi
         grids_ = tuple(grids) if len(grids) > 1 else grids[0]
         sql_query = "SELECT * FROM dbo.[UKCP09] " \
                     "WHERE [Pseudo_Grid_ID] {} {} " \
-                    "AND [Date] >= '{}' AND [Date] <= '{}';".format('IN' if len(grids) > 1 else '=', grids_,
-                                                                    y_start, p_start)
+                    "AND [Date] >= '{}' AND [Date] <= '{}';".format('IN' if len(grids) > 1 else '=',
+                                                                    grids_, y_start, p_start)
         # Query the weather data
         ukcp09_dat = pd.read_sql(sql_query, conn_metex)
 
