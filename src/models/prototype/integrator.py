@@ -45,7 +45,8 @@ def specify_vegetation_stats_calculations(features):
                            'DateOfMeasure': lambda x: tuple(x),
                            # 'AssetDesc1': np.all,
                            # 'IncidentReported': np.any
-                           'HazardTreeNumber': lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
+                           'HazardTreeNumber':
+                               lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
 
     # variables for hazardous trees
     hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
@@ -80,18 +81,22 @@ def get_weather_variable_names(weather_stats_calculations, temperature_dif=False
     for k, v in weather_stats_calculations.items():
         if isinstance(v, tuple):
             for v_ in v:
-                weather_variable_names.append('_'.join(
-                    [k, v_.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
+                weather_variable_names.append(
+                    '_'.join([k, v_.__name__.replace(
+                        'mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
         else:
-            weather_variable_names.append('_'.join(
-                [k, v.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
+            weather_variable_names.append(
+                '_'.join([k, v.__name__.replace(
+                    'mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
     if temperature_dif:
-        weather_variable_names.insert(weather_variable_names.index('Temperature_min') + 1, 'Temperature_dif')
+        weather_variable_names.insert(
+            weather_variable_names.index('Temperature_min') + 1, 'Temperature_dif')
 
     if supplement:
         if isinstance(supplement, str):
             supplement = [supplement]
-        wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg'] + supplement
+        wind_variable_names_ = \
+            weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg'] + supplement
     else:
         wind_variable_names_ = weather_variable_names + ['WindSpeed_avg', 'WindDirection_avg']
 
@@ -139,8 +144,8 @@ def calculate_prototype_weather_statistics(weather_obs, weather_stats_calculatio
 
         Note: to get the n-th percentile, use percentile(n)
 
-        This function also returns the Weather dataframe indices. The corresponding Weather conditions in that Weather
-        cell might cause wind-related Incidents.
+        This function also returns the Weather dataframe indices.
+        The corresponding Weather conditions in that WeatherCell might cause wind-related Incidents.
     """
 
     if not weather_obs.empty:
@@ -151,4 +156,5 @@ def calculate_prototype_weather_statistics(weather_obs, weather_stats_calculatio
         stats_info = weather_stats.values[0].tolist()  # + [weather_obs.index.tolist()]
     else:
         stats_info = [np.nan] * 10  # + [[None]]
+
     return stats_info
