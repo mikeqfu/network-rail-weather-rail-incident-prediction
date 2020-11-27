@@ -17,6 +17,15 @@ def get_anglia_route_srs_id(whole=False):
     :param whole: whether to return a list of all SRS ID
     :type whole: bool
     :return: a list of SRS ID for the Anglia Route
+    :rtype: list
+
+    **Example**::
+
+        >>> from misc.network.anglia import get_anglia_route_srs_id
+
+        >>> anglia_srs_ = get_anglia_route_srs_id()
+        >>> print(anglia_srs_[-1])
+        ['F.01', 'F.02', 'F.99']
     """
 
     route_d_srs = ['D.01', 'D.02', 'D.03', 'D.04', 'D.05', 'D.06', 'D.07',
@@ -37,15 +46,22 @@ def get_nodes_of_srs(srs_id):
     """
     Get a list of nodes for a specific SRS.
 
-    :param srs_id: an ID of Strategic Route Section, e.g. 'D.01'
+    :param srs_id: an ID of Strategic Route Section, e.g. ``'D.01'``
     :type srs_id: str
     :return: a list of nodes for the given ``srs_id``
     :rtype: list
 
     **Example**::
 
-        srs_id = 'D.01'
-        nodes_of_srs(srs_id)
+        >>> from misc.network.anglia import get_nodes_of_srs
+
+        >>> srs_nodes_ = get_nodes_of_srs(srs_id='D.01')
+        >>> print(srs_nodes_[:5])
+        ['Bethnal Green East Junction',
+         'Bethnal Green',
+         'Bethnal Green North Junction',
+         'Cambridge Heath',
+         'London Fields']
     """
 
     # Read excel data into a data frame named srs_df
@@ -68,11 +84,23 @@ def get_nodes_of_srs_seq(srs_id_seq):
 
     **Examples**::
 
-        srs_id_seq = 'D.01'
-        get_nodes_of_srs_seq(srs_id_seq)
+        >>> from misc.network.anglia import get_nodes_of_srs_seq
 
-        srs_id_seq = ['D.01', 'D.02']
-        get_nodes_of_srs_seq(srs_id_seq)
+        >>> nodes_of_srs = get_nodes_of_srs_seq(srs_id_seq='D.01')
+        >>> print(nodes_of_srs[:5])
+        ['Bethnal Green East Junction',
+         'Bethnal Green',
+         'Bethnal Green North Junction',
+         'Cambridge Heath',
+         'London Fields']
+
+        >>> nodes_of_srs = get_nodes_of_srs_seq(srs_id_seq=['D.01', 'D.02'])
+        >>> print(nodes_of_srs[-5:])
+        ['Southbury',
+         'Turkey Street',
+         'Theobalds Grove',
+         'Bush Hill Park',
+         'Enfield Town']
     """
 
     # Get a list of nodes for all specified SRS's
@@ -87,10 +115,32 @@ def get_nodes_of_srs_seq(srs_id_seq):
 
 def get_nodes_of_route_plans(rp_id_seq):
     """
-    Get a list of all nodes for the given Route Plan.
+    Get a list of all nodes of a Route Plan.
 
-    :param rp_id_seq:
-    :return:
+    :param rp_id_seq: (a list of) Route Plan ID(s)
+    :type rp_id_seq: str or list
+    :return: a list of nodes for the Route Plan
+    :rtype: list
+
+    **Examples**::
+
+        >>> from misc.network.anglia import get_nodes_of_route_plans
+
+        >>> rp_nodes = get_nodes_of_route_plans(rp_id_seq='D')
+        >>> print(rp_nodes[-5:])
+        ['Sizewell',
+         'Middleton Towers',
+         'Griffin Wharf West Bank Terminal',
+         'Whitemoor Yard',
+         'Whitemoor Local Distribution Centre']
+
+        >>> rp_nodes = get_nodes_of_route_plans(rp_id_seq=['E', 'F'])
+        >>> print(rp_nodes[-5:])
+        ['Primrose Hill Junction',
+         'Camden Junction',
+         'Camden Road Central Junction',
+         'Camden Road Incline Junction',
+         'Copenhagen Junction']
     """
 
     def get_nodes(rp_srs_seq):
@@ -136,6 +186,20 @@ def get_nodes_on_anglia_route():
 
     :return: data of all nodes on the Anglia Rout
     :rtype: pandas.DataFrame
+
+    **Example**::
+
+        >>> from misc.network.anglia import get_nodes_on_anglia_route
+
+        >>> anglia_nodes_dat = get_nodes_on_anglia_route()
+        >>> print(anglia_nodes_dat.head())
+                                   Node  ...          Connecting Line
+        0   Bethnal Green East Junction  ...  Great Eastern Main Line
+        1                 Bethnal Green  ...
+        2  Bethnal Green North Junction  ...
+        3               Cambridge Heath  ...
+        4                 London Fields  ...
+        [5 rows x 6 columns]
     """
 
     anglia_srs = get_anglia_route_srs_id(whole=True)
@@ -162,8 +226,11 @@ def get_list_of_node_dicts(srs_id):
 
     **Example**::
 
-        srs_id = 'D.01'
-        get_list_of_node_dicts(srs_id)
+        >>> from misc.network.anglia import get_list_of_node_dicts
+
+        >>> srs_nodes_dict_ = get_list_of_node_dicts(srs_id='D.01')
+        >>> print(list(srs_nodes_dict_[0].keys()))
+        ['Node', 'Type', 'SRS', 'Connecting SRS', 'Line', 'Connecting Line']
     """
 
     # Read excel data into a data frame named srs_df
@@ -182,22 +249,35 @@ def get_list_of_node_dicts(srs_id):
     return srs_nodes_dict
 
 
-def construct_nodes_dict(lst_of_dicts, key='Node'):
+def construct_nodes_dict(list_of_dicts, key='Node'):
     """
     Construct a dict with each key being a node name and
     the corresponding value being a dict containing the node attr.
 
-    :param lst_of_dicts: a list of dictionaries
-    :type lst_of_dicts: list
+    :param list_of_dicts: a list of dictionaries
+    :type list_of_dicts: list
     :param key: dict key, defaults to ``'Node'``
     :type key: str
     :return: a dictionary for nodes
     :rtype: dict
+
+    **Example**::
+
+        >>> from misc.network.anglia import construct_nodes_dict
+
+        >>> list_of_dicts_ = get_list_of_node_dicts('D.01')
+        >>> new_dict_ = construct_nodes_dict(list_of_dicts_, key='Node')
+        >>> print(list(new_dict_.keys())[:5])
+        ['Bethnal Green East Junction',
+         'Bethnal Green',
+         'Bethnal Green North Junction',
+         'Cambridge Heath',
+         'London Fields']
     """
 
     # enumerate() returns a tuple containing a count (from start which defaults
     # to 0) and the values obtained from iterating over iterable.
-    new_dict = dict((d[key], OrderedDict(d)) for (i, d) in enumerate(lst_of_dicts))
+    new_dict = dict((d[key], OrderedDict(d)) for (i, d) in enumerate(list_of_dicts))
     # enumerate(list of dictionaries)
     # i: index of a dictionary in a list
     # d: dictionary itself
@@ -225,29 +305,45 @@ def get_nodes_dict(*srs_id):
 
     **Examples**::
 
-        nodes_dict1 = get_nodes_dict('D.01')
+        >>> from misc.network.anglia import get_nodes_dict
 
-        nodes_dict2 = get_nodes_dict('D.01', 'D.02')
+        >>> nodes_dict1 = get_nodes_dict('D.01')
+        >>> print(list(nodes_dict1.keys())[-5:])
+        ['Bishops Stortford',
+         'Stansted Mountfitchet',
+         'Stansted South Junction',
+         'Stansted East Junction',
+         'Stansted Airport']
+
+        >>> nodes_dict2 = get_nodes_dict('D.01', 'D.02')
+        >>> print(list(nodes_dict2.keys())[-5:])
+        ['Southbury',
+         'Turkey Street',
+         'Theobalds Grove',
+         'Bush Hill Park',
+         'Enfield Town']
     """
 
-    nodes_dict = {}
     if isinstance(srs_id, str) and len(srs_id) == 4:
         srs_id = srs_id
-        nodes_dict_ = construct_nodes_dict(get_list_of_node_dicts(srs_id))  # A dictionary
-        # noinspection PyTypeChecker
-        for (key, val) in nodes_dict_.items():
-            if pd.isnull(nodes_dict_[key]['Connecting SRS']):
-                del nodes_dict_[key]['Connecting SRS']
+
+        nodes_dict = construct_nodes_dict(get_list_of_node_dicts(srs_id))
+
+        for (key, val) in nodes_dict.items():
+            if pd.isnull(nodes_dict[key]['Connecting SRS']):
+                del nodes_dict[key]['Connecting SRS']
+
             else:
-                nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'],
-                                           nodes_dict_[key]['Connecting SRS']}
-                del nodes_dict_[key]['Connecting SRS']
-        return nodes_dict_
+                nodes_dict[key]['SRS'] = {nodes_dict[key]['SRS'],
+                                          nodes_dict[key]['Connecting SRS']}
+                del nodes_dict[key]['Connecting SRS']
+
     else:
+        nodes_dict = {}
+
         for srs_id in srs_id:
-            # A dictionary
             nodes_dict_ = construct_nodes_dict(get_list_of_node_dicts(srs_id))
-            # noinspection PyTypeChecker
+
             for (key, val) in nodes_dict_.items():
                 if pd.isnull(nodes_dict_[key]['Connecting SRS']):
                     del nodes_dict_[key]['Connecting SRS']
@@ -255,8 +351,10 @@ def get_nodes_dict(*srs_id):
                     nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'],
                                                nodes_dict_[key]['Connecting SRS']}
                     del nodes_dict_[key]['Connecting SRS']
+
             nodes_dict = merge_dicts(nodes_dict, nodes_dict_)
-        return nodes_dict
+
+    return nodes_dict
 
 
 def get_nodes_dict_for_route_plans(*rp_id):
@@ -270,9 +368,23 @@ def get_nodes_dict_for_route_plans(*rp_id):
 
     **Examples**::
 
-        rp_nodes_dict1 = get_nodes_dict_for_route_plans('D')
-        
-        rp_nodes_dict2 = get_nodes_dict_for_route_plans('D', 'E')
+        >>> from misc.network.anglia import get_nodes_dict_for_route_plans
+
+        >>> rp_nodes_dict1 = get_nodes_dict_for_route_plans('D')
+        >>> print(list(rp_nodes_dict1.keys())[-5:])
+        ['Sizewell',
+         'Middleton Towers',
+         'Griffin Wharf West Bank Terminal',
+         'Whitemoor Yard',
+         'Whitemoor Local Distribution Centre']
+
+        >>> rp_nodes_dict2 = get_nodes_dict_for_route_plans('D', 'E')
+        >>> print(list(rp_nodes_dict2.keys())[-5:])
+        ['Primrose Hill Junction',
+         'Camden Junction',
+         'Camden Road Central Junction',
+         'Camden Road Incline Junction',
+         'Copenhagen Junction']
     """
 
     assert all(x in 'DEF' for x in rp_id)
@@ -315,11 +427,17 @@ def get_edges_of_anglia_route(direct=False):
 
     **Examples**::
 
-        direct = False
-        edges_undirected = get_edges_of_anglia_route(direct)
+        >>> from misc.network.anglia import get_edges_of_anglia_route
 
-        direct = True
-        edges_direct = get_edges_of_anglia_route(direct)
+        >>> edges_undirected = get_edges_of_anglia_route()
+        >>> print(edges_undirected[:2])
+        [['Bethnal Green East Junction', 2],
+         ['Bethnal Green East Junction', 106]]
+
+        >>> edges_direct = get_edges_of_anglia_route(direct=True)
+        >>> print(edges_direct[:2])
+        [['Bethnal Green East Junction', 2],
+         ['Bethnal Green East Junction', 106]]
     """
 
     # Adjacency 'matrix' (DataFrame)
@@ -364,11 +482,23 @@ def get_edges_of_srs(*srs_id, direct=False):
     
     **Examples**::
 
-        direct = False
-        edges = get_edges_of_srs('D.01', direct=direct)
+        >>> from misc.network.anglia import get_edges_of_srs
 
-        direct = True
-        edges = get_edges_of_srs('D.01', 'D.02', direct=direct)
+        >>> edges_ = get_edges_of_srs('D.01')
+        >>> print(edges_[-5:])
+        [['Stansted South Junction', 33],
+         ['Stansted South Junction', 59],
+         ['Stansted East Junction', 32],
+         ['Stansted East Junction', 34],
+         ['Stansted Airport', 33]]
+
+        >>> edges_ = get_edges_of_srs('D.01', 'D.02', direct=True)
+        >>> print(edges_[-5:])
+        [['Theobalds Grove', 21],
+         ['Theobalds Grove', 46],
+         ['Bush Hill Park', 44],
+         ['Bush Hill Park', 49],
+         ['Enfield Town', 48]]
     """
 
     route_edges = get_edges_of_anglia_route(direct)
@@ -409,11 +539,23 @@ def get_edges_of_route_plan(*rp_id, direct=False):
 
     **Examples**::
 
-        direct = True
-        edges = get_edges_of_route_plan('D', direct=direct)
+        >>> from misc.network.anglia import get_edges_of_route_plan
 
-        direct = False
-        edges = get_edges_of_route_plan('E', 'F', direct=direct)
+        >>> edges_ = get_edges_of_route_plan('D')
+        >>> print(edges_[-5:])
+        [['Felixstowe Beach Junction', 234],
+         ['Felixstowe Beach Junction', 236],
+         ['Felixstowe', 235],
+         ['Middleton Towers', 78],
+         ['Whitemoor Local Distribution Centre', 240]]
+
+        >>> edges_ = get_edges_of_route_plan('E', 'F', direct=True)
+        >>> print(edges_[-5:])
+        [['Ockendon', 351],
+         ['Chafford Hundred', 340],
+         ['Chafford Hundred', 350],
+         ['Thames Haven', 348],
+         ['Tilbury International Rail Freight Terminal', 346]]
     """
 
     assert all(x in 'DEF' for x in rp_id)
