@@ -1,4 +1,6 @@
-""" Settings """
+"""
+Settings for the working environment.
+"""
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,11 +12,13 @@ def mpl_preferences(use_cambria=False, reset=False):
     Set preferences for plotting.
 
     :param use_cambria: whether to use Cambria font, defaults to ``False``
+    :type use_cambria: bool
     :param reset: whether to reset to default settings, defaults to ``False``
     :type reset: bool
 
     Get a list of supported file formats for matplotlib savefig() function
-        plt.gcf().canvas.get_supported_filetypes()  # Aside: "gcf" is short for "get current fig" manager
+        plt.gcf().canvas.get_supported_filetypes()
+        # Aside: "gcf" is short for "get current fig" manager
         plt.gcf().canvas.get_supported_filetypes_grouped()
     """
 
