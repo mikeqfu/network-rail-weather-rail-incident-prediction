@@ -1,10 +1,13 @@
-""" Network nodes and links """
+"""
+Network nodes and links.
+"""
 
 from collections import OrderedDict
 
 import pandas as pd
 
-from utils import cdd_network, merge_dicts, remove_list_duplicated_lists, remove_list_duplicates
+from utils import cdd_network, merge_dicts, remove_list_duplicated_lists, \
+    remove_list_duplicates
 
 
 def get_anglia_route_srs_id(whole=False):
@@ -21,10 +24,12 @@ def get_anglia_route_srs_id(whole=False):
                    'D.15', 'D.16', 'D.17', 'D.18', 'D.19', 'D.20', 'D.99']
     route_e_srs = ['E.01', 'E.02', 'E.03', 'E.04', 'E.05', 'E.91', 'E.99']
     route_f_srs = ['F.01', 'F.02', 'F.99']
+
     if whole:
         anglia_srs = route_d_srs + route_e_srs + route_f_srs
     else:
         anglia_srs = [route_d_srs, route_e_srs, route_f_srs]
+
     return anglia_srs
 
 
@@ -44,9 +49,11 @@ def get_nodes_of_srs(srs_id):
     """
 
     # Read excel data into a data frame named srs_df
-    srs_df = pd.read_excel(cdd_network('routes\\Anglia', 'Anglia.xlsx'), sheet_name=srs_id)
+    srs_df = pd.read_excel(cdd_network('routes\\Anglia', 'Anglia.xlsx'),
+                           sheet_name=srs_id)
     # Convert a 'Node' Series to a list named srs_nodes
     srs_nodes = [each_node for each_node in srs_df.Node]
+
     return srs_nodes
 
 
@@ -55,7 +62,7 @@ def get_nodes_of_srs_seq(srs_id_seq):
     Get a list of nodes for a set of SRS's.
 
     :param srs_id_seq: one or a sequence of SRS IDs
-    :type srs_id_seq: str, iterable
+    :type srs_id_seq: str or iterable
     :return: a list of nodes for the given ``srs_id_seq``
     :rtype: list
 
@@ -71,8 +78,10 @@ def get_nodes_of_srs_seq(srs_id_seq):
     # Get a list of nodes for all specified SRS's
     if isinstance(srs_id_seq, str):
         return get_nodes_of_srs(srs_id_seq)
+
     else:
-        srs_seq_nodes = [each_node for srs_id in srs_id_seq for each_node in get_nodes_of_srs(srs_id)]
+        srs_seq_nodes = [each_node for srs_id in srs_id_seq
+                         for each_node in get_nodes_of_srs(srs_id)]
         return remove_list_duplicates(srs_seq_nodes)
 
 
@@ -158,7 +167,8 @@ def get_list_of_node_dicts(srs_id):
     """
 
     # Read excel data into a data frame named srs_df
-    srs_df = pd.read_excel(cdd_network('routes\\Anglia', 'Anglia.xlsx'), sheet_name=srs_id)
+    srs_df = pd.read_excel(cdd_network('routes\\Anglia', 'Anglia.xlsx'),
+                           sheet_name=srs_id)
     # Get the names of all the columns
     attr_name = srs_df.columns.values.tolist()
     attr_name.insert(3, 'SRS')
@@ -174,7 +184,8 @@ def get_list_of_node_dicts(srs_id):
 
 def construct_nodes_dict(lst_of_dicts, key='Node'):
     """
-    Construct a dict with each key being a node name and the corresponding value being a dict containing the node attr.
+    Construct a dict with each key being a node name and
+    the corresponding value being a dict containing the node attr.
 
     :param lst_of_dicts: a list of dictionaries
     :type lst_of_dicts: list
@@ -190,14 +201,16 @@ def construct_nodes_dict(lst_of_dicts, key='Node'):
     # enumerate(list of dictionaries)
     # i: index of a dictionary in a list
     # d: dictionary itself
-    # For each pair of (i, d), make a tuple containing a 'key' being specified and a dictionary
+    # For each pair of (i, d), make a tuple containing a 'key' being specified and a dict
 
     # Or:
     # new_dict = OrderedDict((d[key], OrderedDict(d)) for (i, d) in enumerate(lst_of_dict))
 
     # noinspection PyTypeChecker
+
     for key, val in new_dict.items():
         del val['Node']
+
     return new_dict
 
 
@@ -226,18 +239,21 @@ def get_nodes_dict(*srs_id):
             if pd.isnull(nodes_dict_[key]['Connecting SRS']):
                 del nodes_dict_[key]['Connecting SRS']
             else:
-                nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'], nodes_dict_[key]['Connecting SRS']}
+                nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'],
+                                           nodes_dict_[key]['Connecting SRS']}
                 del nodes_dict_[key]['Connecting SRS']
         return nodes_dict_
     else:
         for srs_id in srs_id:
-            nodes_dict_ = construct_nodes_dict(get_list_of_node_dicts(srs_id))  # A dictionary
+            # A dictionary
+            nodes_dict_ = construct_nodes_dict(get_list_of_node_dicts(srs_id))
             # noinspection PyTypeChecker
             for (key, val) in nodes_dict_.items():
                 if pd.isnull(nodes_dict_[key]['Connecting SRS']):
                     del nodes_dict_[key]['Connecting SRS']
                 else:
-                    nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'], nodes_dict_[key]['Connecting SRS']}
+                    nodes_dict_[key]['SRS'] = {nodes_dict_[key]['SRS'],
+                                               nodes_dict_[key]['Connecting SRS']}
                     del nodes_dict_[key]['Connecting SRS']
             nodes_dict = merge_dicts(nodes_dict, nodes_dict_)
         return nodes_dict
@@ -280,7 +296,8 @@ def get_nodes_dict_for_route_plans(*rp_id):
             if pd.isnull(nodes_dict[key]['Connecting SRS']):
                 del nodes_dict[key]['Connecting SRS']
             else:
-                nodes_dict[key]['SRS'] = {nodes_dict[key]['SRS'], nodes_dict[key]['Connecting SRS']}
+                nodes_dict[key]['SRS'] = {nodes_dict[key]['SRS'],
+                                          nodes_dict[key]['Connecting SRS']}
                 del nodes_dict[key]['Connecting SRS']
         rp_nodes_dict = merge_dicts(rp_nodes_dict, nodes_dict)
     return rp_nodes_dict
@@ -290,7 +307,8 @@ def get_edges_of_anglia_route(direct=False):
     """
     Get all edges on the Network of the Anglia Route.
 
-    :param direct: to return all the edges for a directed graph if True, otherwise for an undirected graph
+    :param direct: to return all the edges for a directed graph if True,
+        otherwise for an undirected graph
     :type direct: bool
     :return: all the edges of the Anglia Route
     :rtype: list
@@ -305,7 +323,8 @@ def get_edges_of_anglia_route(direct=False):
     """
 
     # Adjacency 'matrix' (DataFrame)
-    adj_mat = pd.read_excel(cdd_network("routes\\Anglia", "Anglia.xlsx"), sheet_name='AdjacencyMatrix')
+    adj_mat = pd.read_excel(cdd_network("routes\\Anglia", "Anglia.xlsx"),
+                            sheet_name='AdjacencyMatrix')
     # row names of the adjacency 'matrix'
     # row = adj_mat.index.tolist()
     # column names in a list
@@ -336,9 +355,11 @@ def get_edges_of_srs(*srs_id, direct=False):
     Get all edges of the given SRS's on the Anglia Route.
 
     :param srs_id: a sequence of SRS ID's
-    :param direct: to return all the edges for a directed graph if True, otherwise for an undirected graph
+    :type srs_id: str
+    :param direct: to return all the edges for a directed graph if True,
+        otherwise for an undirected graph
     :type direct: bool
-    :return: all the edges for the given SRS's of an undirected or a directed Anglia Network
+    :return: all the edges for the given SRS's on an undirected or directed Anglia Network
     :rtype: list
     
     **Examples**::
@@ -379,9 +400,11 @@ def get_edges_of_route_plan(*rp_id, direct=False):
 
     :param rp_id: route plan id, e.g. 'D'
     :type rp_id: str
-    :param direct: to return all the edges for a directed graph if True, otherwise for an undirected graph
+    :param direct: to return all the edges for a directed graph if True,
+        otherwise for an undirected graph
     :type direct: bool
-    :return: all the edges for the given route plan of an undirected or a directed Anglia Network
+    :return: all the edges for the given route plan of
+        an undirected or directed Anglia Network
     :rtype: list
 
     **Examples**::
@@ -411,7 +434,7 @@ def get_edges_of_route_plan(*rp_id, direct=False):
     return edges
 
 
-# -----------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # import networkx as nx
 #
 # def create(srs_id_seq, direct=False):
