@@ -1,16 +1,12 @@
 """ Read and cleanse data of NR_Vegetation_* database. """
 
 import datetime
-import os
 import re
 
-import numpy as np
-import pandas as pd
-from pyhelpers import find_similar_str, confirmed, osgb36_to_wgs84, load_pickle, save, save_pickle
+from pyhelpers import confirmed, osgb36_to_wgs84, load_pickle, save_pickle
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
-from mssqlserver.tools import establish_mssql_connection, get_table_primary_keys
-from utils import cdd_vegetation, make_filename, update_nr_route_names
+from utils import *
 
 
 class Vegetation:
