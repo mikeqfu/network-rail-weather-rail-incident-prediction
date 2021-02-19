@@ -1,13 +1,19 @@
 """
-Copy data from MSSQL to PostgreSQL.
+Migrate data from Microsoft SQL Server onto PostgreSQL.
+
 """
 
 import getpass
+import os
+import urllib.parse
 
+import execnet.multi
 import sqlalchemy
 import sqlalchemy.engine.url
 import sqlalchemy_utils
-from mssqlserver.tools import read_table_by_name
+from pyhelpers.sql import PostgreSQL
+
+from utils import read_table_by_name
 
 
 def create_postgres_engine_url(database_name='postgres'):
@@ -94,7 +100,7 @@ def copy_mssql_to_postgresql(origin_db_name, destination_db_name, update=True, v
 
     **Examples**::
 
-        >>> from misc.mssql_to_pgsql import copy_mssql_to_postgresql
+        >>> from preprocessor.mssql2postgres import copy_mssql_to_postgresql
 
         >>> copy_mssql_to_postgresql(origin_db_name='NR_VEG', db_name='NR_VEG')
 
@@ -142,3 +148,118 @@ def copy_mssql_to_postgresql(origin_db_name, destination_db_name, update=True, v
         else:
             if verbose:
                 print("\"{}\" already exists in \"{}\".".format(table_name, destination_db_name))
+
+
+def py2_etlalchemy_migrate(source_db_name, destination_db_name, postgres_pwd, python2=None):
+    """
+
+    :param source_db_name:
+    :param destination_db_name:
+    :param postgres_pwd:
+    :param python2:
+    :return:
+
+    **Test**::
+
+        >>> from preprocessor.mssql2postgres import py2_etlalchemy_migrate
+
+        >>> source_database = 'NR_Vegetation_20141031'  # source_db_name
+        >>> destination_database = 'TestVeg'  # destination_db_name
+        >>> destination_pwd = 123  # postgres_pwd
+
+        >>> py2_etlalchemy_migrate(source_database, destination_database, destination_pwd)
+    """
+
+    if python2 is None:
+        python2 = "C:\\Python27\\python"
+
+    server_name = os.environ['COMPUTERNAME']
+    mssql_str = 'Trusted_Connection=yes;DRIVER={SQL Server};SERVER=%s;DATABASE=%s;' % (
+        server_name, source_db_name)
+    mssql_str = 'mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(mssql_str)
+
+    pgsql_str = 'postgresql+psycopg2://postgres:%s@localhost/%s' % (postgres_pwd, destination_db_name)
+
+    postgres = PostgreSQL(host='localhost', port=5432, username='postgres', password=postgres_pwd,
+                          database_name='postgres')
+
+    if not postgres.database_exists(destination_db_name):
+        postgres.create_database(database_name=destination_db_name)
+
+    gw = execnet.multi.makegateway("popen//python='%s'" % python2)
+    channel = gw.remote_exec(
+        """
+        import etlalchemy
+        
+        mssql_db = etlalchemy.ETLAlchemySource('%s')
+        
+        pgsql_db = etlalchemy.ETLAlchemyTarget('%s', drop_database=False)
+    
+        pgsql_db.addSource(mssql_db)
+        pgsql_db.py2_etlalchemy_migrate()
+
+        channel.send(None)
+        """ % (mssql_str, pgsql_str)
+    )
+
+    channel.send(None)
+
+    channel.receive()
+
+    channel.close()
+
+
+"""
+(In Python 2.)
+
+import os
+import urllib.parse
+
+import etlalchemy
+
+
+def migrate_db_mssql_to_postgresql(origin_db, destination_db):
+    '''
+    Migrate data from Microsoft SQL Server onto PostgreSQL.
+
+    :param origin_db: name of source database
+    :type origin_db: str
+    :param destination_db: name of database, to which the source database py2_etlalchemy_migrate
+    :type destination_db: str
+    '''
+
+    def windows_authentication():
+        return 'Trusted_Connection=yes;'
+
+    def db_driver():
+        return 'DRIVER={SQL Server};'
+
+    def db_server():
+        server_name = os.environ['COMPUTERNAME']
+        if 'EEE' in server_name:
+            server_name += '\\SQLEXPRESS'
+        return 'SERVER={};'.format(server_name)
+
+    # Database name
+    def database_name(db_name):
+        return 'DATABASE={};'.format(db_name)
+
+    mssql_str = windows_authentication() + db_driver() + db_server() + database_name(origin_db)
+    mssql_str = 'mssql+pyodbc:///?odbc_connect=%s' % urllib.parse.quote_plus(mssql_str)
+    mssql_db = etlalchemy.ETLAlchemySource(mssql_str)
+
+    pgsql_pwd = int(raw_input('Password to connect PostgreSQL: '))
+    pgsql_str = 'postgresql+psycopg2://postgres:{}@localhost/{}'.format(pgsql_pwd, destination_db)
+    pgsql_db = etlalchemy.ETLAlchemyTarget(pgsql_str, drop_database=True)
+
+    pgsql_db.addSource(mssql_db)
+    pgsql_db.py2_etlalchemy_migrate()
+
+
+if __name__ == '__main__':
+    source_db_name = raw_input('Origin database name: ')
+    destination_db_name = raw_input('Destination database name: ')
+
+    migrate_db_mssql_to_postgresql(source_db_name, destination_db_name)
+
+"""
