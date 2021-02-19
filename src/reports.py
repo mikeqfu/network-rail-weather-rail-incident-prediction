@@ -18,8 +18,8 @@ from pyrcs.other_assets import Stations
 from pyrcs.utils import fetch_loc_names_repl_dict
 
 from misc.dag import DelayAttributionGlossary
-from mssqlserver.metex import read_metex_table
 from utils import cdd_incidents, cdd_railway_codes, get_subset, make_filename
+from weather import METEX
 
 
 class Schedule8IncidentsSpreadsheet:
@@ -27,7 +27,7 @@ class Schedule8IncidentsSpreadsheet:
     def __init__(self):
         self.Name = 'Schedule 8 Incidents'
 
-        self.DataDir = os.path.relpath(cdd_incidents("spreadsheets"))
+        self.DataDir = os.path.relpath(cdd_incidents("reports"))
 
         self.DataFilename1 = "Schedule8WeatherIncidents"
         self.DataFilename2 = "Schedule8WeatherIncidents-02062006-31032014"
@@ -46,7 +46,7 @@ class Schedule8IncidentsSpreadsheet:
         **Test**::
 
             >>> import os
-            >>> from spreadsheet import Schedule8IncidentsSpreadsheet
+            >>> from reports import Schedule8IncidentsSpreadsheet
 
             >>> sis = Schedule8IncidentsSpreadsheet()
 
@@ -286,7 +286,9 @@ class Schedule8IncidentsSpreadsheet:
 
         else:
             try:
-                metex_location = read_metex_table('Location')
+                metex = METEX()
+
+                metex_location = metex.read_table('Location')
                 metex_location.rename(columns={'Id': 'LocationId'}, inplace=True)
                 metex_location.set_index('LocationId', inplace=True)
                 metex_location.WeatherCell = metex_location.WeatherCell.map(
@@ -335,7 +337,9 @@ class Schedule8IncidentsSpreadsheet:
 
         else:
             try:
-                metex_stanox_location = read_metex_table('StanoxLocation')
+                metex = METEX()
+
+                metex_stanox_location = metex.read_table('StanoxLocation')
 
                 # Cleanse "stanox_location"
                 errata = load_json(cdd_railway_codes("metex-errata.json"))
@@ -488,7 +492,9 @@ class Schedule8IncidentsSpreadsheet:
 
         else:
             try:
-                metex_stanox_section = read_metex_table('StanoxSection')
+                metex = METEX()
+
+                metex_stanox_section = metex.read_table('StanoxSection')
 
                 # In errata_tiploc, {'CLAPS47': 'CLPHS47'} might be problematic.
                 errata = load_json(cdd_railway_codes("metex-errata.json"))
@@ -838,7 +844,7 @@ class Schedule8IncidentsSpreadsheet:
             update_metadata = False
             data = s8weather_incidents.copy()
 
-            >>> from spreadsheet import Schedule8IncidentsSpreadsheet
+            >>> from reports import Schedule8IncidentsSpreadsheet
 
             >>> sis = Schedule8IncidentsSpreadsheet()
 
