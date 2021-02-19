@@ -25,7 +25,7 @@ class DelayAttributionGlossary:
         self.RelPath = os.path.relpath(self.DataDir, cdd_incidents())
         self.Filename = "delay-attribution-glossary.xlsx"
 
-    def cdd_dag(self, *sub_dir, mkdir=False):
+    def cdd(self, *sub_dir, mkdir=False):
         """
         Change directory to "\\data\\incidents\\delay attribution\\glossary\\current\\"
         and sub-directories (or files).
@@ -44,7 +44,7 @@ class DelayAttributionGlossary:
 
             >>> dag = DelayAttributionGlossary()
 
-            >>> path_to_dag = dag.cdd_dag()
+            >>> path_to_dag = dag.cdd()
 
             >>> print(os.path.relpath(path_to_dag))
             data\\incidents\\delay attribution\\glossary\\current
@@ -72,7 +72,7 @@ class DelayAttributionGlossary:
             True
         """
 
-        path_to_file = self.cdd_dag(self.Filename)
+        path_to_file = self.cdd(self.Filename)
 
         return path_to_file
 
@@ -119,8 +119,8 @@ class DelayAttributionGlossary:
             response = requests.get(url, headers={'User-Agent': user_agent})
             if response.ok:
                 filename = spreadsheet_filename.replace("Historic-", "").lower()
-                path_to_file = self.cdd_dag(filename)
-                file_dir = "\\" + os.path.relpath(self.cdd_dag())
+                path_to_file = self.cdd(filename)
+                file_dir = "\\" + os.path.relpath(self.cdd())
                 if os.path.isfile(path_to_file):
                     if confirmed("Replace the current version?",
                                  confirmation_required=confirmation_required):
@@ -170,7 +170,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "stanox-codes.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             stanox_codes = load_pickle(path_to_pickle)
@@ -235,7 +235,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "period-dates.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             period_dates = load_pickle(path_to_pickle)
@@ -288,8 +288,7 @@ class DelayAttributionGlossary:
 
         return period_dates
 
-    def read_incident_reason_metadata(self, update=False, hard_update=False,
-                                      verbose=False):
+    def read_incident_reason_metadata(self, update=False, hard_update=False, verbose=False):
         """
         Get incident reasons.
 
@@ -333,7 +332,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "incident-reason-metadata.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             incident_reason_metadata = load_pickle(path_to_pickle)
@@ -402,7 +401,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "responsible-manager.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             responsible_manager = load_pickle(path_to_pickle)
@@ -426,8 +425,7 @@ class DelayAttributionGlossary:
 
         return responsible_manager
 
-    def read_reactionary_reason_code(self, update=False, hard_update=False,
-                                     verbose=False):
+    def read_reactionary_reason_code(self, update=False, hard_update=False, verbose=False):
         """
         Get reactionary reason code.
 
@@ -470,7 +468,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "reactionary-reason-code.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             reactionary_reason_code = load_pickle(path_to_pickle)
@@ -535,7 +533,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "performance-event-code.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             performance_event_code = load_pickle(path_to_pickle)
@@ -604,7 +602,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "train-service-code.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             train_service_code = load_pickle(path_to_pickle)
@@ -667,7 +665,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "operator-name.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             operator_name = load_pickle(path_to_pickle)
@@ -729,7 +727,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "service-group-code.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             service_group_code = load_pickle(path_to_pickle)
@@ -807,7 +805,7 @@ class DelayAttributionGlossary:
         """
 
         pickle_filename = "delay-attribution-glossary.pickle"
-        path_to_pickle = self.cdd_dag(pickle_filename)
+        path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             delay_attr_glossary = load_pickle(path_to_pickle)
