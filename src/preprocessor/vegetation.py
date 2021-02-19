@@ -1,9 +1,10 @@
 """ Read and cleanse data of NR_Vegetation_* database. """
 
-import datetime
 import re
 
-from pyhelpers import confirmed, osgb36_to_wgs84, load_pickle, save_pickle
+from pyhelpers.geom import osgb36_to_wgs84
+from pyhelpers.ops import confirmed
+from pyhelpers.store import load_pickle, save_pickle
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
 from utils import *

@@ -18,8 +18,8 @@ from pyrcs.other_assets import Stations
 from pyrcs.utils import fetch_loc_names_repl_dict
 
 from misc.dag import DelayAttributionGlossary
+from preprocessor.weather import METEX
 from utils import cdd_incidents, cdd_railway_codes, get_subset, make_filename
-from weather import METEX
 
 
 class Schedule8IncidentsSpreadsheet:
@@ -46,7 +46,7 @@ class Schedule8IncidentsSpreadsheet:
         **Test**::
 
             >>> import os
-            >>> from reports import Schedule8IncidentsSpreadsheet
+            >>> from preprocessor.reports import Schedule8IncidentsSpreadsheet
 
             >>> sis = Schedule8IncidentsSpreadsheet()
 
@@ -844,7 +844,7 @@ class Schedule8IncidentsSpreadsheet:
             update_metadata = False
             data = s8weather_incidents.copy()
 
-            >>> from reports import Schedule8IncidentsSpreadsheet
+            >>> from preprocessor.reports import Schedule8IncidentsSpreadsheet
 
             >>> sis = Schedule8IncidentsSpreadsheet()
 
