@@ -1093,8 +1093,8 @@ class Schedule8IncidentsSpreadsheet:
                 path_to_xlsm = path_to_pickle.replace(".pickle", ".xlsm")
                 workbook = pd.ExcelFile(path_to_xlsm)
 
-                # 'Thresholds' -------------------------------------------------------------
-                thresholds = workbook.parse(sheet_name='Thresholds', usecols='A:F').dropna()
+                # 'WeatherThresholds' -------------------------------------------------------------
+                thresholds = workbook.parse(sheet_name='WeatherThresholds', usecols='A:F').dropna()
                 thresholds.columns = [col.replace(' ', '') for col in thresholds.columns]
                 thresholds.WeatherHazard = thresholds.WeatherHazard.str.strip().str.upper()
                 thresholds.index = range(len(thresholds))

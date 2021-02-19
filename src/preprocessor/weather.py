@@ -151,7 +151,7 @@ class METEX:
 
         **Test**::
 
-            >>> from weather import METEX
+            >>> from preprocessor.weather import METEX
 
             table_name       = 'IMDM'
             index_col        = None
@@ -3175,7 +3175,7 @@ class METEX:
                 print("\nUpdate finished.")
 
 
-class Thresholds:
+class WeatherThresholds:
     """
     Weather-Thresholds_9306121.html
 
@@ -3190,7 +3190,7 @@ class Thresholds:
     """
 
     def __init__(self):
-        self.Name = 'Thresholds'
+        self.Name = 'WeatherThresholds'
 
         self.SSDataDir = os.path.relpath(cdd_incidents("spreadsheets"))
         self.MTDataDir = os.path.relpath(cdd_metex("misc\\thresholds"))
@@ -3212,9 +3212,9 @@ class Thresholds:
 
         **Test**::
 
-            >>> from weather import Thresholds
+            >>> from preprocessor.weather import WeatherThresholds
 
-            >>> thr = Thresholds()
+            >>> thr = WeatherThresholds()
 
             >>> thresholds = thr.get_schedule8_weather_thresholds()
             >>> print(thresholds.head())
@@ -3247,7 +3247,7 @@ class Thresholds:
 
             try:
                 schedule8_weather_thresholds = pd.read_excel(
-                    path_to_spreadsheet, sheet_name="Thresholds", usecols="A:F")
+                    path_to_spreadsheet, sheet_name="WeatherThresholds", usecols="A:F")
                 schedule8_weather_thresholds.dropna(inplace=True)
                 schedule8_weather_thresholds.columns = [
                     col.replace(' ', '') for col in schedule8_weather_thresholds.columns]
@@ -3276,9 +3276,9 @@ class Thresholds:
 
         **Test**::
 
-            >>> from weather import Thresholds
+            >>> from preprocessor.weather import WeatherThresholds
 
-            >>> thr = Thresholds()
+            >>> thr = WeatherThresholds()
 
             >>> thresholds = thr.get_metex_weather_thresholds()
             >>> print(thresholds.head())
@@ -3406,9 +3406,9 @@ class Thresholds:
 
         **Test**::
 
-            >>> from weather import Thresholds
+            >>> from preprocessor.weather import WeatherThresholds
 
-            >>> thr = Thresholds()
+            >>> thr = WeatherThresholds()
 
             >>> thresholds = thr.get_weather_thresholds()
             >>> type(thresholds)
@@ -3471,7 +3471,7 @@ class MIDAS:
         **Test**::
 
             >>> import os
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3498,7 +3498,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3588,7 +3588,7 @@ class MIDAS:
         **Test**::
 
             >>> import zipfile
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3670,7 +3670,7 @@ class MIDAS:
         **Test**::
 
             >>> import os
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3697,7 +3697,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3731,7 +3731,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3792,7 +3792,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3841,7 +3841,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3915,7 +3915,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -3960,7 +3960,7 @@ class MIDAS:
 
         **Test**::
 
-            >>> from weather import MIDAS
+            >>> from preprocessor.weather import MIDAS
 
             >>> midas = MIDAS()
 
@@ -4030,7 +4030,7 @@ class UKCP09:
 
     **Test**::
 
-        >>> from weather import UKCP09
+        >>> from preprocessor.weather import UKCP09
 
         >>> ukcp = UKCP09()
 
