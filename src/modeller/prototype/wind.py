@@ -8,21 +8,21 @@ import time
 import datetime_truncate
 import matplotlib.pyplot as plt
 import statsmodels.discrete.discrete_model as sm_dcm
-from pyhelpers.dir import cdd
-from pyhelpers.ops import get_variable_names
-from pyhelpers.store import load_pickle, save_pickle, save_svg_as_emf
+from pyhelpers import cdd, load_pickle, save_pickle, save_svg_as_emf
+from settings import mpl_preferences, pd_preferences
 from sklearn import metrics
 from sklearn.utils import extmath
 
-from models.prototype.furlong import get_furlongs_data, get_incident_location_furlongs
-from models.prototype.integrator import *
-from models.tools import cd_prototype_fig_pub, cdd_prototype_wind, cdd_prototype_wind_trial, get_data_by_season_
-from mssqlserver import metex
-from settings import mpl_preferences, pd_preferences
-from utils import make_filename
+from integrator.furlong import get_furlongs_data, get_incident_location_furlongs
+from integrator.prototype import *
+from preprocessor.weather import METEX
+from tools import cd_prototype_fig_pub, cdd_prototype_wind, cdd_prototype_wind_trial
+from utils import make_filename, get_data_by_season_
 
 mpl_preferences(use_cambria=True, reset=False)
 pd_preferences(reset=False)
+
+metex = METEX()
 
 
 # == Data of weather conditions =======================================================================
@@ -43,10 +43,12 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
     :type ip_end_hrs: int, float
     :param nip_start_hrs:
     :type nip_start_hrs: int, float
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
-    :type verbose: bool, int
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
+    :type verbose: bool or int
     :return:
     :rtype: pandas.DataFrame
 
@@ -62,13 +64,13 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
         update           = True
         verbose          = True
 
-        incident_location_weather = get_incident_location_weather(route_name, weather_category,
-                                                                  ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                                  update, verbose)
+        incident_location_weather = get_incident_location_weather(
+            route_name, weather_category, ip_start_hrs, ip_end_hrs, nip_start_hrs, update, verbose)
 
     .. note::
 
-        When offset the date and time data, "datetime.timedelta()" can be an alternative to "pd.DateOffset()"
+        When offset the date and time data, "datetime.timedelta()"
+        can be an alternative to "pd.DateOffset()"
     """
 
     pickle_filename = make_filename("weather", route_name, weather_category,
@@ -82,22 +84,28 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
     else:
         try:
             # Getting Weather data for all incident locations
-            incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
+            incidents = metex.view_schedule8_costs_by_datetime_location_reason(
+                route_name, weather_category)
             # Drop non-weather-related incident records
-            incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
+            if weather_category is None:
+                incidents = incidents[incidents.WeatherCategory != '']
             # Get data for the specified "Incident Periods"
             incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
             incidents['Critical_StartDateTime'] = \
-                incidents.StartDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
+                incidents.StartDateTime.apply(datetime_truncate.truncate_hour) + \
+                datetime.timedelta(hours=ip_start_hrs)
             incidents['Critical_EndDateTime'] = \
-                incidents.EndDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_end_hrs)
-            incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
+                incidents.EndDateTime.apply(datetime_truncate.truncate_hour) + \
+                datetime.timedelta(hours=ip_end_hrs)
+            incidents['Critical_Period'] = \
+                incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
 
             weather_stats_calculations = specify_weather_stats_calculations()
 
             def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end):
                 """
-                Processing Weather data for IP - Get data of Weather conditions which led to Incidents for each record.
+                Processing Weather data for IP - Get data of Weather conditions which led to Incidents
+                for each record.
 
                 :param weather_cell_id: [int] Weather Cell ID
                 :param ip_start: [Timestamp] start of "incident period"
@@ -121,11 +129,13 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 
             # Get data for the specified IP
             ip_statistics = incidents.apply(
-                lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
+                lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime,
+                                                   x.Critical_EndDateTime),
                 axis=1)
             ip_statistics = pd.DataFrame(ip_statistics.to_list(), index=ip_statistics.index,
                                          columns=get_weather_variable_names(weather_stats_calculations))
-            ip_statistics['Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
+            ip_statistics[
+                'Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             #
             ip_data = incidents.join(ip_statistics.dropna(), how='inner')
@@ -133,8 +143,9 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
 
             # Processing Weather data for non-IP
             nip_data = incidents.copy(deep=True)
-            nip_data.Critical_EndDateTime = nip_data.Critical_StartDateTime  # + datetime.timedelta(hours=0)
-            nip_data.Critical_StartDateTime = nip_data.Critical_StartDateTime + datetime.timedelta(hours=nip_start_hrs)
+            nip_data.Critical_EndDateTime = nip_data.Critical_StartDateTime  # + .timedelta(hours=0)
+            nip_data.Critical_StartDateTime = nip_data.Critical_StartDateTime + datetime.timedelta(
+                hours=nip_start_hrs)
             nip_data.Critical_Period = nip_data.Critical_EndDateTime - nip_data.Critical_StartDateTime
 
             # Get data of Weather which did not cause Incidents for each record
@@ -152,8 +163,10 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 # Get all incident period data on the same section
                 overlaps = ip_data[
                     (ip_data.StanoxSection == stanox_section) &
-                    (((ip_data.Critical_StartDateTime <= nip_start) & (ip_data.Critical_EndDateTime >= nip_start)) |
-                     ((ip_data.Critical_StartDateTime <= nip_end) & (ip_data.Critical_EndDateTime >= nip_end)))]
+                    (((ip_data.Critical_StartDateTime <= nip_start) & (
+                                ip_data.Critical_EndDateTime >= nip_start)) |
+                     ((ip_data.Critical_StartDateTime <= nip_end) & (
+                                 ip_data.Critical_EndDateTime >= nip_end)))]
                 # Skip data of Weather causing Incidents at around the same time but
                 if not overlaps.empty:
                     non_ip_weather_obs = non_ip_weather_obs[
@@ -165,12 +178,15 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Wind',
                 return non_ip_weather_stats
 
             # Get stats data for the specified "Non-Incident Periods"
+
             nip_stats = nip_data.apply(
                 lambda x: get_weather_stats_for_non_ip(
-                    x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
+                    x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection),
+                axis=1)
             nip_statistics = pd.DataFrame(nip_stats.tolist(), index=nip_stats.index,
                                           columns=get_weather_variable_names(weather_stats_calculations))
-            nip_statistics['Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
+            nip_statistics[
+                'Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             #
             nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
@@ -204,10 +220,12 @@ def get_incident_location_vegetation(route_name='Anglia',
         given that StartELR != EndELR, defaults to ``220``
     :param hazard_pctl:
     :type hazard_pctl: defaults to ``50``
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data, 
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
-    :type verbose: bool, int
+    :param verbose: whether to print relevant information in console as the function runs, 
+        defaults to ``False``
+    :type verbose: bool or int
     :return:
 
     **Example**::
@@ -223,8 +241,8 @@ def get_incident_location_vegetation(route_name='Anglia',
 
     .. note::
 
-        Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended when furlong_data was read.
-        Check the function ``get_furlong_data()``.
+        Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended
+        when furlong_data was read. Check the function ``get_furlong_data()``.
     """
 
     pickle_filename = make_filename("vegetation", route_name, None,
@@ -246,7 +264,8 @@ def get_incident_location_vegetation(route_name='Anglia',
             """
 
             # Get incident_location_furlongs
-            furlongs_data = get_furlongs_data(route_name, None, shift_yards_same_elr, shift_yards_diff_elr)
+            furlongs_data = get_furlongs_data(route_name, None, shift_yards_same_elr,
+                                              shift_yards_diff_elr)
 
             # Get all column names as features
             features = furlongs_data.columns
@@ -262,7 +281,8 @@ def get_incident_location_vegetation(route_name='Anglia',
                 route_name, None, shift_yards_same_elr, shift_yards_diff_elr).dropna()
 
             # Define a function that computes Vegetation stats for each incident record
-            def calculate_vegetation_variables_stats(furlong_ids, start_elr, end_elr, total_yards_adjusted):
+            def calculate_vegetation_variables_stats(furlong_ids, start_elr, end_elr,
+                                                     total_yards_adjusted):
                 """
                 Testing parameters:
                 e.g.
@@ -277,7 +297,8 @@ def get_incident_location_vegetation(route_name='Anglia',
                 vegetation_data = furlongs_data.loc[furlong_ids]
 
                 veg_stats = vegetation_data.groupby('ELR').aggregate(veg_stats_calc)
-                veg_stats[cover_percents] = veg_stats[cover_percents].div(veg_stats.AssetNumber, axis=0).values
+                veg_stats[cover_percents] = veg_stats[cover_percents].div(veg_stats.AssetNumber,
+                                                                          axis=0).values
 
                 if start_elr == end_elr:
                     if np.isnan(veg_stats.HazardTreeNumber[start_elr]):
@@ -286,7 +307,8 @@ def get_incident_location_vegetation(route_name='Anglia',
                     else:
                         assert 0 <= hazard_pctl <= 100
                         veg_stats[hazard_rest] = veg_stats[hazard_rest].applymap(
-                            lambda x: np.nanpercentile(tuple(itertools.chain(*pd.Series(x).dropna())), hazard_pctl))
+                            lambda x: np.nanpercentile(tuple(itertools.chain(*pd.Series(x).dropna())),
+                                                       hazard_pctl))
                 else:
                     if np.all(np.isnan(veg_stats.HazardTreeNumber.values)):
                         veg_stats[fill_0] = 0.0
@@ -306,7 +328,8 @@ def get_incident_location_vegetation(route_name='Anglia',
                     veg_stats_calc_further.update(calc_further)
 
                     # Rename index (by which the dataframe can be grouped)
-                    veg_stats.index = pd.Index(data=['-'.join(set(veg_stats.index))] * len(veg_stats.index), name='ELR')
+                    veg_stats.index = pd.Index(
+                        data=['-'.join(set(veg_stats.index))] * len(veg_stats.index), name='ELR')
                     veg_stats = veg_stats.groupby(veg_stats.index).aggregate(veg_stats_calc_further)
 
                     if len(total_yards_adjusted) == 3 and \
@@ -317,8 +340,10 @@ def get_incident_location_vegetation(route_name='Anglia',
                         lambda x: np.dot(x, total_yards_adjusted) / np.nansum(total_yards_adjusted))
 
                 # Calculate tree densities (number of trees per furlong)
-                veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(np.nansum(total_yards_adjusted) / 220.0)
-                veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(np.nansum(total_yards_adjusted) / 220.0)
+                veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(
+                    np.nansum(total_yards_adjusted) / 220.0)
+                veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(
+                    np.nansum(total_yards_adjusted) / 220.0)
 
                 # Rearrange the order of features
                 veg_stats = veg_stats[sorted(veg_stats.columns)]
@@ -330,9 +355,11 @@ def get_incident_location_vegetation(route_name='Anglia',
                 lambda x: pd.Series(calculate_vegetation_variables_stats(
                     x.Critical_FurlongIDs, x.StartELR, x.EndELR, x.Section_Length_Adj)), axis=1)
 
-            vegetation_statistics.columns = sorted(list(veg_stats_calc.keys()) + ['TreeDensity', 'HazardTreeDensity'])
+            vegetation_statistics.columns = sorted(
+                list(veg_stats_calc.keys()) + ['TreeDensity', 'HazardTreeDensity'])
             veg_percent = [x for x in cover_percents if re.match('^CoverPercent*.[^Open|thr]', x)]
-            vegetation_statistics['CoverPercentVegetation'] = vegetation_statistics[veg_percent].apply(np.sum, axis=1)
+            vegetation_statistics['CoverPercentVegetation'] = vegetation_statistics[veg_percent].apply(
+                np.sum, axis=1)
 
             hazard_rest_pctl = [''.join([x, '_%s' % hazard_pctl]) for x in hazard_rest]
             rename_features = dict(zip(hazard_rest, hazard_rest_pctl))
@@ -353,7 +380,8 @@ def get_incident_location_vegetation(route_name='Anglia',
 
 def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_category='Wind',
                                                    ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
-                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
+                                                   shift_yards_same_elr=220, shift_yards_diff_elr=220,
+                                                   hazard_pctl=50,
                                                    update=False, verbose=False):
     """
     Integrate the Weather and Vegetation conditions for incident locations.
@@ -403,22 +431,29 @@ def integrate_incident_with_weather_and_vegetation(route_name='Anglia', weather_
         try:
             # Get information of Schedule 8 incident and the relevant weather conditions
             incident_location_weather = get_incident_location_weather(route_name, weather_category,
-                                                                      ip_start_hrs, ip_end_hrs, nip_start_hrs)
+                                                                      ip_start_hrs, ip_end_hrs,
+                                                                      nip_start_hrs)
             # Get information of vegetation conditions for the incident locations
             incident_location_vegetation = get_incident_location_vegetation(route_name,
-                                                                            shift_yards_same_elr, shift_yards_diff_elr,
+                                                                            shift_yards_same_elr,
+                                                                            shift_yards_diff_elr,
                                                                             hazard_pctl)
-            # incident_location_vegetation.drop(['IncidentCount', 'DelayCost', 'DelayMinutes'], axis=1, inplace=True)
+            # incident_location_vegetation.drop(['IncidentCount', 'DelayCost', 'DelayMinutes'],
+            #                                   axis=1, inplace=True)
 
-            common_feats = list(set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
-            integrated_weather_vegetation = pd.merge(incident_location_weather, incident_location_vegetation,
+            common_feats = list(
+                set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
+            integrated_weather_vegetation = pd.merge(incident_location_weather,
+                                                     incident_location_vegetation,
                                                      how='inner', on=common_feats)
 
             # Electrified
-            integrated_weather_vegetation.Electrified = integrated_weather_vegetation.Electrified.astype(int)
+            integrated_weather_vegetation.Electrified = integrated_weather_vegetation.Electrified.astype(
+                int)
 
             # Categorise average wind directions into 4 quadrants
-            wind_direction = pd.cut(integrated_weather_vegetation.WindDirection_avg.values, [0, 90, 180, 270, 360],
+            wind_direction = pd.cut(integrated_weather_vegetation.WindDirection_avg.values,
+                                    [0, 90, 180, 270, 360],
                                     right=False)
             integrated_data = integrated_weather_vegetation.join(
                 pd.DataFrame(wind_direction, columns=['WindDirection_avg_quadrant'])).join(
@@ -521,7 +556,8 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     ax1.yaxis.set_label_coords(-0.1, 1.02)
 
     ax2 = fig.add_subplot(162)
-    mdata.WindDirection_avg_quadrant.value_counts().sort_index().plot.bar(color='#4c76e1', rot=0, fontsize=12)
+    mdata.WindDirection_avg_quadrant.value_counts().sort_index().plot.bar(color='#4c76e1', rot=0,
+                                                                          fontsize=12)
     plt.xlabel('Avg. Wind Direction', fontsize=13)
     plt.ylabel('No.', fontsize=12, rotation=0)
     ax2.set_xticklabels([1, 2, 3, 4])
@@ -574,7 +610,8 @@ def describe_explanatory_variables(mdata, save_as=".tif", dpi=None):
     mdata[cover_percent_cols].plot.box(color=colour_veg, ax=ax, widths=0.5, fontsize=12)
     # plt.boxplot([train_set[c] for c in cover_percent_cols])
     # plt.tick_params(axis='x', labelbottom='off')
-    ax.set_xticklabels([re.search('(?<=CoverPercent).*', c).group() for c in cover_percent_cols], rotation=45)
+    ax.set_xticklabels([re.search('(?<=CoverPercent).*', c).group() for c in cover_percent_cols],
+                       rotation=45)
     plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
     ax.yaxis.set_label_coords(0, 1.02)
 
@@ -602,17 +639,17 @@ def logistic_regression_model(trial_id,
     """
     Train/test a prototype model in the context of wind-related Incidents.
 
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    -------------- | ------------------ | ---------------------------------------------------------------
     IncidentReason | IncidentReasonName | IncidentReasonDescription
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    -------------- | ------------------ | ---------------------------------------------------------------
     IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
-    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, Takeback Pumps, ...
-    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind given Group Standards
+    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, ...
+    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind ...
     Q1             |   TKB PUMPS        | Takeback Pumps
     X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
-    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure the responsibility of NR
-    XX             |   MISC OBS         | Msc items on line (incl trees) due to effects of Weather responsibility of RT
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure, resp. of NR
+    XX             |   MISC OBS         | Msc items on line (incl. trees) due to weather, resp. of RT
+    -------------- | ------------------ | ---------------------------------------------------------------
 
     **Example**::
 
@@ -642,8 +679,10 @@ def logistic_regression_model(trial_id,
 
     # Get the mdata for modelling
     integrated_data = integrate_incident_with_weather_and_vegetation(route_name, weather_category,
-                                                                     ip_start_hrs, ip_end_hrs, nip_start_hrs,
-                                                                     shift_yards_same_elr, shift_yards_diff_elr,
+                                                                     ip_start_hrs, ip_end_hrs,
+                                                                     nip_start_hrs,
+                                                                     shift_yards_same_elr,
+                                                                     shift_yards_diff_elr,
                                                                      hazard_pctl, update, verbose)
 
     # Select season data: 'Spring', 'Summer', 'Autumn', 'Winter'
@@ -663,8 +702,9 @@ def logistic_regression_model(trial_id,
     integrated_data['CoverPercentDiff'] = \
         integrated_data.CoverPercentVegetation - integrated_data.CoverPercentOpenSpace - \
         integrated_data.CoverPercentOther
-    integrated_data.CoverPercentDiff = integrated_data.CoverPercentDiff * integrated_data.CoverPercentDiff.map(
-        lambda x: 1 if x >= 0 else 0)
+    integrated_data.CoverPercentDiff = \
+        integrated_data.CoverPercentDiff * integrated_data.CoverPercentDiff.map(
+            lambda x: 1 if x >= 0 else 0)
 
     # Scale down 'WindGust_max' and 'RelativeHumidity_max'
     integrated_data.WindGust_max = integrated_data.WindGust_max / 10.0
@@ -685,7 +725,8 @@ def logistic_regression_model(trial_id,
         explanatory_variables = ['const'] + explanatory_variables
 
     # Set the outcomes of non-incident records to 0
-    integrated_data.loc[integrated_data.IncidentReported == 0, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
+    integrated_data.loc[
+        integrated_data.IncidentReported == 0, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
 
     if describe_var:
         describe_explanatory_variables(integrated_data, save_as=save_as, dpi=dpi)
@@ -722,16 +763,17 @@ def logistic_regression_model(trial_id,
         threshold = np.min(thr[ind])
 
         # prediction accuracy
-        test_set['incident_prediction'] = test_set.incident_prob.apply(lambda x: 1 if x >= threshold else 0)
+        test_set['incident_prediction'] = test_set.incident_prob.apply(
+            lambda x: 1 if x >= threshold else 0)
         test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
-        mod_accuracy = np.divide(test.sum(), len(test))
+        mod_accuracy = np.divide(sum(test), len(test))
         if verbose:
             print("\nAccuracy: %f" % mod_accuracy)
 
         # incident prediction accuracy
         incid_only = test_set[test_set.IncidentReported == 1]
         test_acc = pd.Series(incid_only.IncidentReported == incid_only.incident_prediction)
-        incid_accuracy = np.divide(test_acc.sum(), len(test_acc))
+        incid_accuracy = np.divide(sum(test_acc), len(test_acc))
         if verbose:
             print("Incident accuracy: %f" % incid_accuracy)
 
@@ -755,7 +797,8 @@ def logistic_regression_model(trial_id,
                 path_to_file_roc = cd_prototype_fig_pub("Prediction", "ROC" + save_as)  # Fig. 6.
                 plt.savefig(path_to_file_roc, dpi=dpi)
                 if save_as == ".svg":
-                    save_svg_as_emf(path_to_file_roc, path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
+                    save_svg_as_emf(path_to_file_roc,
+                                    path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
 
         # Plot incident delay minutes against predicted probabilities
         if plot_pred_likelihood:
@@ -763,24 +806,28 @@ def logistic_regression_model(trial_id,
             plt.figure()
             ax = plt.subplot2grid((1, 1), (0, 0))
             ax.scatter(test_set[incid_ind].incident_prob, test_set[incid_ind].DelayMinutes,
-                       c='#db0101', edgecolors='k', marker='o', linewidths=2, s=80, alpha=.3, label="Incidents")
+                       c='#db0101', edgecolors='k', marker='o', linewidths=2, s=80, alpha=.3,
+                       label="Incidents")
             plt.axvline(x=threshold, label="Threshold = %.2f" % threshold, color='b')
             legend = plt.legend(scatterpoints=1, loc='best', fontsize=14, fancybox=True)
             frame = legend.get_frame()
             frame.set_edgecolor('k')
             plt.xlim(xmin=0, xmax=1.03)
             plt.ylim(ymin=-15)
-            ax.set_xlabel("Predicted probability of incident occurrence (for 2014/15)", fontsize=14, fontweight='bold')
+            ax.set_xlabel("Predicted probability of incident occurrence (for 2014/15)", fontsize=14,
+                          fontweight='bold')
             ax.set_ylabel("Delay minutes", fontsize=14, fontweight='bold')
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)
             plt.tight_layout()
             if save_as:
-                plt.savefig(cdd_prototype_wind_trial(trial_id, "Predicted-likelihood" + save_as), dpi=dpi)
+                plt.savefig(cdd_prototype_wind_trial(trial_id, "Predicted-likelihood" + save_as),
+                            dpi=dpi)
                 path_to_file_pred = cd_prototype_fig_pub("Prediction", "Likelihood" + save_as)
                 plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
                 if save_as == ".svg":
-                    save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
+                    save_svg_as_emf(path_to_file_pred,
+                                    path_to_file_pred.replace(save_as, ".emf"))  # Fig. 7.
 
         # ===================================================================================
         # if dig_deeper:
@@ -815,7 +862,8 @@ def logistic_regression_model(trial_id,
         #         plt.figure()
         #         for col in lst:
         #             plt_data = grouped.loc[grouped.index.get_level_values(1) == col]
-        #             plt.plot(plt_data.index.get_level_values(0), plt_data.incident_prob, color=colors[lst.index(col)])
+        #             plt.plot(plt_data.index.get_level_values(0), plt_data.incident_prob,
+        #                      color=colors[lst.index(col)])
         #
         #         plt.xlabel(var1)
         #         plt.ylabel("P(wind-related incident)")
@@ -833,8 +881,8 @@ def logistic_regression_model(trial_id,
         mod_accuracy, incid_accuracy, threshold = np.nan, np.nan, np.nan
 
     repo = locals()
-    var_names = get_variable_names(integrated_data, train_set, test_set,
-                                   result_summary, mod_accuracy, incid_accuracy, threshold)
+    var_names = ['integrated_data', 'train_set', 'test_set',
+                 'result_summary', 'mod_accuracy', 'incid_accuracy', 'threshold']
     resources = {k: repo[k] for k in list(var_names)}
     result_pickle = make_filename("result", route_name, weather_category,
                                   ip_start_hrs, ip_end_hrs, nip_start_hrs,
@@ -884,7 +932,8 @@ def evaluate_prototype_model():
     for h in expt:
         counter += 1
         print("Processing setting %d ... (%d in total)" % (counter, total_no))
-        ip_start_hrs, ip_end_hrs, nip_start_hrs, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl = h
+        (ip_start_hrs, ip_end_hrs, nip_start_hrs,
+         shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl) = h
         # Try:
         mdata, train_set, test_set, result, mod_acc, incid_acc, threshold = logistic_regression_model(
             trial_id=counter,
@@ -929,9 +978,11 @@ def evaluate_prototype_model():
     columns = ['IP_StartHrs', 'IP_EndHrs', 'NIP_StartHrs',
                'YardShift_same_ELR', 'YardShift_diff_ELR', 'hazard_pctl', 'Obs_No',
                'AIC', 'BIC', 'Threshold', 'PredAcc', 'PredAcc_Incid', 'Extra_Info']
-    data = [list(x) for x in expt.T] + [nobs, mod_aic, mod_bic, thresholds, mod_accuracy, incid_accuracy, msg]
+    data = [list(x) for x in expt.T] + [nobs, mod_aic, mod_bic, thresholds, mod_accuracy, incid_accuracy,
+                                        msg]
     trial_summary = pd.DataFrame(dict(zip(columns, data)), columns=columns)
-    trial_summary.sort_values(['PredAcc_Incid', 'PredAcc', 'AIC', 'BIC'], ascending=[False, False, True, True],
+    trial_summary.sort_values(['PredAcc_Incid', 'PredAcc', 'AIC', 'BIC'],
+                              ascending=[False, False, True, True],
                               inplace=True)
 
     save_pickle(results, cdd_prototype_wind("trial_results.pickle"))
@@ -980,7 +1031,8 @@ def view_trial_results(trial_id, route='Anglia', weather='Wind',
 
     else:
         try:
-            results = logistic_regression_model(trial_id, route, weather, ip_start_hrs, ip_end_hrs, nip_start_hrs,
+            results = logistic_regression_model(trial_id, route, weather, ip_start_hrs, ip_end_hrs,
+                                                nip_start_hrs,
                                                 shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl)
             return results
         except Exception as e:

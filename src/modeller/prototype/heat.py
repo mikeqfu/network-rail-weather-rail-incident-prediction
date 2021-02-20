@@ -8,18 +8,21 @@ import matplotlib.pyplot as plt
 import shapely.geometry
 import statsmodels.discrete.discrete_model as sm
 from pyhelpers.store import load_pickle, save_fig, save_pickle
+from settings import mpl_preferences, pd_preferences
 from sklearn import metrics
 
-from models.prototype.integrator import *
-from models.prototype.wind import get_incident_location_vegetation
-from models.tools import categorise_track_orientations, cdd_prototype_heat, cdd_prototype_heat_trial, get_data_by_season
-from mssqlserver import metex
-from settings import mpl_preferences, pd_preferences
+from integrator.prototype import *
+from modeller.prototype.wind import get_incident_location_vegetation
+from preprocessor.weather import METEX
+from tools import categorise_track_orientations, cdd_prototype_heat, cdd_prototype_heat_trial, \
+    get_data_by_season
 from utils import make_filename
 
 mpl_preferences(reset=False)
 pd_preferences(reset=False)
 plt.rc('font', family='Times New Roman')
+
+metex = METEX()
 
 
 # == Data of weather conditions =======================================================================
@@ -40,9 +43,11 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
     :type nip_ip_gap: int, float
     :param nip_start_hrs:
     :type nip_start_hrs: int, float
-    :param update: whether to check on update and proceed to update the package data, defaults to ``False``
+    :param update: whether to check on update and proceed to update the package data,
+        defaults to ``False``
     :type update: bool
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return:
     :rtype: pandas.DataFrame
@@ -59,12 +64,12 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
         update           = True
         verbose          = True
 
-        incident_location_weather = get_incident_location_weather(route_name, weather_category,
-                                                                  ip_start_hrs, nip_ip_gap, nip_start_hrs,
-                                                                  update, verbose)
+        incident_location_weather = get_incident_location_weather(
+            route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs, update, verbose)
     """
 
-    pickle_filename = make_filename("weather", route_name, weather_category, ip_start_hrs, nip_ip_gap, nip_start_hrs)
+    pickle_filename = make_filename("weather", route_name, weather_category, ip_start_hrs, nip_ip_gap,
+                                    nip_start_hrs)
     path_to_pickle = cdd_prototype_heat(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
@@ -73,35 +78,48 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
     else:
         try:
             # Getting incident data for all incident locations
-            incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name, weather_category)
+            incidents = metex.view_schedule8_costs_by_datetime_location_reason(route_name,
+                                                                               weather_category)
             # Drop non-Weather-related incident records
-            incidents = incidents[incidents.WeatherCategory != ''] if weather_category is None else incidents
+            incidents = incidents[
+                incidents.WeatherCategory != ''] if weather_category is None else incidents
             # Get data for the specified "Incident Periods"
             incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
             incidents['Critical_StartDateTime'] = \
-                incidents.StartDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(hours=ip_start_hrs)
+                incidents.StartDateTime.apply(datetime_truncate.truncate_hour) + datetime.timedelta(
+                    hours=ip_start_hrs)
             incidents['Critical_EndDateTime'] = incidents.StartDateTime
-            incidents['Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
+            incidents[
+                'Critical_Period'] = incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
 
             if incidents.WeatherCell.dtype != 'int64':
                 # Rectify the records for which Weather cell id is empty
                 weather_cell = metex.get_weather_cell()
-                ll = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
-                ul = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ul_Longitude, weather_cell.ul_Latitude)]
-                ur = [shapely.geometry.Point(xy) for xy in zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
-                lr = [shapely.geometry.Point(xy) for xy in zip(weather_cell.lr_Longitude, weather_cell.lr_Latitude)]
+                ll = [shapely.geometry.Point(xy) for xy in
+                      zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
+                ul = [shapely.geometry.Point(xy) for xy in
+                      zip(weather_cell.ul_Longitude, weather_cell.ul_Latitude)]
+                ur = [shapely.geometry.Point(xy) for xy in
+                      zip(weather_cell.ur_Longitude, weather_cell.ur_Latitude)]
+                lr = [shapely.geometry.Point(xy) for xy in
+                      zip(weather_cell.lr_Longitude, weather_cell.lr_Latitude)]
                 poly_list = [[ll[i], ul[i], ur[i], lr[i]] for i in range(len(weather_cell))]
-                cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in range(len(weather_cell))]
+                cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in
+                         range(len(weather_cell))]
 
                 for i in incidents[incidents.WeatherCell == ''].index:
-                    pt = shapely.geometry.Point(incidents.StartLongitude.loc[i], incidents.StartLatitude.loc[i])
+                    pt = shapely.geometry.Point(incidents.StartLongitude.loc[i],
+                                                incidents.StartLatitude.loc[i])
                     id_set = set(
-                        weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
+                        weather_cell.iloc[
+                            [i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
                     if len(id_set) == 0:
-                        pt_alt = shapely.geometry.Point(incidents.EndLongitude.loc[i], incidents.EndLatitude.loc[i])
+                        pt_alt = shapely.geometry.Point(incidents.EndLongitude.loc[i],
+                                                        incidents.EndLatitude.loc[i])
                         id_set = set(
                             weather_cell.iloc[
-                                [i for i, p in enumerate(cells) if pt_alt.within(p)]].WeatherCellId.tolist())
+                                [i for i, p in enumerate(cells) if
+                                 pt_alt.within(p)]].WeatherCellId.tolist())
                     if len(id_set) != 0:
                         incidents.loc[i, 'WeatherCell'] = list(id_set)[0]
 
@@ -109,7 +127,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
 
             def get_weather_stats_for_ip(weather_cell_id, ip_start, ip_end):
                 """
-                Processing Weather data for IP - Get Weather conditions which led to Incidents for each record.
+                Processing Weather data for IP - Get Weather conditions which led to Incidents
+                for each record.
 
                 :param weather_cell_id: [int] Weather Cell ID
                 :param ip_start: [Timestamp] start of "incident period"
@@ -124,27 +143,34 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 """
 
                 # Get Weather data about where and when the incident occurred
-                ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, ip_start, ip_end, pickle_it=False)
+                ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, ip_start, ip_end,
+                                                                    pickle_it=False)
                 # Get the max/min/avg Weather parameters for those incident periods
-                weather_stats_data = calculate_prototype_weather_statistics(ip_weather_obs, weather_stats_calculations)
+                weather_stats_data = calculate_prototype_weather_statistics(ip_weather_obs,
+                                                                            weather_stats_calculations)
                 return weather_stats_data
 
             # Get data for the specified IP
             ip_stats = incidents.apply(
-                lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
+                lambda x: get_weather_stats_for_ip(x.WeatherCell, x.Critical_StartDateTime,
+                                                   x.Critical_EndDateTime),
                 axis=1)
 
             ip_statistics = pd.DataFrame(ip_stats.to_list(), index=ip_stats.index,
                                          columns=get_weather_variable_names(weather_stats_calculations))
-            ip_statistics['Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
+            ip_statistics[
+                'Temperature_dif'] = ip_statistics.Temperature_max - ip_statistics.Temperature_min
 
             ip_data = incidents.join(ip_statistics.dropna(), how='inner')
             ip_data['IncidentReported'] = 1
 
-            # Processing Weather data for non-IP - Get data of Weather which did not cause Incidents for each record
+            # Processing Weather data for non-IP -
+            # Get data of Weather which did not cause Incidents for each record
             nip_data = incidents.copy(deep=True)
-            nip_data.Critical_EndDateTime = nip_data.Critical_StartDateTime + datetime.timedelta(days=nip_ip_gap)
-            nip_data.Critical_StartDateTime = nip_data.Critical_EndDateTime + datetime.timedelta(hours=nip_start_hrs)
+            nip_data.Critical_EndDateTime = nip_data.Critical_StartDateTime + datetime.timedelta(
+                days=nip_ip_gap)
+            nip_data.Critical_StartDateTime = nip_data.Critical_EndDateTime + datetime.timedelta(
+                hours=nip_start_hrs)
             nip_data.Critical_Period = nip_data.Critical_EndDateTime - nip_data.Critical_StartDateTime
 
             def get_weather_stats_for_non_ip(weather_cell_id, nip_start, nip_end, stanox_section):
@@ -157,13 +183,16 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
                 """
 
                 # Get non-IP Weather data about where and when the incident occurred
-                non_ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, nip_start, nip_end,
+                non_ip_weather_obs = metex.query_weather_by_id_datetime(weather_cell_id, nip_start,
+                                                                        nip_end,
                                                                         pickle_it=False)
                 # Get all incident period data on the same section
                 overlaps = ip_data[
                     (ip_data.StanoxSection == stanox_section) &
-                    (((ip_data.Critical_StartDateTime <= nip_start) & (ip_data.Critical_EndDateTime >= nip_start)) |
-                     ((ip_data.Critical_StartDateTime <= nip_end) & (ip_data.Critical_EndDateTime >= nip_end)))]
+                    (((ip_data.Critical_StartDateTime <= nip_start) & (
+                                ip_data.Critical_EndDateTime >= nip_start)) |
+                     ((ip_data.Critical_StartDateTime <= nip_end) & (
+                                 ip_data.Critical_EndDateTime >= nip_end)))]
                 # Skip data of Weather causing Incidents at around the same time; but
                 if not overlaps.empty:
                     non_ip_weather_obs = non_ip_weather_obs[
@@ -177,20 +206,24 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
             # Get stats data for the specified "Non-Incident Periods"
             nip_stats = nip_data.apply(
                 lambda x: get_weather_stats_for_non_ip(
-                    x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection), axis=1)
+                    x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime, x.StanoxSection),
+                axis=1)
 
             nip_statistics = pd.DataFrame(nip_stats.tolist(), index=nip_stats.index,
                                           columns=get_weather_variable_names(weather_stats_calculations))
-            nip_statistics['Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
+            nip_statistics[
+                'Temperature_dif'] = nip_statistics.Temperature_max - nip_statistics.Temperature_min
 
             nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
             nip_data['IncidentReported'] = 0
 
             # Merge "ip_data" and "nip_data" into one DataFrame
-            incident_location_weather = pd.concat([nip_data, ip_data], axis=0, ignore_index=True, sort=False)
+            incident_location_weather = pd.concat([nip_data, ip_data], axis=0, ignore_index=True,
+                                                  sort=False)
 
             # Categorise average wind directions into 4 quadrants
-            wind_direction = pd.cut(incident_location_weather.WindDirection_avg.values, [0, 90, 180, 270, 360],
+            wind_direction = pd.cut(incident_location_weather.WindDirection_avg.values,
+                                    [0, 90, 180, 270, 360],
                                     right=False)
             incident_location_weather = incident_location_weather.join(
                 pd.DataFrame(wind_direction, columns=['WindDirection_avg_quadrant'])).join(
@@ -202,7 +235,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
 
             # Categorise temperature: < 24, = 24, 25, 26, 27, 28, 29, >= 30
             labels = ['Temperature_max < 24°C'] + \
-                     ['Temperature_max {} {}°C'.format('≥' if x >= 30 else '=', x) for x in range(24, 31)]
+                     ['Temperature_max {} {}°C'.format('≥' if x >= 30 else '=', x) for x in
+                      range(24, 31)]
             temperature_category = pd.cut(incident_location_weather.Temperature_max.values,
                                           bins=[-np.inf] + list(range(24, 31)) + [np.inf],
                                           right=False, labels=labels)
@@ -218,7 +252,8 @@ def get_incident_location_weather(route_name='Anglia', weather_category='Heat',
             print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
 
-def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=True, update=False, verbose=False,
+def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=True, update=False,
+                               verbose=False,
                                save_as=".tif", dpi=None):
     """
     **Example**::
@@ -248,21 +283,24 @@ def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=
     for i in range(0, gap):
         data = incident_location_weather[i]
         nip_temperature_max = data[data.IncidentReported == 0][selected_cols]
-        temp_diffs = pd.merge(ip_temperature_max, nip_temperature_max, on=time_and_iloc, suffixes=('_ip', '_nip'))
+        temp_diffs = pd.merge(ip_temperature_max, nip_temperature_max, on=time_and_iloc,
+                              suffixes=('_ip', '_nip'))
         temp_diff = temp_diffs.Temperature_max_ip - temp_diffs.Temperature_max_nip
         diff_means.append(temp_diff.abs().mean())
         diff_std.append(temp_diff.abs().std())
 
     plt.figure(figsize=(10, 5))
     if add_err_bar:
-        container = plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std, capsize=4,
+        container = plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std,
+                            capsize=4,
                             width=0.7, color='#9FAFBE')
         connector, cap_lines, (vertical_lines,) = container.errorbar.lines
         vertical_lines.set_color('#666666')
         for cap in cap_lines:
             cap.set_color('#da8067')
     else:
-        plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7, color='#9FAFBE')
+        plt.bar(np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7,
+                color='#9FAFBE')
         plt.grid(False)
     plt.xticks(np.arange(1, len(diff_means) + 1), fontsize=14)
     plt.xlabel('Latent period (Number of days)', fontsize=14)
@@ -278,7 +316,8 @@ def plot_temperature_deviation(route_name='Anglia', nip_ip_gap=-14, add_err_bar=
 
 def get_incident_locations_weather_and_vegetation(route_name='Anglia', weather_category='Heat',
                                                   ip_start_hrs=-24, nip_ip_gap=-5, nip_start_hrs=-24,
-                                                  shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
+                                                  shift_yards_same_elr=220, shift_yards_diff_elr=220,
+                                                  hazard_pctl=50,
                                                   update=False, verbose=False):
     """
     Integrate the Weather and Vegetation conditions for incident locations.
@@ -322,7 +361,8 @@ def get_incident_locations_weather_and_vegetation(route_name='Anglia', weather_c
                 route_name, shift_yards_same_elr, shift_yards_diff_elr, hazard_pctl, verbose=verbose)
 
             # Merge the above two data sets
-            common_features = list(set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
+            common_features = list(
+                set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
             integrated_data = pd.merge(incident_location_weather, incident_location_vegetation,
                                        how='inner', on=common_features)
 
@@ -478,7 +518,8 @@ def describe_explanatory_variables(train_set, save_as=".tif", dpi=None, verbose=
     ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
     temperature_category = train_set.Temperature_Category.value_counts() / 10
     temperature_category.plot.bar(color='#537979', rot=-45, fontsize=12)
-    plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'], fontsize=12)
+    plt.xticks(range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'],
+               fontsize=12)
     plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
     plt.ylabel('($\\times$10)', fontsize=12, rotation=0)
     ax2.yaxis.set_label_coords(0.0, 1.01)
@@ -541,17 +582,17 @@ def logistic_regression_model(trial_id,
     """
     Train/test a prototype model in the context of heat-related incidents.
 
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    -------------- | ------------------ | ---------------------------------------------------------------
     IncidentReason | IncidentReasonName | IncidentReasonDescription
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    -------------- | ------------------ | ---------------------------------------------------------------
     IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
-    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, Takeback Pumps, ...
-    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind given Group Standards
+    IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, ...
+    OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind ...
     Q1             |   TKB PUMPS        | Takeback Pumps
     X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
-    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure the responsibility of NR
-    XX             |   MISC OBS         | Msc items on line (incl trees) due to effects of Weather responsibility of RT
-    -------------- | ------------------ | ------------------------------------------------------------------------------
+    XW             |   WEATHER          | Severe Weather not snow affecting infrastructure, resp. of NR
+    XX             |   MISC OBS         | Msc items on line (incl. trees) due to weather, resp. of RT
+    -------------- | ------------------ | ---------------------------------------------------------------
 
     **Example**::
 
@@ -580,8 +621,10 @@ def logistic_regression_model(trial_id,
 
     # Get the m_data for Model
     integrated_data = get_incident_locations_weather_and_vegetation(route_name, weather_category,
-                                                                    ip_start_hrs, nip_ip_gap, nip_start_hrs,
-                                                                    shift_yards_same_elr, shift_yards_diff_elr,
+                                                                    ip_start_hrs, nip_ip_gap,
+                                                                    nip_start_hrs,
+                                                                    shift_yards_same_elr,
+                                                                    shift_yards_diff_elr,
                                                                     hazard_pctl, update, verbose)
 
     # Select season data: 'spring', 'summer', 'autumn', 'winter'
@@ -601,7 +644,8 @@ def logistic_regression_model(trial_id,
         explanatory_variables = ['const'] + explanatory_variables
 
     # Set the outcomes of non-incident records to 0
-    integrated_data.loc[integrated_data.IncidentReported == 0, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
+    integrated_data.loc[
+        integrated_data.IncidentReported == 0, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
 
     # Select data before 2014 as training data set, with the rest being test set
     train_set = integrated_data[integrated_data.FinancialYear < 2014]
@@ -635,15 +679,16 @@ def logistic_regression_model(trial_id,
         threshold = np.min(thr[ind])
 
         # prediction accuracy
-        test_set['incident_prediction'] = test_set.incident_prob.apply(lambda x: 1 if x >= threshold else 0)
+        test_set['incident_prediction'] = test_set.incident_prob.apply(
+            lambda x: 1 if x >= threshold else 0)
         test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
-        mod_accuracy = np.divide(test.sum(), len(test))
+        mod_accuracy = np.divide(sum(test), len(test))
         print("\nAccuracy: %f" % mod_accuracy) if verbose else print("")
 
         # incident prediction accuracy
         incident_only = test_set[test_set.IncidentReported == 1]
         test_acc = pd.Series(incident_only.IncidentReported == incident_only.incident_prediction)
-        incident_accuracy = np.divide(test_acc.sum(), len(test_acc))
+        incident_accuracy = np.divide(sum(test_acc), len(test_acc))
         print("Incident accuracy: %f" % incident_accuracy) if verbose else print("")
 
         if plot_roc:
@@ -678,7 +723,8 @@ def logistic_regression_model(trial_id,
             frame.set_edgecolor('k')
             plt.xlim(xmin=0, xmax=1.03)
             plt.ylim(ymin=-15)
-            ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14, fontweight='bold')
+            ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14,
+                          fontweight='bold')
             ax.set_ylabel("Delay minutes", fontsize=14, fontweight='bold')
             plt.xticks(fontsize=13)
             plt.yticks(fontsize=13)

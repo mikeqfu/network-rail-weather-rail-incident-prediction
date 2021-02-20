@@ -6,13 +6,12 @@
 """
 
 import statsmodels.discrete.discrete_model as sm_dcm
-from pyhelpers.store import save_fig, save_svg_as_emf
-from sklearn import metrics
-
 from models.intermediate.heat1 import get_incident_location_weather
 from models.intermediate.integrator import *
 from models.tools import cdd_intermediate_heat_trial
+from pyhelpers.store import save_fig, save_svg_as_emf
 from settings import mpl_preferences, pd_preferences
+from sklearn import metrics
 
 pd_preferences()
 mpl_preferences(reset=False)
