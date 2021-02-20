@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
 import pandas as pd
+from models.prototype.hotspots_vis import get_shp_coordinates
+from mssqlserver import metex
 from pyhelpers import cdd, find_closest_points, get_midpoint, pd_preferences, save, \
     wgs84_to_osgb36
 
-from models.prototype.hotspots_vis import get_shp_coordinates
-from mssqlserver import metex
 from utils import cdd_incidents
 
 pd_preferences()
