@@ -13,8 +13,11 @@ import shapely.geometry
 import shapely.ops
 from pyhelpers.geom import wgs84_to_osgb36
 
-from mssqlserver import metex
-from weather import midas, ukcp
+from preprocessor.weather import METEX, MIDAS, UKCP09
+
+metex = METEX()
+midas = MIDAS()
+ukcp = UKCP09()
 
 
 def find_weather_cell_id(longitude, latitude):
@@ -37,11 +40,13 @@ def find_weather_cell_id(longitude, latitude):
 
     poly_list = [[ll[i], ul[i], ur[i], lr[i]] for i in range(len(weather_cell))]
 
-    cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in range(len(weather_cell))]
+    cells = [shapely.geometry.Polygon([(p.x, p.y) for p in poly_list[i]]) for i in
+             range(len(weather_cell))]
 
     pt = shapely.geometry.Point(longitude, latitude)
 
-    id_set = set(weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
+    id_set = set(
+        weather_cell.iloc[[i for i, p in enumerate(cells) if pt.within(p)]].WeatherCellId.tolist())
     if len(id_set) == 1:
         weather_cell_id = list(id_set)[0]
     else:
@@ -56,7 +61,8 @@ def create_start_end_shapely_points(incidents_data, verbose=False):
 
     :param incidents_data: data of incident records
     :type incidents_data: pandas.DataFrame
-    :param verbose: whether to print relevant information in console as the function runs, defaults to ``False``
+    :param verbose: whether to print relevant information in console as the function runs,
+        defaults to ``False``
     :type verbose: bool, int
     :return: incident data with shapely.geometry.Points of start and end locations
     """
@@ -70,7 +76,8 @@ def create_start_end_shapely_points(incidents_data, verbose=False):
                 gpd.points_from_xy(data.EndLongitude, data.EndLatitude))
     data.insert(data.columns.get_loc('EndLonLat') + 1, 'MidLonLat',
                 data[['StartLonLat', 'EndLonLat']].apply(
-                    lambda x: shapely.geometry.LineString([x.StartLonLat, x.EndLonLat]).centroid, axis=1))
+                    lambda x: shapely.geometry.LineString([x.StartLonLat, x.EndLonLat]).centroid,
+                    axis=1))
     # Add Easting and Northing points  # Start
     start_xy = [wgs84_to_osgb36(data.StartLongitude[i], data.StartLatitude[i]) for i in data.index]
     data = pd.concat([data, pd.DataFrame(start_xy, columns=['StartEasting', 'StartNorthing'])], axis=1)
@@ -101,7 +108,8 @@ def create_circle_buffer_upon_weather_cell(midpoint, start_loc, end_loc, whisker
     :type start_loc: shapely.geometry.Point
     :param end_loc: end location of an incident
     :type end_loc: shapely.geometry.Point
-    :param whisker_km: extended length to diameter (i.e. on both sides of start/end locations), defaults to ``0.008``
+    :param whisker_km: extended length to diameter (i.e. on both sides of start/end locations),
+        defaults to ``0.008``
     :type whisker_km: int, float
     :param as_geom: whether to return the buffer circle as shapely.geometry.Polygon, defaults to ``True``
     :type as_geom: bool
@@ -126,7 +134,8 @@ def create_circle_buffer_upon_weather_cell(midpoint, start_loc, end_loc, whisker
     # Azimuthal equidistant projection
     aeqd_proj = '+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0'
     project = functools.partial(
-        pyproj.transform, pyproj.Proj(aeqd_proj.format(lon=midpoint.x, lat=midpoint.y)), pyproj.Proj(init='epsg:4326'))
+        pyproj.transform, pyproj.Proj(aeqd_proj.format(lon=midpoint.x, lat=midpoint.y)),
+        pyproj.Proj(init='epsg:4326'))
 
     if start_loc != end_loc:
         radius_km = geopy.distance.distance(start_loc.coords, end_loc.coords).km / 2 + whisker_km
@@ -173,7 +182,8 @@ def find_intersecting_weather_cells(x, as_geom=False):
         return intxn_weather_cell_ids
 
 
-def illustrate_buffer_circle_on_weather_cell(midpoint, start_loc, end_loc, whisker_km=0.008, legend_pos='best'):
+def illustrate_buffer_circle_on_weather_cell(midpoint, start_loc, end_loc, whisker_km=0.008,
+                                             legend_pos='best'):
     """
     Illustration of the buffer circle.
 
@@ -196,7 +206,8 @@ def illustrate_buffer_circle_on_weather_cell(midpoint, start_loc, end_loc, whisk
     for g in i_weather_cells:
         x, y = g.exterior.xy
         ax.plot(x, y, color='#433f3f')
-        polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#D5EAFF', ec='#4b4747', alpha=0.5)
+        polygons = matplotlib.patches.Polygon(g.exterior.coords[:], fc='#D5EAFF', ec='#4b4747',
+                                              alpha=0.5)
         plt.gca().add_patch(polygons)
     ax.plot([], 's', label="Weather cell", ms=16, color='#D5EAFF', markeredgecolor='#4b4747')
 
@@ -426,12 +437,12 @@ def integrate_pip_ukcp09_data(grids, period):
     """
 
     # Find Weather data for the specified period
-    prior_ip_weather = ukcp.query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
+    prior_ip_weather = ukcp.query_by_grid_datetime(grids, period, pickle_it=True)
     # Calculate the max/min/avg for Weather parameters during the period
     weather_stats = calculate_weather_stats(prior_ip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = ukcp.query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
+    obs_by_far = ukcp.query_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
@@ -439,7 +450,8 @@ def integrate_pip_ukcp09_data(grids, period):
 
 def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     """
-    Gather gridded Weather observations of the corresponding non-incident period for each incident record.
+    Gather gridded Weather observations of the corresponding non-incident period
+    for each incident record.
 
     :param grids:
     :param period:
@@ -455,7 +467,7 @@ def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     """
 
     # Get non-IP Weather data about where and when the incident occurred
-    nip_weather = ukcp.query_ukcp09_by_grid_datetime(grids, period, pickle_it=True)
+    nip_weather = ukcp.query_by_grid_datetime(grids, period, pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[
@@ -473,7 +485,7 @@ def integrate_nip_ukcp09_data(grids, period, prior_ip_data, stanox_section):
     weather_stats = calculate_weather_stats(nip_weather)
 
     # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-    obs_by_far = ukcp.query_ukcp09_by_grid_datetime_(grids, period, pickle_it=True)
+    obs_by_far = ukcp.query_by_grid_datetime_(grids, period, pickle_it=True)
     weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
     return weather_stats
@@ -548,15 +560,16 @@ def integrate_pip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat):
     # except KeyError:
     #     prior_ip_radtob = pd.DataFrame()
 
-    prior_ip_radtob = midas.query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
-                                                                pickle_it=True)
+    prior_ip_radtob = midas.query_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
+                                                          pickle_it=True)
 
     radtob_stats = calculate_radtob_variables_stats(prior_ip_radtob)
 
     return radtob_stats
 
 
-def integrate_nip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat, prior_ip_data, stanox_section):
+def integrate_nip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat, prior_ip_data,
+                               stanox_section):
     """
     Gather solar radiation of the corresponding non-incident period for each incident record.
 
@@ -576,8 +589,8 @@ def integrate_nip_midas_radtob(met_stn_id, period, route_name, use_suppl_dat, pr
     # except KeyError:
     #     non_ip_radtob = pd.DataFrame()
 
-    non_ip_radtob = midas.query_midas_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
-                                                              pickle_it=True)
+    non_ip_radtob = midas.query_radtob_by_grid_datetime(met_stn_id, period, route_name, use_suppl_dat,
+                                                        pickle_it=True)
 
     # Get all incident period data on the same section
     ip_overlap = prior_ip_data[

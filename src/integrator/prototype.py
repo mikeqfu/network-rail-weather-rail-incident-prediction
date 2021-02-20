@@ -3,7 +3,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from models.tools import calculate_wind_averages
+from utils import calculate_wind_averages
 
 
 def specify_weather_stats_calculations():
