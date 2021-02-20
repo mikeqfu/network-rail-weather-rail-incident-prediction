@@ -38,7 +38,7 @@ class Anglia:
         **Test**::
 
             >>> import os
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -61,7 +61,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -88,7 +88,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -119,7 +119,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -162,7 +162,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -228,7 +228,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -272,7 +272,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -310,7 +310,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -353,7 +353,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -416,7 +416,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -477,7 +477,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -532,7 +532,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 
@@ -589,7 +589,7 @@ class Anglia:
 
         **Test**::
 
-            >>> from misc.network import Anglia
+            >>> from preprocessor.network import Anglia
 
             >>> anglia = Anglia()
 

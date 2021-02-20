@@ -2,14 +2,14 @@
 Preprocessor
 """
 
-from .metex import METEX, WeatherThresholds
-from .reports import Schedule8IncidentsSpreadsheet
+from .metex import DelayAttributionGlossary, METExLite, WeatherThresholds, Schedule8IncidentReports
+from .network import Anglia
 from .vegetation import Vegetation
 from .weather import MIDAS, UKCP09
 
 __all__ = [
-    'metex', 'METEX', 'WeatherThresholds',
-    'reports', 'Schedule8IncidentsSpreadsheet',
+    'network', 'Anglia',
+    'metex', 'METExLite', 'WeatherThresholds', 'Schedule8IncidentReports', 'DelayAttributionGlossary',
     'vegetation', 'Vegetation',
     'weather', 'MIDAS', 'UKCP09'
 ]
