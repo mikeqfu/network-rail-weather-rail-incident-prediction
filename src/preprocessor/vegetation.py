@@ -106,7 +106,7 @@ class Vegetation:
         :param table_name: name of a table
         :type table_name: str
         :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
-        :type index_col: str or None
+        :type index_col: str or list or None
         :param route_name: name of a Route; if ``None`` (default), all Routes
         :type route_name: str or None
         :param schema_name: name of schema, defaults to ``'dbo'``
