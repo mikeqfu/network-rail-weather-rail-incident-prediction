@@ -4,19 +4,33 @@ Network nodes and links.
 
 from collections import OrderedDict
 
-import pandas as pd
-from pyhelpers import cd
-
-from utils import cdd_network, merge_dicts, remove_list_duplicated_lists, remove_list_duplicates
+from utils import *
 
 
 class Anglia:
+    """
+    Anglia Route.
+
+    :ivar str Name: name of the data resource
+    :ivar str Filename: name of spreadsheet
+    :ivar list SRS_D: list of IDs for the Strategic Route Section 'D'
+    :ivar list SRS_E: list of IDs for the Strategic Route Section 'E'
+    :ivar list SRS_F: list of IDs for the Strategic Route Section 'F'
+
+    *Test*::
+
+        >>> from preprocessor import Anglia
+
+        >>> anglia = Anglia()
+
+        >>> anglia.Name
+        'Anglia'
+    """
 
     def __init__(self):
         self.Name = 'Anglia'
 
-        self.DataDir = cdd_network("routes", self.Name)
-        self.File = "Anglia.xlsx"
+        self.Filename = "Anglia.xlsx"
 
         self.SRS_D = ['D.01', 'D.02', 'D.03', 'D.04', 'D.05', 'D.06', 'D.07',
                       'D.08', 'D.09', 'D.10', 'D.11', 'D.12', 'D.13', 'D.14',
@@ -46,7 +60,7 @@ class Anglia:
             data\\network\\routes\\Anglia
         """
 
-        path = cd(self.DataDir, *sub_dir, mkdir=mkdir)
+        path = cdd_network("routes", self.Name, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -102,7 +116,7 @@ class Anglia:
         """
 
         # Read excel data into a data frame named srs_df
-        srs_df = pd.read_excel(self.cdd(self.File), sheet_name=srs_id)
+        srs_df = pd.read_excel(self.cdd(self.Filename), sheet_name=srs_id)
         # Convert a 'Node' Series to a list named srs_nodes
         srs_nodes = [each_node for each_node in srs_df.Node]
 
@@ -252,7 +266,7 @@ class Anglia:
         anglia_srs = self.get_anglia_route_srs_id(whole=True)
 
         df_list = []
-        f = pd.ExcelFile(self.cdd(self.File))
+        f = pd.ExcelFile(self.cdd(self.Filename))
         for i in range(len(anglia_srs)):
             df_list.append(f.parse(anglia_srs[i]).fillna(''))
         f.close()
@@ -282,7 +296,7 @@ class Anglia:
         """
 
         # Read excel data into a data frame named srs_df
-        srs_df = pd.read_excel(self.cdd(self.File), sheet_name=srs_id)
+        srs_df = pd.read_excel(self.cdd(self.Filename), sheet_name=srs_id)
         # Get the names of all the columns
         attr_name = srs_df.columns.values.tolist()
         attr_name.insert(3, 'SRS')
@@ -493,7 +507,7 @@ class Anglia:
         """
 
         # Adjacency 'matrix' (DataFrame)
-        adj_mat = pd.read_excel(self.cdd(self.File), sheet_name='AdjacencyMatrix')
+        adj_mat = pd.read_excel(self.cdd(self.Filename), sheet_name='AdjacencyMatrix')
         # row names of the adjacency 'matrix'
         # row = adj_mat.index.tolist()
         # column names in a list
