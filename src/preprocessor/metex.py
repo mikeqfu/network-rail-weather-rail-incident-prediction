@@ -943,6 +943,10 @@ class METExLite:
     :ivar str Name: name of the data resource
     :ivar str Desc: brief description of the data resource
     :ivar str DatabaseName: name of the database that stores the data
+    :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
+    :ivar preprocessor.DelayAttributionGlossary DAG: instance of the DAG class
+    :ivar pyrcs.LocationIdentifiers LocationID: instance of the LocationIdentifiers class
+    :ivar pyrcs.Stations StationCode: instance of the Stations class
 
     **Test**::
 
@@ -960,6 +964,7 @@ class METExLite:
                     'used to assess asset and system vulnerability to weather.'
 
         self.DatabaseName = 'NR_METEx_20190203'
+        self.DatabaseConn = establish_mssql_connection(database_name=self.DatabaseName)
 
         self.DAG = DelayAttributionGlossary()
         self.LocationID = LocationIdentifiers()
