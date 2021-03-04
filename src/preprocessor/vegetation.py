@@ -1,13 +1,19 @@
 """ Read and cleanse data of NR_Vegetation_* database. """
 
+import datetime
+import os
 import re
 
+import numpy as np
+import pandas as pd
 from pyhelpers.geom import osgb36_to_wgs84
 from pyhelpers.ops import confirmed
-from pyhelpers.store import load_pickle, save_pickle
+from pyhelpers.store import load_pickle, save, save_pickle
+from pyhelpers.text import find_similar_str
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
 
-from utils import *
+from utils import cdd_vegetation, establish_mssql_connection, get_table_primary_keys, make_filename, \
+    update_nr_route_names
 
 
 class Vegetation:
@@ -140,10 +146,10 @@ class Vegetation:
 
         if route_name is None:
             # Get all data of a given table
-            sql_query = "SELECT * FROM {}".format(table)
+            sql_query = f"SELECT * FROM {table}"
         else:
             # given a specific Route
-            sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)
+            sql_query = f"SELECT * FROM {table} WHERE [Route] = '{route_name}'"
 
         # Create a pd.DataFrame of the queried table
         data = pd.read_sql(sql=sql_query, con=self.DatabaseConn, index_col=index_col, **kwargs)
