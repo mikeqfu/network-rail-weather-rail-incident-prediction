@@ -4,7 +4,9 @@ Network nodes and links.
 
 from collections import OrderedDict
 
-from utils import *
+import pandas as pd
+
+from utils import cdd_network, merge_dicts, remove_list_duplicated_lists, remove_list_duplicates
 
 
 class Anglia:
