@@ -6,22 +6,34 @@ Read and cleanse data of NR_METEX_* database.
 """
 
 import copy
+import datetime
 import gc
+import itertools
+import os
+import re
 import string
 import urllib.request
 import zipfile
 
 import fake_useragent
 import networkx as nx
+import numpy as np
+import pandas as pd
+import requests
 import shapely.geometry
+import shapely.wkt
 from pyhelpers.dir import cd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
-from pyhelpers.store import save_fig
+from pyhelpers.ops import confirmed, fake_requests_headers
+from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
+from pyhelpers.text import find_similar_str
 from pyrcs.line_data import LocationIdentifiers
 from pyrcs.other_assets import Stations
-from pyrcs.utils import *
+from pyrcs.utils import fetch_loc_names_repl_dict, fix_num_stanox, mile_chain_to_nr_mileage, \
+    nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage, yards_to_nr_mileage
 
-from utils import *
+from utils import cdd_metex, cdd_network, cdd_railway_codes, establish_mssql_connection, get_subset, \
+    get_table_primary_keys, make_filename, read_table_by_query, update_nr_route_names
 
 
 class DelayAttributionGlossary:
@@ -1128,18 +1140,17 @@ class METExLite:
         conn_metex = establish_mssql_connection(database_name=self.DatabaseName)
         # Specify possible scenarios:
         if not route_name and not weather_category:
-            sql_query = "SELECT * FROM {}".format(table)  # Get all data of a given table
+            sql_query = f"SELECT * FROM {table}"  # Get all data of a given table
         elif route_name and not weather_category:
-            sql_query = "SELECT * FROM {} WHERE Route = '{}'".format(table, route_name)  # given Route
+            sql_query = f"SELECT * FROM {table} WHERE [Route] = '{route_name}'"  # given Route
         elif route_name is None and weather_category is not None:
             # given Weather
-            sql_query = "SELECT * FROM {} WHERE WeatherCategory = '{}'".format(
-                table, weather_category)
+            sql_query = f"SELECT * FROM {table} WHERE [WeatherCategory] = '{weather_category}'"
         else:
             # Get all data of a table,
             # given Route and Weather category e.g. data about wind-related events on Anglia Route
-            sql_query = "SELECT * FROM {} WHERE Route = '{}' AND WeatherCategory = '{}'".format(
-                table, route_name, weather_category)
+            sql_query = f"SELECT * FROM {table} " \
+                        f"WHERE [Route]='{route_name}' AND [WeatherCategory]='{weather_category}'"
         # Create a pd.DataFrame of the queried table
         table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, **kwargs)
         # Disconnect the database
@@ -2321,7 +2332,7 @@ class METExLite:
 
         try:
             conn_db = establish_mssql_connection(database_name=self.DatabaseName)
-            sql_query = "SELECT * FROM dbo.[{}];".format(METExLite.Weather)
+            sql_query = "SELECT * FROM dbo.[Weather];"
 
             chunks = pd.read_sql_query(sql=sql_query, con=conn_db,
                                        index_col=self.get_primary_key(table_name=METExLite.Weather),
