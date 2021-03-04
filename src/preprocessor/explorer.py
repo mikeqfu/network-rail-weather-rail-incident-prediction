@@ -9,14 +9,11 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
 import pandas as pd
-from models.prototype.hotspots_vis import get_shp_coordinates
-from mssqlserver import metex
-from pyhelpers import cdd, find_closest_points, get_midpoint, pd_preferences, save, \
-    wgs84_to_osgb36
+from pyhelpers.geom import find_closest_points, get_midpoint, wgs84_to_osgb36
+from pyhelpers.store import save
 
-from utils import cdd_incidents
-
-pd_preferences()
+from preprocessor import METExLite
+from utils import cdd_exploration, get_shp_coordinates
 
 
 def calc_stats(s8weather_incidents):
@@ -53,10 +50,12 @@ def create_pie_plot_for_incident_proportions(s8weather_incidents, save_as=".png"
 
     **Example**::
 
-        >>> from spreadsheet.incidents import get_schedule8_weather_incidents_02062006_31032014
-        >>> from misc.explor import create_pie_plot_for_incident_proportions
+        >>> from preprocessor import Schedule8IncidentReports
+        >>> from preprocessor.explorer import create_pie_plot_for_incident_proportions
 
-        >>> s8_weather_incidents = get_schedule8_weather_incidents_02062006_31032014()
+        >>> reports = Schedule8IncidentReports()
+
+        >>> s8_weather_incidents = reports.get_schedule8_weather_incidents_02062006_31032014()
         >>> dat = s8_weather_incidents['Data']
 
         >>> create_pie_plot_for_incident_proportions(dat, save_as=".png")
@@ -102,7 +101,7 @@ def create_pie_plot_for_incident_proportions(s8weather_incidents, save_as=".png"
     plt.show()
 
     if save_as:
-        plt.savefig(cdd_incidents("exploration", "proportions" + save_as), dpi=600)
+        plt.savefig(cdd_exploration("proportions" + save_as), dpi=600)
 
 
 def create_bar_plot_for_delay_cost(s8weather_incidents, save_as=".png"):
@@ -161,13 +160,12 @@ def create_bar_plot_for_delay_cost(s8weather_incidents, save_as=".png"):
     plt.tight_layout()
 
     if save_as:
-        plt.savefig(cdd_incidents("exploration", "delays-and-cost" + save_as), dpi=600)
+        plt.savefig(cdd_exploration("delays-and-cost" + save_as), dpi=600)
 
 
 # == For the paper to Nature Communications ============================================
 
-railway_coordinates = get_shp_coordinates(osm_subregion='Great Britain',
-                                          osm_layer='railways',
+railway_coordinates = get_shp_coordinates(osm_subregion='Great Britain', osm_layer='railways',
                                           osm_feature='rail')
 
 
@@ -232,9 +230,11 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False,
         prepare_stats_data(route_name, weather_category, update, verbose)
     """
 
+    metex = METExLite()
+
     # Get data of Schedule 8 incident locations
     incident_locations = metex.view_schedule8_costs_by_location(
-        route_name, weather_category, update, verbose=verbose)
+        route_name=route_name, weather_category=weather_category, update=update, verbose=verbose)
 
     # Find the "midpoint" of each incident location
     incident_locations = find_midpoint_of_each_incident_location(incident_locations)
@@ -246,8 +246,7 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False,
         sort_by_cols = ['WeatherCategory', 'IncidentCount', 'DelayMinutes', 'DelayCost']
         region_data.sort_values(sort_by_cols, ascending=False, inplace=True)
         region_data.index = range(len(region_data))
-        export_path = cdd("incidents\\exploration\\NC\\01",
-                          region.replace(" ", "-").lower() + ".csv")
+        export_path = cdd_exploration("NC", "01", region.replace(" ", "-").lower() + ".csv")
         save(region_data, export_path, verbose=verbose)
 
     print("\nCompleted.")
@@ -256,8 +255,7 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False,
 # == 2nd dataset =======================================================================
 
 
-def prepare_monthly_stats_data(route_name=None, weather_category=None, update=False,
-                               verbose=True):
+def prepare_monthly_stats_data(route_name=None, weather_category=None, update=False, verbose=True):
     """
     Prepare data of monthly statistics.
 
@@ -280,9 +278,11 @@ def prepare_monthly_stats_data(route_name=None, weather_category=None, update=Fa
         verbose = True
     """
 
+    metex = METExLite()
+
     # Get data of Schedule 8 incidents by datetime and location
     dat = metex.view_schedule8_costs_by_datetime_location(
-        route_name, weather_category, update, verbose=verbose)
+        route_name=route_name, weather_category=weather_category, update=update, verbose=verbose)
 
     print("Cleaning data ... ", end="")
     # dat = metex.view_schedule8_data()
@@ -312,8 +312,7 @@ def prepare_monthly_stats_data(route_name=None, weather_category=None, update=Fa
             dat1.sort_values(
                 sort_by_cols, ascending=False, na_position='last', inplace=True)
             dat1.index = range(len(dat1))
-            export_path = cdd(
-                "incidents\\exploration\\NC\\02\\GB\\Month\\{}.csv".format(m_))
+            export_path = cdd_exploration("NC\\02\\GB\\Month", "{}.csv".format(m_))
             save(dat1, export_path, sep=',', verbose=False)
         print("Done.")
     print("Completed.\n")
@@ -328,8 +327,7 @@ def prepare_monthly_stats_data(route_name=None, weather_category=None, update=Fa
             dat.sort_values(
                 sort_by_cols, ascending=False, na_position='last', inplace=True)
             dat.index = range(len(dat))
-            export_path = cdd(
-                "incidents\\exploration\\NC\\02\\GB\\Year_Month\\{}.csv".format(period))
+            export_path = cdd_exploration("NC\\02\\GB\\Year_Month", "{}.csv".format(period))
             save(dat, export_path, sep=',', verbose=False)
         print("Done.")
     print("Completed.\n")
@@ -347,7 +345,7 @@ def prepare_monthly_stats_data(route_name=None, weather_category=None, update=Fa
                 dat_.sort_values(
                     sort_by_cols, ascending=False, na_position='last', inplace=True)
                 dat_.index = range(len(dat_))
-                export_path = cdd("incidents\\exploration\\NC\\02\\Region\\{}".format(
+                export_path = cdd_exploration("NC", "02", "Region", "{}".format(
                     region.replace(" ", "-").lower()),
                     ("{}_0{}.csv" if m < 10 else "{}_{}.csv").format(y, m))
                 save(dat_, export_path, sep=',', verbose=False)
