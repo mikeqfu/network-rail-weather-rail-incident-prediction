@@ -4,36 +4,58 @@ Weather
 
 import gc
 import glob
+import os
 import tempfile
 import zipfile
 
 import datetime_truncate
 import natsort
+import pandas as pd
 import shapely.geometry
 import shapely.ops
 import shapely.wkt
 import sqlalchemy.types
 from pyhelpers.dir import cd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
-from pyrcs.utils import *
+from pyhelpers.store import load_pickle, save_pickle
 
-from utils import *
+from utils import cdd_weather, establish_mssql_connection
 
 
 class MIDAS:
+    """
+    Met Office RADTOB.
+
+    :ivar str Name: name of the data resource
+    :ivar str Acronym: acronym of the data resource name
+    :ivar str RadStnInfoFilename: filename of the radiation stations information
+    :ivar str RadtobFilename: filename of the radiation observation data
+    :ivar str HeadersFilename: filename of the headers for the radiation observation data
+    :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
+    :ivar str SchemaName: name of the schema for storing the radiation observation data
+    :ivar str RadtobTblName: name of the table for storing the radiation observation data
+    :ivar str RadtobSupplTblName: name of the table for storing supplementary data
+
+    **Test**::
+
+        >>> from preprocessor import MIDAS
+
+        >>> midas = MIDAS()
+
+        >>> midas.Name
+        'Met Office RADTOB (Radiation values currently being reported).'
+    """
 
     def __init__(self):
         self.Name = 'Met Office RADTOB (Radiation values currently being reported).'
         self.Acronym = 'MIDAS'
-
-        self.DataDir = cdd_weather(self.Acronym.lower())
 
         self.RadStnInfoFilename = "radiation-stations-information"
         self.RadtobFilename = "midas-radtob-2006-2019"
         self.HeadersFilename = "radiation-observation-data-headers"
 
         # Create an engine to the MSSQL server
-        self.DatabaseEngine = create_mssql_connectable_engine(database_name='Weather')
+        self.DatabaseConn = establish_mssql_connection(database_name='Weather')
 
         self.SchemaName = self.Acronym
         self.RadtobTblName = 'RADTOB'
@@ -57,11 +79,11 @@ class MIDAS:
 
             >>> midas = MIDAS()
 
-            >>> print(os.path.relpath(midas.cdd()))
-            data\\weather\\midas
+            >>> os.path.relpath(midas.cdd())
+            'data\\weather\\midas'
         """
 
-        path = cd(self.DataDir, *sub_dir, mkdir=mkdir)
+        path = cdd_weather(self.Acronym.lower(), *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -74,7 +96,7 @@ class MIDAS:
         :type update: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: data of meteorological stations
         :rtype: pandas.DataFrame
 
@@ -87,21 +109,15 @@ class MIDAS:
             >>> # dat = midas.get_radiation_stations(update=True, verbose=True)
             >>> dat = midas.get_radiation_stations()
 
-            >>> print(dat)
+            >>> dat.tail()
                                     StationName  ...                                      EN_GEOM
             SRC_ID                               ...
-            3                         FAIR ISLE  ...  POINT (421158.6189113986 1071232.475631491)
-            9                           LERWICK  ...   POINT (445479.737983736 1139722.707449886)
-            12                  BALTASOUND NO 2  ...  POINT (462590.2813043125 1207861.554269238)
-            23                         KIRKWALL  ...  POINT (348329.9204614616 1007758.524571238)
-            32                     WICK AIRPORT  ...  POINT (336581.3824620685 952272.3257549705)
-                                         ...  ...                                          ...
             61986             TIBENHAM AIRFIELD  ...  POINT (615070.0334468307 288957.3690573045)
             62034   ROUDSEA WOOD AND MOSSES NNR  ...  POINT (333410.2674705166 482772.0753328541)
             62041           EXETER AIRPORT NO 2  ...  POINT (300979.5951061826 93939.67916976719)
             62122                   ALMONDSBURY  ...  POINT (361406.5017112559 183704.4311121872)
             62139                   WISLEY NO 2  ...   POINT (506466.6675712555 157848.166606131)
-            [240 rows x 11 columns]
+            [5 rows x 11 columns]
         """
 
         path_to_pickle = self.cdd(self.RadStnInfoFilename + ".pickle")
@@ -115,17 +131,13 @@ class MIDAS:
                 path_to_spreadsheet = path_to_pickle.replace(".pickle", ".xlsx")
                 rad_stn = pd.read_excel(path_to_spreadsheet, parse_dates=['Station start date'])
                 rad_stn.columns = [
-                    x.title().replace(' ', '') if x != 'src_id' else x.upper()
-                    for x in rad_stn.columns
-                ]
-                rad_stn.StationName = rad_stn.StationName.str.replace(
-                    r'(\xa0)+Locate', '', regex=True)
+                    x.title().replace(' ', '') if x != 'src_id' else x.upper() for x in rad_stn.columns]
+                rad_stn.StationName = rad_stn.StationName.str.replace(r'(\xa0)+Locate', '', regex=True)
 
                 rad_stn['Easting'], rad_stn['Northing'] = wgs84_to_osgb36(
                     rad_stn.Longitude.values, rad_stn.Latitude.values)
                 rad_stn['EN_GEOM'] = [
-                    shapely.geometry.Point(xy) for xy in zip(rad_stn.Easting, rad_stn.Northing)
-                ]
+                    shapely.geometry.Point(xy) for xy in zip(rad_stn.Easting, rad_stn.Northing)]
 
                 rad_stn.sort_values(['SRC_ID'], inplace=True)
                 rad_stn.set_index('SRC_ID', inplace=True)
@@ -145,7 +157,7 @@ class MIDAS:
         RADTOB - RADT-OB table. Radiation values currently being reported
 
         :param file: e.g. ``"midas_radtob_200601-200612.txt"``
-        :type file: str
+        :type file: str or typing.IO[bytes]
         :param headers: column names of the data frame
         :type headers: list
         :param daily: if ``True``, ``'OB_HOUR_COUNT'`` equals ``24``,
@@ -256,9 +268,10 @@ class MIDAS:
 
             >>> midas = MIDAS()
 
-            >>> pf = midas.make_radtob_pickle_path("midas-radtob-20060101-20141231", False, False)
+            >>> fn = "midas-radtob-20060101-20141231"
+            >>> pf = midas.make_radtob_pickle_path(filename=fn, daily=False, rad_stn=False)
 
-            >>> print(os.path.relpath(pf))
+            >>> os.path.relpath(pf)
             data\\weather\\midas\\midas-radtob-20060101-20141231.pickle
         """
 
@@ -285,7 +298,7 @@ class MIDAS:
 
             >>> col_names = midas.get_radtob_headers()
 
-            >>> print(col_names[:5])
+            >>> col_names[:5]
             ['ID', 'ID_TYPE', 'OB_END_TIME', 'OB_HOUR_COUNT', 'VERSION_NUM']
         """
         # Headers of the midas_radtob data set
@@ -317,23 +330,20 @@ class MIDAS:
 
             >>> midas = MIDAS()
 
-            >>> dat = midas.get_radtob(verbose=True)
+            >>> # dat = midas.get_radtob(update=True, verbose=True)
+            >>> # Updating "midas-radtob-2006-2019.pickle" at "data\\weather\\midas" ... Done.
 
-            >>> print(dat)
+            >>> dat = midas.get_radtob()
+
+            >>> dat.tail()
                                        OB_END_DATE  ...  GLBL_IRAD_AMT
             SRC_ID OB_END_DATE_TIME                 ...
-            9      2006-01-01 00:00:00  2006-01-01  ...            0.0
-                   2006-01-01 01:00:00  2006-01-01  ...            0.0
-                   2006-01-01 02:00:00  2006-01-01  ...            0.0
-                   2006-01-01 03:00:00  2006-01-01  ...            0.0
-                   2006-01-01 04:00:00  2006-01-01  ...            0.0
-                                            ...  ...            ...
             62139  2019-06-30 20:00:00  2019-06-30  ...          379.0
                    2019-06-30 21:00:00  2019-06-30  ...           26.0
                    2019-06-30 22:00:00  2019-06-30  ...            0.0
                    2019-06-30 23:00:00  2019-06-30  ...            0.0
                    2019-06-30 23:59:00  2019-06-30  ...        20900.0
-            [10638864 rows x 4 columns]
+            [5 rows x 4 columns]
         """
 
         path_to_pickle = self.make_radtob_pickle_path(self.RadtobFilename, daily, rad_stn=False)
@@ -363,14 +373,22 @@ class MIDAS:
             except Exception as e:
                 print("Failed to get the radiation observations. {}".format(e))
 
-    def import_radtob(self, if_exists='append', chunk_size=100000, update=False, verbose=False):
+    def import_radtob(self, if_exists='fail', chunk_size=100000, update=False, verbose=False):
         """
+        Import the radiation data.
+
         See also [`DUDTM <https://stackoverflow.com/questions/50689082>`_].
 
-        :param if_exists:
-        :param chunk_size:
-        :param update:
-        :param verbose:
+        :param if_exists: whether to replace, append or raise an error if the database already exists
+        :type if_exists: str
+        :param chunk_size: size of a chunk to import
+        :type chunk_size: int or None
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
 
         **Test**::
 
@@ -378,7 +396,7 @@ class MIDAS:
 
             >>> midas = MIDAS()
 
-            >>> midas.import_radtob(if_exists='append', chunk_size=100000, verbose=True)
+            >>> # midas.import_radtob(if_exists='replace', chunk_size=100000, verbose=True)
         """
 
         midas_radtob = self.get_radtob(update=update, verbose=verbose)
@@ -394,12 +412,10 @@ class MIDAS:
         temp_file_ = pd.read_csv(csv_filename, chunksize=tsql_chunksize)
         for chunk in temp_file_:
             # e.g. chunk = temp_file_.get_chunk(tsql_chunksize)
-            dtype_ = {
-                'OB_END_DATE_TIME': sqlalchemy.types.DATETIME,
-                'OB_END_DATE': sqlalchemy.types.DATE
-            }
+            dtype_ = {'OB_END_DATE_TIME': sqlalchemy.types.DATETIME,
+                      'OB_END_DATE': sqlalchemy.types.DATE}
 
-            chunk.to_sql(con=self.DatabaseEngine, schema='dbo', name=self.RadtobTblName,
+            chunk.to_sql(con=self.DatabaseConn, schema='dbo', name=self.RadtobTblName,
                          if_exists=if_exists, index=False, dtype=dtype_, method='multi')
 
             del chunk
@@ -413,12 +429,15 @@ class MIDAS:
 
     def process_suppl_dat(self, update=False, verbose=False):
         """
+        Parse supplementary data.
 
-        :param update:
-        :type update:
-        :param verbose:
-        :type verbose:
-        :return:
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
+        :return: parsed supplementary data
         :rtype: pandas.DataFrame or None
 
         **Test**::
@@ -485,15 +504,18 @@ class MIDAS:
 
         return supplement_data
 
-    def import_suppl_dat(self, if_exists='replace', update=False, verbose=False):
+    def import_suppl_dat(self, if_exists='fail', update=False, verbose=False):
         """
+        Import the supplementary data.
 
-        :param if_exists:
-        :type if_exists:
-        :param update:
-        :type update:
-        :param verbose:
-        :type verbose:
+        :param if_exists: whether to replace, append or raise an error if the database already exists
+        :type if_exists: str
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
 
         **Test**::
 
@@ -507,7 +529,7 @@ class MIDAS:
         supplement_data = self.process_suppl_dat(update=update, verbose=verbose)
 
         if supplement_data is not None and not supplement_data.empty:
-            supplement_data.to_sql(con=self.DatabaseEngine,
+            supplement_data.to_sql(con=self.DatabaseConn,
                                    name=self.RadtobSupplTblName, schema='dbo',
                                    if_exists=if_exists,
                                    index=False,
@@ -516,8 +538,7 @@ class MIDAS:
     def query_radtob_by_grid_datetime(self, met_stn_id, period, route_name, use_suppl_dat=False,
                                       update=False, dat_dir=None, pickle_it=False, verbose=False):
         """
-        Get MIDAS RADTOB (Radiation data) by met station ID (Query from the database)
-        for the given ``period``.
+        Query (from database) MIDAS RADTOB (Radiation data) by met station ID for the given ``period``.
 
         :param met_stn_id: met station ID
         :type met_stn_id: list
@@ -536,7 +557,7 @@ class MIDAS:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: UKCP09 data by ``grids`` and ``period``
         :rtype: pandas.DataFrame
 
@@ -585,7 +606,7 @@ class MIDAS:
                 f"WHERE [SRC_ID] = {ms_id} " \
                 f"AND [OB_END_DATE_TIME] BETWEEN '{dates[0]}' AND '{dates[1]}';"
 
-            midas_radtob = pd.read_sql(sql=sql_query, con=self.DatabaseEngine)  # Query the weather data
+            midas_radtob = pd.read_sql(sql=sql_query, con=self.DatabaseConn)  # Query the weather data
 
             if midas_radtob.empty and use_suppl_dat:
                 dates = tuple(
@@ -596,7 +617,7 @@ class MIDAS:
                     f"WHERE [Route] = '{route_name}' " \
                     f"AND [OB_END_DATE] BETWEEN '{dates[0]}' AND '{dates[1]}';"
 
-                midas_radtob = pd.read_sql(sql=sql_query, con=self.DatabaseEngine)
+                midas_radtob = pd.read_sql(sql=sql_query, con=self.DatabaseConn)
 
             if pickle_it:
                 save_pickle(midas_radtob, path_to_pickle, verbose=verbose)
@@ -606,9 +627,16 @@ class MIDAS:
 
 class UKCP09:
     """
+    UKCP09 gridded weather observations.
 
     :param start_date: start date on which the observation data was collected, formatted as 'yyyy-mm-dd'
     :type start_date: str
+
+    :ivar str Name:
+    :ivar str Acronym:
+    :ivar str Description:
+    :ivar str StartDate: (specified with the creation of the instance)
+    :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
 
     **Test**::
 
@@ -626,13 +654,13 @@ class UKCP09:
         self.Description = 'UKCP09 gridded weather observations: ' \
                            'maximum temperature, minimum temperature and precipitation.'
 
-        self.DataDir = cdd_weather(self.Acronym.lower())
         self.StartDate = start_date
 
         # Create an engine to the MSSQL server
-        self.DatabaseEngine = create_mssql_connectable_engine(database_name='Weather')
+        self.DatabaseConn = establish_mssql_connection(database_name='Weather')
 
-    def cdd(self, *sub_dir, mkdir=False):
+    @staticmethod
+    def cdd(*sub_dir, mkdir=False):
         """
         Change directory to "data\\weather\\ukcp" and sub-directories / a file.
 
@@ -642,9 +670,19 @@ class UKCP09:
         :type mkdir: bool
         :return: full path to ``"data\\weather\\ukcp"`` and sub-directories / a file
         :rtype: str
+
+        **Test**::
+
+            >>> import os
+            >>> from preprocessor import UKCP09
+
+            >>> ukcp = UKCP09()
+
+            >>> os.path.relpath(ukcp.cdd())
+            'data\\weather\\ukcp09'
         """
 
-        path = cd(self.DataDir, *sub_dir, mkdir=mkdir)
+        path = cdd_weather("ukcp", *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -669,19 +707,24 @@ class UKCP09:
         """
 
         assert isinstance(centre_point, (tuple, list)) and len(centre_point) == 2
+        
         x, y = centre_point
+        
         if rotation:
             sin_theta, cos_theta = pd.np.sin(rotation), pd.np.cos(rotation)
             lower_left = (x - 1 / 2 * side_length * sin_theta, y - 1 / 2 * side_length * cos_theta)
             upper_left = (x - 1 / 2 * side_length * cos_theta, y + 1 / 2 * side_length * sin_theta)
             upper_right = (x + 1 / 2 * side_length * sin_theta, y + 1 / 2 * side_length * cos_theta)
             lower_right = (x + 1 / 2 * side_length * cos_theta, y - 1 / 2 * side_length * sin_theta)
+        
         else:
             lower_left = (x - 1 / 2 * side_length, y - 1 / 2 * side_length)
             upper_left = (x - 1 / 2 * side_length, y + 1 / 2 * side_length)
             upper_right = (x + 1 / 2 * side_length, y + 1 / 2 * side_length)
             lower_right = (x + 1 / 2 * side_length, y - 1 / 2 * side_length)
+        
         # corners = shapely.geometry.Polygon([lower_left, upper_left, upper_right, lower_right])
+        
         return lower_left, upper_left, upper_right, lower_right
 
     def parse_observation_grids(self, filename):
@@ -689,16 +732,9 @@ class UKCP09:
         Parse observation grids.
 
         :param filename: file of the observation grid data
-        :type filename: str
+        :type filename: str or typing.IO[bytes]
         :return: parsed data of the observation grids
         :rtype: pandas.DataFrame
-
-        **Example**::
-
-            file = "ukcp09_gridded-land-obs-daily_timeseries_maximum-" \
-                       "temperature_000000E_450000N_19600101-20161231.csv"
-
-            obs_grids = parse_observation_grids(file)
         """
 
         cartesian_centres_temp = pd.read_csv(filename, header=None, index_col=0, nrows=2)
@@ -726,17 +762,16 @@ class UKCP09:
             defaults to ``False``
         :type verbose: bool or int
         :return: MIDAS RADTOB observation grids
-        :rtype: pandas.DataFrame
+        :rtype: pandas.DataFrame or None
 
-        **Example**::
+        **Test**::
 
-            from weather.ukcp import get_observation_grids
+            >>> from preprocessor import UKCP09
 
-            update = True
-            verbose = True
+            >>> ukcp = UKCP09()
 
-            zip_filename = "daily-precipitation.zip"
-            observation_grids = get_observation_grids(zip_filename, update, verbose)
+            >>> zip_filename = "daily-precipitation.zip"
+            >>> obs_grid_dat = ukcp.get_observation_grids(zip_filename, update=True, verbose=True)
         """
 
         path_to_pickle = self.cdd("observation-grids.pickle")
@@ -757,8 +792,7 @@ class UKCP09:
 
                 # Add a pseudo id for each observation grid
                 observation_grids.sort_values('Centroid', inplace=True)
-                observation_grids.index = pd.Index(
-                    range(len(observation_grids)), name='Pseudo_Grid_ID')
+                observation_grids.index = pd.Index(range(len(observation_grids)), name='Pseudo_Grid_ID')
 
                 path_to_pickle = self.cdd("observation-grids.pickle")
                 save_pickle(observation_grids, path_to_pickle, verbose=verbose)
@@ -774,9 +808,9 @@ class UKCP09:
         Parse gridded weather observations from the raw zipped file.
 
         :param filename: file of raw data
-        :type filename: str
+        :type filename: str or typing.IO[bytes]
         :param var_name: variable name,
-            e.g. 'Maximum_Temperature', 'Minimum_Temperature', 'Precipitation'
+            e.g. ``'Maximum_Temperature'``, ``'Minimum_Temperature'`` and ``'Precipitation'``
         :type var_name: str
         :return: parsed data of the daily gridded weather observations
         :rtype: pandas.DataFrame
@@ -827,14 +861,19 @@ class UKCP09:
         :rtype: str
         """
 
-        filename_suffix = "" if self.StartDate is None \
-            else "-{}".format(self.StartDate.replace("-", ""))
+        filename_suffix = "" if self.StartDate is None else "-{}".format(self.StartDate.replace("-", ""))
+        
         pickle_filename = filename + filename_suffix + ".pickle"
+        
         path_to_pickle = cdd_weather("ukcp", pickle_filename)
+        
         return path_to_pickle
 
-    def get_var_obs(self, zip_filename, var_name, use_pseudo_grid_id=False, update=False, verbose=False):
+    def get_obs_data_by_category(self, zip_filename, var_name, use_pseudo_grid_id=False, update=False,
+                                 pickle_it=False, verbose=False):
         """
+        Get observation data for a given category (i.e. weather variable).
+
         :param zip_filename: "daily-maximum-temperature", "daily-minimum-temperature",
             or "daily-precipitation"
         :type zip_filename: str
@@ -846,25 +885,33 @@ class UKCP09:
         :param update: whether to check on update and proceed to update the package data,
             defaults to ``False``
         :type update: bool
+        :param pickle_it: whether to save the data as a pickle file, defaults to ``False``
+        :type pickle_it: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: data of daily gridded weather observations
-        :rtype: pandas.DataFrame
+        :rtype: pandas.DataFrame or None
 
-        **Example**::
+        **Test**::
 
-            from weather.ukcp import get_var_obs
+            >>> from preprocessor import UKCP09
 
-            zip_filename = "daily-maximum-temperature"
-            var_name = 'Maximum_Temperature'
-            start_date = '2006-01-01'
-            use_pseudo_grid_id = False
-            update = False
-            verbose = True
+            >>> ukcp = UKCP09()
 
-            gridded_obs = get_var_obs(zip_filename, var_name, start_date, use_pseudo_grid_id,
-                                             update, verbose)
+            >>> zip_fn = "daily-maximum-temperature"
+            >>> vn = 'Maximum_Temperature'
+
+            >>> gridded_obs_dat = ukcp.get_obs_data_by_category(zip_fn, vn)
+
+            >>> gridded_obs_dat.tail()
+                                         Maximum_Temperature
+            Centroid         Date
+            (652500, 302500) 2016-12-27                 7.44
+                             2016-12-28                 5.89
+                             2016-12-29                 6.08
+                             2016-12-30                 4.46
+                             2016-12-31                 7.81
         """
 
         assert isinstance(pd.to_datetime(self.StartDate), pd.Timestamp) or self.StartDate is None
@@ -877,7 +924,7 @@ class UKCP09:
 
         else:
             try:
-                path_to_zip = cdd_weather("ukcp", zip_filename + ".zip")
+                path_to_zip = self.cdd(zip_filename + ".zip")
 
                 with zipfile.ZipFile(path_to_zip, 'r') as zf:
                     filename_list = natsort.natsorted(zf.namelist())
@@ -897,7 +944,8 @@ class UKCP09:
                     gridded_obs = gridded_obs.reset_index().set_index(
                         ['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
-                save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
+                if pickle_it:
+                    save_pickle(gridded_obs, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(filename.replace("-", " "), e))
@@ -905,33 +953,40 @@ class UKCP09:
 
         return gridded_obs
 
-    def get_data(self, use_pseudo_grid_id=True, update=False, verbose=False):
+    def get_obs_data(self, use_pseudo_grid_id=True, update=False, pickle_it=False, verbose=False):
         """
-        Fetch integrated weather observations of different variables from local pickle.
+        Fetch integrated weather observations of different variables (from local pickle, if available).
 
-        :param use_pseudo_grid_id: defaults to ``False``
+        :param use_pseudo_grid_id: defaults to ``True``
         :type use_pseudo_grid_id: bool
         :param update: whether to check on update and proceed to update the package data,
             defaults to ``False``
         :type update: bool
+        :param pickle_it: whether to save the data as a pickle file, defaults to ``False``
+        :type pickle_it: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: data of integrated daily gridded weather observations
-        :rtype: pandas.DataFrame
-        :return: data of integrated daily gridded weather observations
-        :rtype: pandas.DataFrame
+        :rtype: pandas.DataFrame or None
 
-        **Example**::
+        **Test**::
 
-            from weather.ukcp import get_data
+            >>> from preprocessor import UKCP09
 
-            start_date = '2006-01-01'
-            use_pseudo_grid_id = False
-            update = False
-            verbose = True
+            >>> ukcp = UKCP09()
 
-            ukcp09_data = get_data(start_date, use_pseudo_grid_id, update, verbose)
+            >>> ukcp09_dat = ukcp.get_obs_data()
+
+            >>> ukcp09_dat.tail()
+                                                        Maximum_Temperature  ...  Temperature_Change
+            Pseudo_Grid_ID Centroid         Date                             ...
+            10358          (652500, 312500) 2016-12-27                 7.50  ...                4.34
+                                            2016-12-28                 5.86  ...                6.22
+                                            2016-12-29                 6.10  ...                5.15
+                                            2016-12-30                 4.61  ...                3.40
+                                            2016-12-31                 7.98  ...                7.55
+            [5 rows x 4 columns]
         """
 
         filename = "ukcp-daily-gridded-weather"
@@ -942,13 +997,13 @@ class UKCP09:
 
         else:
             try:
-                d_max_temp = self.get_var_obs(
+                d_max_temp = self.get_obs_data_by_category(
                     zip_filename="daily-maximum-temperature", var_name='Maximum_Temperature',
                     use_pseudo_grid_id=False, update=update, verbose=verbose)
-                d_min_temp = self.get_var_obs(
+                d_min_temp = self.get_obs_data_by_category(
                     zip_filename="daily-minimum-temperature", var_name='Minimum_Temperature',
                     use_pseudo_grid_id=False, update=update, verbose=verbose)
-                d_precipitation = self.get_var_obs(
+                d_precipitation = self.get_obs_data_by_category(
                     zip_filename="daily-precipitation", var_name='Precipitation',
                     use_pseudo_grid_id=False, update=update, verbose=verbose)
 
@@ -968,8 +1023,9 @@ class UKCP09:
                     ukcp09_data = ukcp09_data.reset_index().set_index(
                         ['Pseudo_Grid_ID', 'Centroid', 'Date'])
 
-                path_to_pickle = self.make_pickle_path(filename)
-                save_pickle(ukcp09_data, path_to_pickle, verbose=verbose)
+                if pickle_it:
+                    path_to_pickle = self.make_pickle_path(filename)
+                    save_pickle(ukcp09_data, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to integrate the UKCP09 gridded weather observations. {}".format(e))
@@ -977,8 +1033,8 @@ class UKCP09:
 
         return ukcp09_data
 
-    def import_data(self, table_name='UKCP091', if_exists='append', chunk_size=100000,
-                    update=False, verbose=False):
+    def import_data(self, table_name='UKCP09', if_exists='fail', chunk_size=100000, update=False,
+                    verbose=False):
         """
         See also [`DUDTM <https://stackoverflow.com/questions/50689082>`_].
 
@@ -987,12 +1043,16 @@ class UKCP09:
         :param chunk_size:
         :param update:
         :param verbose:
+
+        **Test**::
+
+            >>> from preprocessor import UKCP09
+
+            >>> ukcp = UKCP09()
         """
 
-        ukcp09_data = self.get_data(update=update, verbose=verbose)
+        ukcp09_data = self.get_obs_data(update=update, verbose=verbose)
         ukcp09_data.reset_index(inplace=True)
-
-        ukcp09_engine = create_mssql_connectable_engine(database_name='Weather')
 
         ukcp09_data_ = pd.DataFrame(ukcp09_data.Centroid.to_list(), columns=['Centroid_X', 'Centroid_Y'])
         ukcp09_data = pd.concat([ukcp09_data.drop('Centroid', axis=1), ukcp09_data_], axis=1)
@@ -1006,7 +1066,7 @@ class UKCP09:
             temp_file_ = pd.read_csv(temp_file.name + ".csv", chunksize=tsql_chunksize)
             for chunk in temp_file_:
                 # e.g. chunk = temp_file_.get_chunk(chunk_size)
-                chunk.to_sql(table_name, ukcp09_engine, schema='dbo', if_exists=if_exists,
+                chunk.to_sql(name=table_name, con=self.DatabaseConn, schema='dbo', if_exists=if_exists,
                              index=False, dtype={'Date': sqlalchemy.types.DATE}, method='multi')
 
                 del chunk
@@ -1018,8 +1078,8 @@ class UKCP09:
 
         print("Done. ")
 
-    def query_by_grid_datetime(self, grids, period,
-                               update=False, dat_dir=None, pickle_it=False, verbose=False):
+    def query_by_grid_datetime(self, grids, period, update=False, dat_dir=None, pickle_it=False,
+                               verbose=False):
         """
         Get UKCP09 data by observation grids (Query from the database) for the given ``period``.
 
@@ -1036,13 +1096,15 @@ class UKCP09:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: UKCP09 data by ``grids`` and ``period``
         :rtype: pandas.DataFrame
 
-        **Examples**::
+        **Test**::
 
-            from weather.ukcp import query_by_grid_datetime
+            >>> from preprocessor import UKCP09
+
+            >>> ukcp = UKCP09()
 
             dat_dir = None
             update = False
@@ -1088,15 +1150,15 @@ class UKCP09:
                         f"AND [Date] IN {period_};"
 
             # Query the weather data
-            ukcp09_dat = pd.read_sql(sql=sql_query, con=self.DatabaseEngine)
+            ukcp09_dat = pd.read_sql(sql=sql_query, con=self.DatabaseConn)
 
             if pickle_it:
                 save_pickle(ukcp09_dat, path_to_pickle, verbose=verbose)
 
         return ukcp09_dat
 
-    def query_by_grid_datetime_(self, grids, period,
-                                update=False, dat_dir=None, pickle_it=False, verbose=False):
+    def query_by_grid_datetime_(self, grids, period, update=False, dat_dir=None, pickle_it=False,
+                                verbose=False):
         """
         Get UKCP09 data by observation grids and date (Query from the database)
         from the beginning of the year to the start of the ``period``.
@@ -1114,13 +1176,15 @@ class UKCP09:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console as the function runs,
             defaults to ``False``
-        :type verbose: bool, int
+        :type verbose: bool or int
         :return: UKCP09 data by ``grids`` and ``period``
         :rtype: pandas.DataFrame
 
-        **Examples**::
+        **Test**::
 
-            from weather.ukcp import query_by_grid_datetime
+            >>> from preprocessor import UKCP09
+
+            >>> ukcp = UKCP09()
 
             update = False
             verbose = True
@@ -1166,7 +1230,7 @@ class UKCP09:
                         f"AND [Date] >= '{y_start}' AND [Date] <= '{p_start}';"
 
             # Query the weather data
-            ukcp09_dat = pd.read_sql(sql=sql_query, con=self.DatabaseEngine)
+            ukcp09_dat = pd.read_sql(sql=sql_query, con=self.DatabaseConn)
 
             if pickle_it:
                 save_pickle(ukcp09_dat, path_to_pickle, verbose=verbose)
