@@ -2,12 +2,11 @@
 
 import numpy as np
 import pandas as pd
-from preprocessor.reports import Schedule8IncidentsSpreadsheet
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from preprocessor.weather import METEX
+from preprocessor import METExLite, Schedule8IncidentReports
 
 
 # == Task 1: Broad classification of incidents into weather-related and non-weather-related ======
@@ -38,7 +37,7 @@ def get_task_1_train_test_data(random_state=0, test_size=0.2):
         # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
     """
 
-    metex = METEX()
+    metex = METExLite()
 
     dat = metex.view_schedule8_costs_by_datetime_location_reason()
     dat['weather_related'] = dat.WeatherCategory.map(lambda x: 0 if x == '' else 1)
@@ -148,7 +147,7 @@ def get_task_2_train_test_data():
         # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
     """
 
-    reports = Schedule8IncidentsSpreadsheet()
+    reports = Schedule8IncidentReports()
 
     schedule8_weather_incidents = reports.get_schedule8_weather_incidents_02062006_31032014()
     schedule8_weather_incidents = schedule8_weather_incidents['Data']
@@ -156,7 +155,7 @@ def get_task_2_train_test_data():
         columns={'Year': 'FinancialYear', 'IncidentReason': 'IncidentReasonCode'},
         inplace=True)
 
-    metex = METEX()
+    metex = METExLite()
 
     dat = metex.view_schedule8_costs_by_datetime_location_reason()
     dat.WeatherCategory.fillna('', inplace=True)
