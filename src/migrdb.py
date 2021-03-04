@@ -100,7 +100,7 @@ def copy_mssql_to_postgresql(origin_db_name, destination_db_name, update=True, v
 
     **Examples**::
 
-        >>> from preprocessor.mssql2postgres import copy_mssql_to_postgresql
+        >>> from migrdb import copy_mssql_to_postgresql
 
         >>> copy_mssql_to_postgresql(origin_db_name='NR_VEG', db_name='NR_VEG')
 
@@ -161,7 +161,7 @@ def py2_etlalchemy_migrate(source_db_name, destination_db_name, postgres_pwd, py
 
     **Test**::
 
-        >>> from preprocessor.mssql2postgres import py2_etlalchemy_migrate
+        >>> from migrdb import py2_etlalchemy_migrate
 
         >>> source_database = 'NR_Vegetation_20141031'  # source_db_name
         >>> destination_database = 'TestVeg'  # destination_db_name
