@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from preprocessor import METExLite, Schedule8IncidentReports
 
 
-# == Task 1: Broad classification of incidents into weather-related and non-weather-related ======
+# == Task 1: Broad classification of incidents into weather-related and non-weather-related ===========
 
 def get_task_1_train_test_data(random_state=0, test_size=0.2):
     """
@@ -126,7 +126,7 @@ def classification_model_for_identifying_weather_related_incidents(random_state=
     return model
 
 
-# == Task 2: Classification of weather-related incidents into different categories ===============
+# == Task 2: Classification of weather-related incidents into different categories ====================
 
 def get_task_2_train_test_data():
     """
