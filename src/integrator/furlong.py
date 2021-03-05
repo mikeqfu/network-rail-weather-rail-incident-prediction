@@ -10,12 +10,28 @@ from pyhelpers.store import load_pickle, save_pickle
 from pyrcs import ELRMileages
 from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage
 
-from preprocessor import METEX, Vegetation
-from tools import cd_prototype_dat
-from utils import cdd_railway_codes, get_subset, make_filename
+from preprocessor import METExLite, Vegetation
+from utils import cdd_network, cdd_railway_codes, get_subset, make_filename
 
-metex = METEX()
+metex = METExLite()
 vegetation = Vegetation()
+
+
+def cdd_geodata(*sub_dir, mkdir=False):
+    """
+    Change directory to "data\\network\\geodata" and sub-directories / a file.
+
+    :param sub_dir: name of directory or names of directories (and/or a filename)
+    :type sub_dir: str
+    :param mkdir: whether to create a directory, defaults to ``False``
+    :type mkdir: bool
+    :return: full path to "data\\network\\geodata" and sub-directories / a file
+    :rtype: str
+    """
+
+    path = cdd_network("geodata", *sub_dir, mkdir=mkdir)
+
+    return path
 
 
 # == Tools ============================================================================================
@@ -33,7 +49,7 @@ def adjust_incident_mileages(ref_furlongs, elr, start_mileage_num, end_mileage_n
     :param end_mileage_num: end mileage
     :type end_mileage_num: float
     :param shift_yards: yards by which the start/end mileage is shifted for adjustment
-    :type shift_yards: int, float
+    :type shift_yards: int or float
     :return: adjusted mileages of incident locations and critical furlong IDs
     :rtype: tuple
 
@@ -89,9 +105,9 @@ def adjust_incident_mileages(ref_furlongs, elr, start_mileage_num, end_mileage_n
         # ('17.0000', '21.1540', 17.0, 21.154, 7311.04, [63503, ..., 63480])
     """
 
-    nr_elr_furlongs = ref_furlongs[ref_furlongs.ELR == elr]
-
     try:
+        nr_elr_furlongs = ref_furlongs[ref_furlongs.ELR == elr]
+
         # Merge the mileages (num) of both start and end
         elr_mileages = nr_elr_furlongs.StartMileage_num.append(nr_elr_furlongs.EndMileage_num)
         elr_mileages.drop_duplicates(keep='first', inplace=True)
@@ -176,14 +192,18 @@ def adjust_incident_mileages(ref_furlongs, elr, start_mileage_num, end_mileage_n
         distance = measurement.measures.Distance(
             mile=np.abs(adjusted_end_mileage_num - adjusted_start_mileage_num)).yd
 
-    except IndexError:
+    except (IndexError, KeyError):
         adjusted_start_mileage, adjusted_end_mileage = '', ''
         adjusted_start_mileage_num, adjusted_end_mileage_num, distance = np.nan, np.nan, np.nan
         critical_furlong_id = []
 
     adjusted_incident_mileages = (
-        adjusted_start_mileage, adjusted_end_mileage, adjusted_start_mileage_num,
-        adjusted_end_mileage_num, distance, critical_furlong_id)
+        adjusted_start_mileage,
+        adjusted_end_mileage,
+        adjusted_start_mileage_num,
+        adjusted_end_mileage_num,
+        distance,
+        critical_furlong_id)
 
     return adjusted_incident_mileages
 
@@ -195,13 +215,13 @@ def get_connecting_nodes(diff_start_end_elr_dat, route_name=None, update=False, 
     :param diff_start_end_elr_dat: data frame where StartELR != EndELR
     :type diff_start_end_elr_dat: pandas.DataFrame
     :param route_name: name of a Route; if ``None`` (default), all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: data of connecting points for different ELRs
     :rtype: pandas.DataFrame
 
@@ -228,7 +248,7 @@ def get_connecting_nodes(diff_start_end_elr_dat, route_name=None, update=False, 
 
     filename = "connections-between-different-ELRs"
     pickle_filename = make_filename(filename, route_name)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle, verbose=verbose)
@@ -236,7 +256,7 @@ def get_connecting_nodes(diff_start_end_elr_dat, route_name=None, update=False, 
     else:
         try:
             pickle_filename_temp = make_filename(filename)
-            path_to_pickle_temp = cd_prototype_dat(pickle_filename_temp)
+            path_to_pickle_temp = cdd_geodata(pickle_filename_temp)
 
             if os.path.isfile(path_to_pickle_temp) and not update:
                 connecting_nodes_all = load_pickle(path_to_pickle_temp)
@@ -248,6 +268,8 @@ def get_connecting_nodes(diff_start_end_elr_dat, route_name=None, update=False, 
                 em = ELRMileages()
                 print("Searching for connecting ELRs ... ", end="") if verbose else ""
                 mileage_file_dir = cdd_railway_codes("line data\\elrs-and-mileages\\mileages")
+
+                # noinspection PyTypeChecker
                 conn_mileages = diff_elr_mileages.apply(
                     lambda x: em.get_conn_mileages(x.StartELR, x.EndELR, update,
                                                    pickle_mileage_file=True,
@@ -281,18 +303,18 @@ def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shif
     Get adjusted mileages for each incident location where StartELR == EndELR.
 
     :param route_name: name of a Route; if ``None``, all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param weather_category: weather category; if ``None``, all weather categories
-    :type weather_category: str, None
+    :type weather_category: str or None
     :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR
-    :type shift_yards_same_elr: int, float
+    :type shift_yards_same_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: adjusted mileages for each incident location where StartELR == EndELR
     :rtype: pandas.DataFrame
 
@@ -313,7 +335,7 @@ def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shif
 
     filename = "adjusted-mileages-same-start-end-ELRs"
     pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_same_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         adj_mileages = load_pickle(path_to_pickle)
@@ -321,7 +343,7 @@ def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shif
 
     else:
         try:
-            # Get data about for which the 'StartELR' and 'EndELR' are THE SAME
+            # Get data of incident locations where the 'StartELR' and 'EndELR' are THE SAME
             incident_locations = metex.view_metex_schedule8_incident_locations(
                 route_name, weather_category, start_and_end_elr='same', verbose=verbose)
 
@@ -329,10 +351,12 @@ def get_adjusted_mileages_same_start_end_elrs(route_name, weather_category, shif
             ref_furlongs = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
 
             # Calculate adjusted furlong locations for each incident (for vegetation conditions)
+            # noinspection PyTypeChecker
             adjusted_mileages = incident_locations.apply(
-                lambda x: adjust_incident_mileages(ref_furlongs, x.StartELR, x.StartMileage_num,
-                                                   x.EndMileage_num,
-                                                   shift_yards_same_elr), axis=1)
+                lambda x: adjust_incident_mileages(
+                    ref_furlongs, x.StartELR, x.StartMileage_num, x.EndMileage_num,
+                    shift_yards_same_elr),
+                axis=1)
 
             # Get adjusted mileage data
             adj_mileages = pd.DataFrame(list(adjusted_mileages), index=incident_locations.index,
@@ -356,18 +380,18 @@ def get_furlongs_same_start_end_elrs(route_name=None, weather_category=None, shi
     i.e. StartELR == EndELR.
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param weather_category: weather category; if ``None`` (default), all weather categories
-    :type weather_category: str, None
+    :type weather_category: str or None
     :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_same_elr: int, float
+    :type shift_yards_same_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: furlongs data of incident locations each identified by the same start and end ELRs
     :rtype: pandas.DataFrame
 
@@ -388,7 +412,7 @@ def get_furlongs_same_start_end_elrs(route_name=None, weather_category=None, shi
 
     filename = "furlongs-same-start-end-ELRs"
     pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_same_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         furlongs_same_start_end_elr = load_pickle(path_to_pickle)
@@ -421,18 +445,18 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
     Get adjusted mileages for each incident location where StartELR != EndELR.
 
     :param route_name: name of a Route; if ``None``, all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param weather_category: weather category; if ``None``, all weather categories
-    :type weather_category: str, None
+    :type weather_category: str or None
     :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR
-    :type shift_yards_diff_elr: int, float
+    :type shift_yards_diff_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: adjusted mileages for each incident location where StartELR != EndELR
     :rtype: pandas.DataFrame
 
@@ -453,7 +477,7 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
 
     filename = "adjusted-mileages-diff-start-end-ELRs"
     pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_diff_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         return load_pickle(path_to_pickle)
@@ -488,10 +512,10 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
             nr_furlong_data = vegetation.view_nr_vegetation_furlong_data(verbose=verbose)
 
             adjusted_conn_elr_mileages = locations_conn.apply(
-                lambda x: adjust_incident_mileages(nr_furlong_data, x.ConnELR,
-                                                   x.ConnELR_StartMileage_num,
-                                                   x.ConnELR_EndMileage_num, 0)
-                if x.ConnELR != '' else tuple([''] * 2 + [np.nan] * 2 + [0.0, []]), axis=1)
+                lambda x: adjust_incident_mileages(
+                    nr_furlong_data, x.ConnELR, x.ConnELR_StartMileage_num, x.ConnELR_EndMileage_num, 0)
+                if x.ConnELR != '' else tuple(['', '', np.nan, np.nan, 0.0, []]),
+                axis=1)
             adjusted_conn_mileages = pd.DataFrame(adjusted_conn_elr_mileages.tolist(),
                                                   index=locations_conn.index,
                                                   columns=['Conn_StartMileage_Adj',
@@ -503,8 +527,9 @@ def get_adjusted_mileages_diff_start_end_elrs(route_name, weather_category, shif
 
             # Processing Start locations
             adjusted_start_elr_mileages = locations_conn.apply(
-                lambda x: adjust_incident_mileages(nr_furlong_data, x.StartELR, x.StartMileage_num,
-                                                   x.StartELR_EndMileage_num, shift_yards_diff_elr),
+                lambda x: adjust_incident_mileages(
+                    nr_furlong_data, x.StartELR, x.StartMileage_num, x.StartELR_EndMileage_num,
+                    shift_yards_diff_elr),
                 axis=1)
 
             # Create a dataframe adjusted mileage data of the Start ELRs
@@ -564,18 +589,18 @@ def get_furlongs_diff_start_end_elrs(route_name=None, weather_category=None, shi
     i.e. StartELR != EndELR.
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param weather_category: weather category; if ``None`` (default), all weather categories
-    :type weather_category: str, None
+    :type weather_category: str or None
     :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_diff_elr: int, float
+    :type shift_yards_diff_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: furlongs data of incident locations each identified by the same start and end ELRs
     :rtype: pandas.DataFrame
 
@@ -596,7 +621,7 @@ def get_furlongs_diff_start_end_elrs(route_name=None, weather_category=None, shi
 
     filename = "furlongs-diff-start-end-ELRs"
     pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_diff_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         furlongs_diff_start_end_elr = load_pickle(path_to_pickle)
@@ -634,21 +659,21 @@ def get_furlongs_data(route_name=None, weather_category=None,
     Get furlongs data.
 
     :param route_name: name of a Route; if ``None`` (default), all Routes
-    :type route_name: str, None
+    :type route_name: str or None
     :param weather_category: weather category, defaults to ``None``
-    :type weather_category: str, None
+    :type weather_category: str or None
     :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_same_elr: int, float
+    :type shift_yards_same_elr: int or float
     :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR != EndELR, defaults to ``220``
-    :type shift_yards_diff_elr: int, float
+    :type shift_yards_diff_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: data of furlongs for incident locations
     :rtype: pandas.DataFrame
 
@@ -674,23 +699,24 @@ def get_furlongs_data(route_name=None, weather_category=None,
     """
 
     filename = "furlongs"
-    pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_same_elr,
-                                    shift_yards_diff_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    pickle_filename = make_filename(
+        filename, route_name, weather_category, shift_yards_same_elr, shift_yards_diff_elr)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         furlongs_data = load_pickle(path_to_pickle)
-        return furlongs_data
 
     else:
         try:
             # Data of incident furlongs: both start and end identified by the same ELR
             furlongs_data_same_elr = get_furlongs_same_start_end_elrs(
-                route_name, weather_category, shift_yards_same_elr, verbose=verbose)
+                route_name=route_name, weather_category=weather_category,
+                shift_yards_same_elr=shift_yards_same_elr, verbose=verbose)
 
             # Data of incident furlongs: start and end are identified by different ELRs
             furlongs_data_diff_elr = get_furlongs_diff_start_end_elrs(
-                route_name, weather_category, shift_yards_diff_elr, verbose=verbose)
+                route_name=route_name, weather_category=weather_category,
+                shift_yards_diff_elr=shift_yards_diff_elr, verbose=verbose)
 
             # Merge the above two data sets
             furlongs_data = furlongs_data_same_elr.append(furlongs_data_diff_elr)
@@ -699,92 +725,92 @@ def get_furlongs_data(route_name=None, weather_category=None,
 
             save_pickle(furlongs_data, path_to_pickle, verbose=verbose)
 
-            return furlongs_data
-
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(os.path.splitext(pickle_filename)[0], e))
+            furlongs_data = None
+
+    return furlongs_data
 
 
 def get_incident_location_furlongs(route_name=None, weather_category=None,
                                    shift_yards_same_elr=220, shift_yards_diff_elr=220,
-                                   update=False, verbose=False) -> pd.DataFrame:
+                                   update=False, verbose=False):
     """
     Get data of furlongs for incident locations.
 
-    :param route_name: name of a Route; if ``None`` (default), all Routes
-    :type route_name: str, None
-    :param weather_category: weather category, defaults to ``None``
-    :type weather_category: str, None
+    :param route_name: name of a Route; if ``None`` (default), all available Routes
+    :type route_name: str or None
+    :param weather_category: weather category; if ``None`` (default), all available weather categories
+    :type weather_category: str or None
     :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
-        given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_same_elr: int, float
+        given that ``StartELR == EndELR``, defaults to ``220``
+    :type shift_yards_same_elr: int or float
     :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
-        given that StartELR != EndELR, defaults to ``220``
-    :type shift_yards_diff_elr: int, float
+        given that ``StartELR != EndELR``, defaults to ``220``
+    :type shift_yards_diff_elr: int or float
     :param update: whether to check on update and proceed to update the package data,
         defaults to ``False``
     :type update: bool
     :param verbose: whether to print relevant information in console as the function runs,
         defaults to ``False``
-    :type verbose: bool, int
+    :type verbose: bool or int
     :return: data of furlongs for incident locations
-    :rtype: pandas.DataFrame
+    :rtype: pandas.DataFrame or None
 
     **Test**::
 
-        from models.prototype.furlong import get_incident_location_furlongs
+        >>> from integrator.furlong import get_incident_location_furlongs
 
         weather_category     = None
         shift_yards_same_elr = 220
-        shift_yards_diff_elr = 220
+        shift_yards_diff_elr = 440
         update               = True
         verbose              = True
 
-        route_name = None
-        incident_location_furlongs = get_incident_location_furlongs(
-            route_name, weather_category, shift_yards_same_elr, shift_yards_diff_elr, update, verbose)
-        print(incident_location_furlongs)
+        >>> il_furlongs = get_incident_location_furlongs(update=True, verbose=True)
 
-        route_name = 'Anglia'
-        incident_location_furlongs = get_incident_location_furlongs(
-            route_name, weather_category, shift_yards_same_elr, shift_yards_diff_elr, update, verbose)
-        print(incident_location_furlongs)
+        >>> il_furlongs.tail()
+
+        >>> il_furlongs = get_incident_location_furlongs(route_name='Anglia', update=True, verbose=True)
+
+        >>> il_furlongs.tail()
+
     """
 
     filename = "incident-location-furlongs"
     pickle_filename = make_filename(filename, route_name, weather_category, shift_yards_same_elr,
                                     shift_yards_diff_elr)
-    path_to_pickle = cd_prototype_dat(pickle_filename)
+    path_to_pickle = cdd_geodata(pickle_filename)
 
     if os.path.isfile(path_to_pickle) and not update:
         incident_location_furlongs = load_pickle(path_to_pickle)
-        return incident_location_furlongs
 
     else:
         try:
+            use_col_names = ['Section_Length_Adj', 'Critical_FurlongIDs']
+
             adjusted_mileages_same_start_end_elrs = get_adjusted_mileages_same_start_end_elrs(
                 route_name, weather_category, shift_yards_same_elr, verbose=verbose)
-            ilf_same = adjusted_mileages_same_start_end_elrs[
-                ['Section_Length_Adj', 'Critical_FurlongIDs']]
+            ilf_same = adjusted_mileages_same_start_end_elrs[use_col_names]
 
             adjusted_mileages_diff_start_end_elrs = get_adjusted_mileages_diff_start_end_elrs(
                 route_name, weather_category, shift_yards_diff_elr, verbose=verbose)
-            ilf_diff = adjusted_mileages_diff_start_end_elrs[
-                ['Section_Length_Adj', 'Critical_FurlongIDs']]
+            ilf_diff = adjusted_mileages_diff_start_end_elrs[use_col_names]
 
-            incident_locations = metex.view_metex_schedule8_incident_locations(route_name,
-                                                                               weather_category,
-                                                                               verbose=verbose)
+            furlongs_dat = pd.concat([ilf_same, ilf_diff])
+
+            incident_locations = metex.view_metex_schedule8_incident_locations(
+                route_name, weather_category, verbose=verbose)
 
             # Merge the above data sets
-            incident_location_furlongs = incident_locations.join(pd.concat([ilf_same, ilf_diff]),
-                                                                 how='right')
+            incident_location_furlongs = incident_locations.join(furlongs_dat, how='right')
             incident_location_furlongs.drop(['StartMileage_num', 'EndMileage_num'], axis=1, inplace=True)
             incident_location_furlongs.index = range(len(incident_location_furlongs))
 
             save_pickle(incident_location_furlongs, path_to_pickle, verbose=verbose)
 
-            return incident_location_furlongs
-
         except Exception as e:
             print("Failed to get \"{}\". {}.".format(os.path.splitext(pickle_filename)[0], e))
+            incident_location_furlongs = None
+
+    return incident_location_furlongs
