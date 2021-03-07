@@ -18,8 +18,8 @@ from sklearn.utils import extmath
 
 from integrator.furlong import get_furlongs_data, get_incident_location_furlongs
 from preprocessor import METExLite
-from utils import categorise_track_orientations, cd_models, get_data_by_season, get_data_by_season_, \
-    make_filename
+from utils import categorise_track_orientations, cd_models, get_data_by_season, \
+    get_data_by_season_, make_filename
 
 
 class WindAttributedIncidents:
@@ -164,8 +164,7 @@ class WindAttributedIncidents:
         mpl_preferences(font_name='Cambria')
         pd_preferences()
 
-    @staticmethod
-    def cdd(*sub_dir, mkdir=False):
+    def cdd(self, *sub_dir, mkdir=False):
         """
         Change directory to "models\\prototype\\wind" and sub-directories / a file.
 
@@ -187,7 +186,7 @@ class WindAttributedIncidents:
             'models\\prototype\\wind'
         """
 
-        path = cd_models("prototype", "wind", *sub_dir, mkdir=mkdir)
+        path = cd_models("prototype", self.WeatherCategory.lower, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -1524,8 +1523,7 @@ class HeatAttributedIncidents:
         mpl_preferences(font_name='Cambria')
         pd_preferences()
 
-    @staticmethod
-    def cdd(*sub_dir, mkdir=False):
+    def cdd(self, *sub_dir, mkdir=False):
         """
         Change directory to "models\\prototype\\heat" and sub-directories / a file.
 
@@ -1547,7 +1545,7 @@ class HeatAttributedIncidents:
             'models\\prototype\\heat'
         """
 
-        path = cd_models("prototype", "heat", *sub_dir, mkdir=mkdir)
+        path = cd_models("prototype", self.WeatherCategory.lower(), *sub_dir, mkdir=mkdir)
 
         return path
 
