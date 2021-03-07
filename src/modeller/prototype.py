@@ -12,13 +12,14 @@ import pandas as pd
 import shapely.geometry
 import statsmodels.discrete.discrete_model as sm_dcm
 from pyhelpers.settings import mpl_preferences, pd_preferences
-from pyhelpers.store import load_pickle, save_pickle, save_svg_as_emf
+from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 from sklearn import metrics
 from sklearn.utils import extmath
 
 from integrator.furlong import get_furlongs_data, get_incident_location_furlongs
 from preprocessor import METExLite
-from utils import categorise_track_orientations, cd_models, get_data_by_season_, make_filename
+from utils import categorise_track_orientations, cd_models, get_data_by_season, get_data_by_season_, \
+    make_filename
 
 
 class WindAttributedIncidents:
@@ -33,21 +34,19 @@ class WindAttributedIncidents:
     :type hazard_pctl: defaults to ``50``
     """
 
-    def __init__(self, trial_id, model_type='logit', seed=0, in_seasons=None,
+    def __init__(self, trial_id,
                  ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
-                 shift_yards_same_elr=220, shift_yards_diff_elr=220,
-                 hazard_pctl=50, outlier_pctl=99):
+                 shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
+                 model_type='logit', in_seasons=None, outlier_pctl=99):
 
         self.Name = 'A prototype data model of predicting wind-related incidents.'
 
         self.TrialID = "{}".format(trial_id)
 
-        self.METEx = METExLite()
+        self.METEx = METExLite(database_name='NR_METEx_20150331')
 
         self.Route = 'Anglia'
         self.WeatherCategory = 'Wind'
-
-        self.Seasons = in_seasons
 
         self.IP_StartHrs = ip_start_hrs
         self.IP_EndHrs = ip_end_hrs
@@ -57,6 +56,52 @@ class WindAttributedIncidents:
         self.ShiftYardsForDiffELRs = shift_yards_diff_elr
 
         self.HazardsPercentile = hazard_pctl
+
+        # Get incident_location_furlongs
+        self.Furlongs = get_furlongs_data(route_name=self.Route, weather_category=None,
+                                          shift_yards_same_elr=self.ShiftYardsForSameELRs,
+                                          shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
+
+        def specify_veg_stats_calc():
+            """
+            Specify the statistics that need to be computed.
+            """
+
+            features = self.Furlongs.columns
+
+            # "CoverPercent..."
+            cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
+            veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
+            veg_stats_calc.update({'AssetNumber': np.count_nonzero,
+                                   'TreeNumber': np.nansum,
+                                   'TreeNumberUp': np.nansum,
+                                   'TreeNumberDown': np.nansum,
+                                   'Electrified': np.any,
+                                   'DateOfMeasure': lambda x: tuple(x),
+                                   # 'AssetDesc1': np.all,
+                                   # 'IncidentReported': np.any
+                                   'HazardTreeNumber':
+                                       lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
+
+            # variables for hazardous trees
+            hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
+            hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
+            hazard_others = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
+            # Computations for hazardous trees variables
+            hazard_calc = [dict(zip(hazard_others, [lambda x: tuple(x)] * len(hazard_others))),
+                           dict(zip(hazard_min, [np.min] * len(hazard_min))),
+                           dict(zip(hazard_max, [np.max] * len(hazard_max)))]
+
+            # Update vegetation_stats_computations
+            veg_stats_calc.update({k: v for d in hazard_calc for k, v in d.items()})
+
+            return cover_percents, hazard_others, veg_stats_calc
+
+        self.CoverPercents, self.HazardsOthers, self.VegStatsCalc_ = specify_veg_stats_calc()
+
+        self.ModelType = model_type
+        self.OutlierPercentile = outlier_pctl
+        self.Seasons = in_seasons
 
         self.ExplanatoryVariables = [
             # 'WindSpeed_max',
@@ -109,11 +154,6 @@ class WindAttributedIncidents:
             # 'HazardTreeproxrailM_min'
         ]
 
-        self.OutlierPercentile = outlier_pctl
-
-        self.RandomSeed = seed
-        self.ModelType = model_type
-
         self.WeatherStatsCalc = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
                                  'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
                                  'WindSpeed': np.nanmax,
@@ -121,50 +161,8 @@ class WindAttributedIncidents:
                                  'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
                                  'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
 
-        # Get incident_location_furlongs
-        self.Furlongs = get_furlongs_data(route_name=self.Route, weather_category=None,
-                                          shift_yards_same_elr=self.ShiftYardsForSameELRs,
-                                          shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
-
-        def specify_veg_stats_calc():
-            """
-            Specify the statistics that need to be computed.
-            """
-
-            features = self.Furlongs.columns
-
-            # "CoverPercent..."
-            cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
-            veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
-            veg_stats_calc.update({'AssetNumber': np.count_nonzero,
-                                   'TreeNumber': np.nansum,
-                                   'TreeNumberUp': np.nansum,
-                                   'TreeNumberDown': np.nansum,
-                                   'Electrified': np.any,
-                                   'DateOfMeasure': lambda x: tuple(x),
-                                   # 'AssetDesc1': np.all,
-                                   # 'IncidentReported': np.any
-                                   'HazardTreeNumber':
-                                       lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
-
-            # variables for hazardous trees
-            hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
-            hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
-            hazard_others = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
-            # Computations for hazardous trees variables
-            hazard_calc = [dict(zip(hazard_others, [lambda x: tuple(x)] * len(hazard_others))),
-                           dict(zip(hazard_min, [np.min] * len(hazard_min))),
-                           dict(zip(hazard_max, [np.max] * len(hazard_max)))]
-
-            # Update vegetation_stats_computations
-            veg_stats_calc.update({k: v for d in hazard_calc for k, v in d.items()})
-
-            return cover_percents, hazard_others, veg_stats_calc
-
-        self.CoverPercents, self.HazardsOthers, self.VegStatsCalc_ = specify_veg_stats_calc()
-
-        mpl_preferences(font_name='Cambria', reset=False)
-        pd_preferences(reset=False)
+        mpl_preferences(font_name='Cambria')
+        pd_preferences()
 
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
@@ -796,10 +794,10 @@ class WindAttributedIncidents:
             [5 rows x 103 columns]
         """
 
-        pickle_filename = make_filename("dataset", self.Route, self.WeatherCategory,
-                                        self.IP_StartHrs, self.IP_EndHrs, self.NIP_StartHrs,
-                                        self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs,
-                                        self.HazardsPercentile)
+        pickle_filename = make_filename(
+            "dataset", self.Route, self.WeatherCategory,
+            self.IP_StartHrs, self.IP_EndHrs, self.NIP_StartHrs,
+            self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile)
         path_to_file = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_file) and not update:
@@ -811,8 +809,8 @@ class WindAttributedIncidents:
                 incident_location_weather = self.get_incident_location_weather()
                 # Get information of vegetation conditions for the incident locations
                 incident_location_vegetation = self.get_incident_location_vegetation()
-                # incident_location_vegetation.drop(['IncidentCount', 'DelayCost', 'DelayMinutes'],
-                #                                   axis=1, inplace=True)
+                # incident_location_vegetation.drop(
+                #     labels=['IncidentCount', 'DelayCost', 'DelayMinutes'], axis=1, inplace=True)
 
                 common_feats = list(
                     set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
@@ -844,7 +842,7 @@ class WindAttributedIncidents:
 
     # == Model training ===============================================================================
 
-    def prep_training_and_test_sets(self):
+    def prep_training_and_test_sets(self, add_const=True):
         """
         Further process the integrated data set and split it into a training set and a test set.
 
@@ -861,58 +859,47 @@ class WindAttributedIncidents:
         integrated_dat = self.integrate_data()
 
         # Select season data: 'Spring', 'Summer', 'Autumn', 'Winter'
-        integrated_data = get_data_by_season_(integrated_dat, self.Seasons,
-                                              incident_datetime_col='StartDate')
+        processed_data = get_data_by_season_(
+            integrated_dat, in_seasons=self.Seasons, incident_datetime_col='StartDate')
 
         # Remove outliers
         if 95 <= self.OutlierPercentile <= 100:
-            integrated_data = integrated_data[
-                integrated_data.DelayMinutes <= np.percentile(integrated_data.DelayMinutes,
-                                                              self.OutlierPercentile)]
-            # from pyhelpers.misc import get_extreme_outlier_bounds
-            # lo, up = get_extreme_outlier_bounds(mod_data.DelayMinutes, k=1.5)
-            # mod_data = mod_data[mod_data.DelayMinutes.between(lo, up, inclusive=True)]
+            upper_limit = np.percentile(processed_data.DelayMinutes, self.OutlierPercentile)
+            processed_data = processed_data[processed_data.DelayMinutes <= upper_limit]
+            # from pyhelpers.ops import get_extreme_outlier_bounds
+            # l, u = get_extreme_outlier_bounds(integrated_data.DelayMinutes, k=1.5)
+            # integrated_data = integrated_data[
+            #     integrated_data.DelayMinutes.between(l, u, inclusive=True)]
 
         # CoverPercent
-        cover_percent_cols = [x for x in integrated_data.columns if re.match('^CoverPercent', x)]
-        integrated_data.loc[:, cover_percent_cols] = integrated_data[cover_percent_cols] / 10.0
-        integrated_data.loc[:, 'CoverPercentDiff'] = \
-            integrated_data.CoverPercentVegetation - integrated_data.CoverPercentOpenSpace - \
-            integrated_data.CoverPercentOther
-        integrated_data.loc[:, 'CoverPercentDiff'] = \
-            integrated_data.CoverPercentDiff * integrated_data.CoverPercentDiff.map(
+        cover_percent_cols = [x for x in processed_data.columns if re.match('^CoverPercent', x)]
+        processed_data.loc[:, cover_percent_cols] = processed_data[cover_percent_cols] / 10.0
+        processed_data.loc[:, 'CoverPercentDiff'] = \
+            processed_data.CoverPercentVegetation - processed_data.CoverPercentOpenSpace - \
+            processed_data.CoverPercentOther
+        processed_data.loc[:, 'CoverPercentDiff'] = \
+            processed_data.CoverPercentDiff * processed_data.CoverPercentDiff.map(
                 lambda x: 1 if x >= 0 else 0)
 
         # Scale down 'WindGust_max' and 'RelativeHumidity_max'
-        integrated_data.loc[:, 'WindGust_max'] = integrated_data.WindGust_max / 10.0
-        integrated_data.loc[:, 'RelativeHumidity_max'] = integrated_data.RelativeHumidity_max / 10.0
-
-        # Select features
-        explanatory_variables = self.ExplanatoryVariables.copy()
-        explanatory_variables += [
-            # 'HazardTreediameterM_%s' % hazard_pctl,
-            # 'HazardTreeheightM_%s' % hazard_pctl,
-            # 'HazardTreeprox3py_%s' % hazard_pctl,
-            # 'HazardTreeproxrailM_%s' % hazard_pctl,
-        ]
+        processed_data.loc[:, 'WindGust_max'] = processed_data.WindGust_max / 10.0
+        processed_data.loc[:, 'RelativeHumidity_max'] = processed_data.RelativeHumidity_max / 10.0
 
         # Add an intercept
-        integrated_data['const'] = 1
-        explanatory_variables = ['const'] + explanatory_variables
+        if add_const:
+            processed_data['const'] = 1
 
         # Set the outcomes of non-incident records to 0
-        integrated_data.loc[
-            integrated_data.IncidentReported == 0, ['DelayMinutes', 'DelayCost', 'IncidentCount']] = 0
-
-        integrated_dat = integrated_data[['FinancialYear', 'IncidentReported'] + explanatory_variables]
+        outcome_columns = ['DelayMinutes', 'DelayCost', 'IncidentCount']
+        processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
 
         # Select data before 2014 as training data set, with the rest being test set
-        train_set = integrated_data[integrated_dat.FinancialYear < 2014]
-        test_set = integrated_data[integrated_dat.FinancialYear == 2014]
+        train_set = processed_data[processed_data.FinancialYear < 2014]
+        test_set = processed_data[processed_data.FinancialYear == 2014]
 
-        return integrated_data, train_set, test_set
+        return processed_data, train_set, test_set
 
-    def illustrate_explanatory_variables(self, save_as=".tif", dpi=None):
+    def illustrate_explanatory_variables(self, save_as=".tif", dpi=None, verbose=False):
         """
         Describe basic statistics about the main explanatory variables.
 
@@ -920,6 +907,8 @@ class WindAttributedIncidents:
         :type save_as: str or bool or None
         :param dpi: DPI
         :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``False``
+        :type verbose: bool or int
 
         **Test**::
 
@@ -981,7 +970,7 @@ class WindAttributedIncidents:
 
         plt.tight_layout()
         if save_as:
-            path_to_file_weather = self.cdd("figures" + "weather_variables" + save_as)
+            path_to_file_weather = self.cdd_trial("weather_variables" + save_as)
             plt.savefig(path_to_file_weather, dpi=dpi)
             if save_as == ".svg":
                 save_svg_as_emf(path_to_file_weather, path_to_file_weather.replace(save_as, ".emf"))
@@ -1005,18 +994,21 @@ class WindAttributedIncidents:
 
         plt.tight_layout()
         if save_as:
-            path_to_file_veg = self.cdd("figures", "vegetation_variables" + save_as)
-            plt.savefig(path_to_file_veg, dpi=dpi)
-            if save_as == ".svg":
-                save_svg_as_emf(path_to_file_veg, path_to_file_veg.replace(save_as, ".emf"))
+            path_to_file_veg = self.cdd_trial("vegetation_variables" + save_as)
+            save_fig(path_to_file_veg, dpi=dpi, conv_svg_to_emf=True, verbose=verbose)
 
-    def logistic_regression_model(self, pickle_it=True, verbose=True):
+    def logistic_regression_model(self, add_intercept=True, random_seed=0, pickle_it=True, verbose=True):
         """
+        Logistic regression model.
 
+        :param add_intercept: whether to add a constant in the model specification
+        :param add_intercept: bool
+        :param random_seed: random seed number
+        :type random_seed: int or None
         :param pickle_it: whether to save the result as a pickle file
         :type pickle_it: bool
-        :param verbose: defaults to ``True``
-        :param verbose: bool or int
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
         :return: estimated model and relevant results
         :rtype: tuple
 
@@ -1026,20 +1018,26 @@ class WindAttributedIncidents:
 
             >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
 
-            >>> output = wind_attributed_incidents.logistic_regression_model()
+            >>> output = wind_attributed_incidents.logistic_regression_model(random_seed=0)
         """
 
-        _, train_set, test_set = self.prep_training_and_test_sets()
+        _, train_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
+
+        if add_intercept:
+            explanatory_variables = ['const'] + self.ExplanatoryVariables
+        else:
+            explanatory_variables = self.ExplanatoryVariables.copy()
 
         self.__setattr__('TrainingSet', train_set)
         self.__setattr__('TestSet', test_set)
 
         try:
-            np.random.seed(self.RandomSeed)
+            np.random.seed(random_seed)
+
             if self.ModelType == 'logit':
-                mod = sm_dcm.Logit(train_set.IncidentReported, train_set[self.ExplanatoryVariables])
+                mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
             else:
-                mod = sm_dcm.Probit(train_set.IncidentReported, train_set[self.ExplanatoryVariables])
+                mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
             result_summary = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
 
             if verbose:
@@ -1052,7 +1050,7 @@ class WindAttributedIncidents:
                 print(odds_ratios)
 
             # Prediction
-            test_set['incident_prob'] = result_summary.predict(test_set[self.ExplanatoryVariables])
+            test_set['incident_prob'] = result_summary.predict(test_set[explanatory_variables])
 
             # ROC  # False Positive Rate (FPR), True Positive Rate (TPR), Threshold
             fpr, tpr, thr = metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
@@ -1146,13 +1144,16 @@ class WindAttributedIncidents:
 
         return result_summary, mod_accuracy, incid_accuracy, threshold
 
-    def plot_roc(self, save_as=".tif", dpi=600):
+    def plot_roc(self, save_as=".tif", dpi=600, verbose=True):
         """
+        Plot ROC.
 
         :param save_as: whether to save the figure or file extension
         :type save_as: str or bool or None
         :param dpi: DPI
         :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
 
         **Test**::
 
@@ -1188,19 +1189,19 @@ class WindAttributedIncidents:
         plt.tight_layout()
 
         if save_as:
-            path_to_file_roc = self.cdd_trial("ROC" + save_as)  # Fig. 6.
-            plt.savefig(path_to_file_roc, dpi=dpi)
-            if save_as == ".svg":
-                save_svg_as_emf(path_to_file_roc,
-                                path_to_file_roc.replace(save_as, ".emf"))  # Fig. 6.
+            path_to_roc_fig = self.cdd_trial("roc" + save_as)  # Fig. 6.
+            save_fig(path_to_roc_fig, dpi=dpi, conv_svg_to_emf=True, verbose=verbose)
 
-    def plot_pred_likelihood(self, save_as=".tif", dpi=600):
+    def plot_pred_likelihood(self, save_as=".tif", dpi=600, verbose=True):
         """
+        Plot incident delay minutes against predicted probabilities
 
         :param save_as: whether to save the figure or file extension
         :type save_as: str or bool or None
         :param dpi: DPI
         :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
 
         **Test**::
 
@@ -1240,13 +1241,10 @@ class WindAttributedIncidents:
         plt.tight_layout()
 
         if save_as:
-            path_to_file_pred = cd_models("figures", self.TrialID, "predicted-likelihood" + save_as)
-            plt.savefig(path_to_file_pred, dpi=dpi)  # Fig. 7.
-            if save_as == ".svg":
-                # Fig. 7.
-                save_svg_as_emf(path_to_file_pred, path_to_file_pred.replace(save_as, ".emf"))
+            path_to_pred_fig = self.cdd_trial("predicted_likelihood" + save_as)
+            save_fig(path_to_pred_fig, dpi=dpi, conv_svg_to_emf=True, verbose=verbose)  # Fig. 7.
 
-    def evaluate_prototype_model(self, pickle_each_run=False, verbose=True):
+    def evaluate_prototype_model(self, add_intercept=True, pickle_each_run=False, verbose=True):
         """
         Evaluate the primer model given different settings.
 
@@ -1271,8 +1269,6 @@ class WindAttributedIncidents:
                                         range(220, 880, 220),  # range(0, 440, 220),
                                         range(50, 75, 25)))  # range(25, 75, 25)
 
-        total_no = len(params_set)
-
         results = []
         nobs = []
         mod_aic = []
@@ -1287,11 +1283,13 @@ class WindAttributedIncidents:
         if verbose:
             print("Evaluation starts ... ")
 
+        total_no = len(params_set)
         counter = 0
+
         for params in params_set:
-            counter += 1
 
             if verbose:
+                counter += 1
                 print("\tParameter set {} / {}".format(counter, total_no), end=" ... ")
 
             (self.IP_StartHrs,
@@ -1302,7 +1300,7 @@ class WindAttributedIncidents:
              self.HazardsPercentile) = params
 
             result, mod_acc, incid_acc, threshold = self.logistic_regression_model(
-                pickle_it=pickle_each_run, verbose=False)
+                add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
 
             train_set = self.__getattribute__('TrainingSet')
             test_set = self.__getattribute__('TestSet')
@@ -1317,13 +1315,16 @@ class WindAttributedIncidents:
             if isinstance(result, sm_dcm.BinaryResultsWrapper):
                 if verbose:
                     print("Done.")
+
                 nobs.append(result.nobs)
                 mod_aic.append(result.aic)
                 mod_bic.append(result.bic)
                 msg.append(result.summary().extra_txt)
+
             else:
                 if verbose:
                     print("Problems may occur given the parameter set {}: {}.".format(counter, params))
+
                 nobs.append(len(train_set))
                 mod_aic.append(np.nan)
                 mod_bic.append(np.nan)
@@ -1339,14 +1340,14 @@ class WindAttributedIncidents:
 
         evaluation_summary = pd.DataFrame(dict(zip(columns, data)), columns=columns)
         evaluation_summary.sort_values(
-            ['PredAcc_Incid', 'PredAcc', 'AIC', 'BIC'], ascending=[False, False, True, True],
+            ['PredAcc', 'PredAcc_Incid', 'AIC', 'BIC'], ascending=[False, False, True, True],
             inplace=True)
 
         save_pickle(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
         save_pickle(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
 
         if verbose:
-            print("Total elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))
+            print("\nTotal elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))
 
         return evaluation_summary
 
@@ -1380,20 +1381,19 @@ class WindAttributedIncidents:
 
 class HeatAttributedIncidents:
 
-    def __init__(self, trial_id, model_type='logit', seed=0, in_seasons=None,
-                 ip_start_hrs=-24, lp=-5, nip_start_hrs=-24,
+    def __init__(self, trial_id,
+                 ip_start_hrs=-24, lp=-8, nip_start_hrs=-24,
                  shift_yards_same_elr=220, shift_yards_diff_elr=220,
-                 hazard_pctl=50, outlier_pctl=99):
+                 hazard_pctl=50, outlier_pctl=99,
+                 model_type='logit', in_seasons='summer'):
         self.Name = 'A prototype data model of predicting heat-related incidents.'
 
         self.TrialID = "{}".format(trial_id)
 
-        self.METEx = METExLite()
+        self.METEx = METExLite(database_name='NR_METEx_20150331')
 
         self.Route = 'Anglia'
         self.WeatherCategory = 'Heat'
-
-        self.Seasons = in_seasons
 
         self.IP_StartHrs = ip_start_hrs
         self.LP = lp
@@ -1401,64 +1401,7 @@ class HeatAttributedIncidents:
 
         self.ShiftYardsForSameELRs = shift_yards_same_elr
         self.ShiftYardsForDiffELRs = shift_yards_diff_elr
-
         self.HazardsPercentile = hazard_pctl
-
-        self.ExplanatoryVariables = [
-            # 'WindSpeed_max',
-            # 'WindSpeed_avg',
-            'WindGust_max',
-            # 'WindDirection_avg',
-            # 'WindDirection_avg_[0, 90)',  # [0°, 90°)
-            'WindDirection_avg_[90, 180)',  # [90°, 180°)
-            'WindDirection_avg_[180, 270)',  # [180°, 270°)
-            'WindDirection_avg_[270, 360)',  # [270°, 360°)
-            'Temperature_dif',
-            # 'Temperature_avg',
-            # 'Temperature_max',
-            # 'Temperature_min',
-            'RelativeHumidity_max',
-            'Snowfall_max',
-            'TotalPrecipitation_max',
-            # 'Electrified',
-            'CoverPercentAlder',
-            'CoverPercentAsh',
-            'CoverPercentBeech',
-            'CoverPercentBirch',
-            'CoverPercentConifer',
-            'CoverPercentElm',
-            'CoverPercentHorseChestnut',
-            'CoverPercentLime',
-            'CoverPercentOak',
-            'CoverPercentPoplar',
-            'CoverPercentShrub',
-            'CoverPercentSweetChestnut',
-            'CoverPercentSycamore',
-            'CoverPercentWillow',
-            # 'CoverPercentOpenSpace',
-            'CoverPercentOther',
-            # 'CoverPercentVegetation',
-            # 'CoverPercentDiff',
-            # 'TreeDensity',
-            # 'TreeNumber',
-            # 'TreeNumberDown',
-            # 'TreeNumberUp',
-            # 'HazardTreeDensity',
-            # 'HazardTreeNumber',
-            # 'HazardTreediameterM_max',
-            # 'HazardTreediameterM_min',
-            # 'HazardTreeheightM_max',
-            # 'HazardTreeheightM_min',
-            # 'HazardTreeprox3py_max',
-            # 'HazardTreeprox3py_min',
-            # 'HazardTreeproxrailM_max',
-            # 'HazardTreeproxrailM_min'
-        ]
-
-        self.OutlierPercentile = outlier_pctl
-
-        self.RandomSeed = seed
-        self.ModelType = model_type
 
         self.WeatherStatsCalc = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
                                  'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
@@ -1508,6 +1451,78 @@ class HeatAttributedIncidents:
             return cover_percents, hazard_others, veg_stats_calc
 
         self.CoverPercents, self.HazardsOthers, self.VegStatsCalc_ = specify_veg_stats_calc()
+
+        self.ModelType = model_type
+        self.Seasons = in_seasons
+        self.OutlierPercentile = outlier_pctl
+
+        self.ExplanatoryVariables = [
+            # 'Temperature_min',
+            # 'Temperature_avg',
+            # 'Temperature_max',
+            'Temperature_dif',
+            # 'Temperature_max < 24°C',
+            'Temperature_max = 24°C',
+            'Temperature_max = 25°C',
+            'Temperature_max = 26°C',
+            'Temperature_max = 27°C',
+            'Temperature_max = 28°C',
+            'Temperature_max = 29°C',
+            'Temperature_max ≥ 30°C',
+            # 'track_orientation_E_W',
+            'Track_Orientation_NE_SW',
+            'Track_Orientation_NW_SE',
+            'Track_Orientation_N_S',
+            # 'WindGust_max',
+            'WindSpeed_avg',
+            # 'WindDirection_avg',
+            # 'WindSpeed_max',
+            # # 'WindDirection_avg_[0, 90)',  # [0°, 90°)
+            # 'WindDirection_avg_[90, 180)',  # [90°, 180°)
+            # 'WindDirection_avg_[180, 270)',  # [180°, 270°)
+            # 'WindDirection_avg_[270, 360)',  # [270°, 360°)
+            # 'RelativeHumidity_max',
+            'RelativeHumidity_avg',
+            # 'Snowfall_max',
+            # 'TotalPrecipitation_max',
+            'TotalPrecipitation_avg',
+            # 'Electrified',
+            # 'CoverPercentAlder',
+            # 'CoverPercentAsh',
+            # 'CoverPercentBeech',
+            # 'CoverPercentBirch',
+            # 'CoverPercentConifer',
+            # 'CoverPercentElm',
+            # 'CoverPercentHorseChestnut',
+            # 'CoverPercentLime',
+            # 'CoverPercentOak',
+            # 'CoverPercentPoplar',
+            # 'CoverPercentShrub',
+            # 'CoverPercentSweetChestnut',
+            # 'CoverPercentSycamore',
+            # 'CoverPercentWillow',
+            'CoverPercentOpenSpace',
+            # 'CoverPercentOther',
+            # 'CoverPercentVegetation',
+            # 'CoverPercentDiff',
+            # 'TreeDensity',
+            # 'TreeNumber',
+            # 'TreeNumberDown',
+            # 'TreeNumberUp',
+            # 'HazardTreeDensity',
+            # 'HazardTreeNumber',
+            # 'HazardTreediameterM_max',
+            # 'HazardTreediameterM_min',
+            # 'HazardTreeheightM_max',
+            # 'HazardTreeheightM_min',
+            # 'HazardTreeprox3py_max',
+            # 'HazardTreeprox3py_min',
+            # 'HazardTreeproxrailM_max',
+            # 'HazardTreeproxrailM_min'
+        ]
+
+        mpl_preferences(font_name='Cambria')
+        pd_preferences()
 
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
@@ -1658,35 +1673,6 @@ class HeatAttributedIncidents:
             weather_stats = [np.nan] * 10  # + [[None]]
 
         return weather_stats
-
-    @staticmethod
-    def calc_overall_cover_percent_old(start_and_end_cover_percents, total_yards_adjusted):
-        """
-        Calculate the cover percents across two neighbouring ELRs.
-
-        :param start_and_end_cover_percents: vegetation cover percents of a start and an end ELR
-        :type start_and_end_cover_percents: tuple
-        :param total_yards_adjusted: adjusted total yards
-        :type total_yards_adjusted: tuple
-        :return: overall vegetation cover percent across two neighbouring ELRs
-        :rtype: float or int
-        """
-
-        # (start * end) / (start + end)
-        multiplier = pd.np.prod(total_yards_adjusted) / pd.np.sum(total_yards_adjusted)
-        # 1/start, 1/end
-        cp_start, cp_end = start_and_end_cover_percents
-        s_, e_ = pd.np.divide(1, total_yards_adjusted)
-        # numerator
-        n = e_ * cp_start + s_ * cp_end
-        # denominator
-        d = pd.np.sum(start_and_end_cover_percents) if pd.np.all(start_and_end_cover_percents) else 1
-
-        f = multiplier * pd.np.divide(n, d)
-
-        overall_cover_percent = f * d
-
-        return overall_cover_percent
 
     def calc_vegetation_stats(self, furlong_ids, start_elr, end_elr, total_yards_adjusted):
         """
@@ -1982,9 +1968,9 @@ class HeatAttributedIncidents:
                     overlaps = ip_data[
                         (ip_data.StanoxSection == stanox_section) &
                         (((ip_data.Critical_StartDateTime <= nip_start) & (
-                                    ip_data.Critical_EndDateTime >= nip_start)) |
+                                ip_data.Critical_EndDateTime >= nip_start)) |
                          ((ip_data.Critical_StartDateTime <= nip_end) & (
-                                     ip_data.Critical_EndDateTime >= nip_end)))]
+                                 ip_data.Critical_EndDateTime >= nip_end)))]
 
                     # Skip data of Weather causing Incidents at around the same time; but
                     if not overlaps.empty:
@@ -2048,3 +2034,664 @@ class HeatAttributedIncidents:
                 incident_location_weather = None
 
         return incident_location_weather
+
+    def plot_temperature_deviation(self, lp_days=14, add_err_bar=True, update=False, verbose=False,
+                                   save_as=".tif", dpi=600):
+        """
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> heat_attributed_incidents.plot_temperature_deviation(verbose=True, save_as=None)
+        """
+
+        default_lp = self.LP
+
+        data_sets = []
+        for d in range(1, lp_days + 1):
+            self.__setattr__('LP', -d)
+            data_sets.append(self.get_incident_location_weather(update=update, pickle_it=True))
+
+        self.__setattr__('LP', default_lp)
+
+        time_and_iloc = ['StartDateTime', 'EndDateTime', 'StanoxSection', 'IncidentDescription']
+        selected_cols = time_and_iloc + ['Temperature_max']
+
+        base_data = data_sets[0]
+        ip_temperature_max = base_data[base_data.IncidentReported == 1][selected_cols]
+
+        diff_means, diff_std = [], []
+        for i in range(0, lp_days):
+            data = data_sets[i]
+
+            nip_temperature_max = data[data.IncidentReported == 0][selected_cols]
+
+            temp_diffs = pd.merge(
+                ip_temperature_max, nip_temperature_max, on=time_and_iloc, suffixes=('_ip', '_nip'))
+            temp_diff = temp_diffs.Temperature_max_ip - temp_diffs.Temperature_max_nip
+
+            diff_means.append(temp_diff.abs().mean())
+            diff_std.append(temp_diff.abs().std())
+
+        plt.figure(figsize=(10, 5))
+        if add_err_bar:
+            container = plt.bar(
+                np.arange(1, len(diff_means) + 1), diff_means, align='center', yerr=diff_std, capsize=4,
+                width=0.7, color='#9FAFBE')
+
+            connector, cap_lines, (vertical_lines,) = container.errorbar.lines
+            vertical_lines.set_color('#666666')
+            for cap in cap_lines:
+                cap.set_color('#da8067')
+
+        else:
+            plt.bar(
+                np.arange(1, len(diff_means) + 1), diff_means, align='center', width=0.7,
+                color='#9FAFBE')
+            plt.grid(False)
+
+        plt.xticks(np.arange(1, len(diff_means) + 1), fontsize=14)
+        plt.xlabel('Latent period (Number of days)', fontsize=14)
+        plt.ylabel('Temperature deviation (°C)', fontsize=14)
+        plt.tight_layout()
+
+        if save_as:
+            path_to_fig = self.cdd_trial("temperature-deviation" + save_as)
+            save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
+
+    def get_incident_location_vegetation(self, update=False, pickle_it=False, verbose=False):
+        """
+        Get vegetation conditions of incident locations.
+
+        :param update: whether to do an update check, defaults to ``False``
+        :type update: bool
+        :param pickle_it: whether to save the result as a pickle file
+        :type pickle_it: bool
+        :param verbose: whether to print relevant information in console, defaults to ``False``
+        :type verbose: bool or int
+        :return: vegetation conditions of incident locations
+        :rtype: pandas.DataFrame or None
+
+        .. note::
+
+            Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended
+            when furlong_data was read. Check the function ``get_furlong_data()``.
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> incid_loc_vegetation = heat_attributed_incidents.get_incident_location_vegetation()
+
+            >>> incid_loc_vegetation.tail()
+                  Route            IMDM  ... TreeNumberUp CoverPercentVegetation
+            915  Anglia  IMDM Tottenham  ...          783              31.377019
+            916  Anglia  IMDM Tottenham  ...          783              31.377019
+            917  Anglia  IMDM Tottenham  ...           35               0.441664
+            918  Anglia  IMDM Tottenham  ...           34              19.756064
+            919  Anglia  IMDM Tottenham  ...          321              16.048627
+            [5 rows x 60 columns]
+        """
+
+        pickle_filename = make_filename(
+            "vegetation", self.Route, None,
+            self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile,
+            save_as=".pickle")
+        path_to_pickle = self.cdd_trial(pickle_filename)
+
+        if os.path.isfile(path_to_pickle) and not update:
+            incident_location_vegetation = load_pickle(path_to_pickle)
+
+        else:
+            try:
+                """
+                # Get data of furlong Vegetation coverage and hazardous trees
+                from mssqlserver.vegetation import view_vegetation_condition_per_furlong
+                furlong_vegetation_data = view_vegetation_condition_per_furlong()
+                furlong_vegetation_data.set_index('FurlongID', inplace=True)
+                """
+
+                incident_location_furlongs = get_incident_location_furlongs(
+                    route_name=self.Route, weather_category=None,
+                    shift_yards_same_elr=self.ShiftYardsForSameELRs,
+                    shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
+                incident_location_furlongs.dropna(inplace=True)
+
+                # Compute Vegetation stats for each incident record
+                # noinspection PyTypeChecker
+                vegetation_statistics = incident_location_furlongs.apply(
+                    lambda x: pd.Series(self.calc_vegetation_stats(
+                        x.Critical_FurlongIDs, x.StartELR, x.EndELR, x.Section_Length_Adj)),
+                    axis=1)
+
+                vegetation_statistics.columns = sorted(
+                    list(self.VegStatsCalc_.keys()) + ['TreeDensity', 'HazardTreeDensity'])
+                veg_percent = [
+                    x for x in self.CoverPercents if re.match('^CoverPercent*.[^Open|thr]', x)]
+                vegetation_statistics['CoverPercentVegetation'] = \
+                    vegetation_statistics[veg_percent].apply(np.sum, axis=1)
+
+                hazard_others_pctl = [
+                    ''.join([x, '_%s' % self.HazardsPercentile]) for x in self.HazardsOthers]
+                rename_features = dict(zip(self.HazardsOthers, hazard_others_pctl))
+                rename_features.update({'AssetNumber': 'AssetCount'})
+                vegetation_statistics.rename(columns=rename_features, inplace=True)
+
+                incident_location_vegetation = incident_location_furlongs.join(vegetation_statistics)
+
+                if pickle_it:
+                    save_pickle(incident_location_vegetation, path_to_pickle, verbose=verbose)
+
+            except Exception as e:
+                print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
+                incident_location_vegetation = None
+
+        return incident_location_vegetation
+
+    def integrate_data(self, update=False, pickle_it=False, verbose=False):
+        """
+        Integrate the weather and vegetation conditions for incident locations.
+
+        :param update: whether to do an update check, defaults to ``False``
+        :type update: bool
+        :param pickle_it: whether to save the result as a pickle file
+        :type pickle_it: bool
+        :param verbose: whether to print relevant information in console, defaults to ``False``
+        :type verbose: bool or int
+        :return: integrated data set for modelling
+        :rtype: pandas.DataFrame or None
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> integrated_data_set = heat_attributed_incidents.integrate_data()
+
+            >>> integrated_data_set.tail()
+                  FinancialYear       StartDateTime  ... TreeNumberUp CoverPercentVegetation
+            1760           2018 2018-08-03 17:48:00  ...          581              30.580645
+            1761           2018 2018-08-07 22:44:00  ...          100              25.000000
+            1762           2018 2018-08-07 22:44:00  ...          100              25.000000
+            1763           2018 2018-08-20 08:01:00  ...            0               0.000000
+            1764           2018 2018-08-20 08:01:00  ...            0               0.000000
+            [5 rows x 117 columns]
+        """
+
+        pickle_filename = make_filename(
+            "dataset", self.Route, self.WeatherCategory,
+            self.IP_StartHrs, self.LP, self.NIP_StartHrs,
+            self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile)
+        path_to_pickle = self.cdd_trial(pickle_filename)
+
+        if os.path.isfile(path_to_pickle) and not update:
+            integrated_data = load_pickle(path_to_pickle)
+
+        else:
+            try:
+                # Get Schedule 8 incident and Weather data for locations
+                incident_location_weather = self.get_incident_location_weather()
+                # Get Vegetation conditions for the locations
+                incident_location_vegetation = self.get_incident_location_vegetation()
+
+                # Merge the above two data sets
+                common_features = list(
+                    set(incident_location_weather.columns) & set(incident_location_vegetation.columns))
+                integrated_data = pd.merge(
+                    incident_location_weather, incident_location_vegetation,
+                    how='inner', on=common_features)
+
+                if pickle_it:
+                    save_pickle(integrated_data, path_to_pickle, verbose=verbose)
+
+            except Exception as e:
+                print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
+                integrated_data = None
+
+        return integrated_data
+
+    # == Model training ===============================================================================
+
+    def prep_training_and_test_sets(self, add_intercept=True):
+        """
+        Further process the integrated data set and split it into a training set and a test set.
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> _, training_data, test_data = heat_attributed_incidents.prep_training_and_test_sets()
+
+            >>> training_data.tail()
+                  FinancialYear  ...  CoverPercentOpenSpace
+            1154           2013  ...              56.189655
+            1155           2013  ...              54.379806
+            1156           2013  ...              54.379806
+            1157           2013  ...              50.000000
+            1158           2013  ...              50.000000
+            [5 rows x 18 columns]
+
+            >>> test_data.tail()
+                  FinancialYear  ...  CoverPercentOpenSpace
+            1214           2014  ...              55.967391
+            1215           2014  ...              62.330435
+            1216           2014  ...              62.330435
+            1217           2014  ...              52.283072
+            1218           2014  ...              52.283072
+            [5 rows x 18 columns]
+        """
+
+        # Get the mdata for modelling
+        integrated_data = self.integrate_data()
+
+        # Select season data: 'spring', 'summer', 'autumn', 'winter'
+        processed_data = get_data_by_season(integrated_data, season=self.Seasons)
+
+        # Remove outliers
+        if 95 <= self.OutlierPercentile <= 100:
+            upper_limit = np.percentile(processed_data.DelayMinutes, self.OutlierPercentile)
+            processed_data = processed_data[processed_data.DelayMinutes <= upper_limit]
+            # from pyhelpers.ops import get_extreme_outlier_bounds
+            # l, u = get_extreme_outlier_bounds(integrated_data.DelayMinutes, k=1.5)
+            # integrated_data = integrated_data[
+            #     integrated_data.DelayMinutes.between(l, u, inclusive=True)]
+
+        # Add the intercept
+        if add_intercept:
+            processed_data['const'] = 1
+
+        # Set the outcomes of non-incident records to 0
+        outcome_columns = ['DelayMinutes', 'DelayCost', 'IncidentCount']
+        processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
+
+        # Select data before 2014 as training data set, with the rest being test set
+        train_set = processed_data[processed_data.FinancialYear < 2014]
+        test_set = processed_data[processed_data.FinancialYear == 2014]
+
+        return processed_data, train_set, test_set
+
+    def illustrate_explanatory_variables(self, save_as=".tif", dpi=None, verbose=False):
+        """
+        Describe basic statistics about the main explanatory variables.
+
+        :param save_as: whether to save the figure or file extension
+        :type save_as: str or bool or None
+        :param dpi: DPI
+        :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``False``
+        :type verbose: bool or int
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> heat_attributed_incidents.illustrate_explanatory_variables(save_as=None)
+        """
+
+        processed_data, _, _ = self.prep_training_and_test_sets()
+
+        plt.figure(figsize=(14, 5))
+
+        colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
+
+        ax1 = plt.subplot2grid((1, 8), (0, 0))
+        processed_data.Temperature_dif.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
+        ax1.set_xticklabels('')
+        plt.xlabel('Temp. Diff.', fontsize=13, labelpad=39)
+        plt.ylabel('(°C)', fontsize=12, rotation=0)
+        ax1.yaxis.set_label_coords(0.05, 1.01)
+
+        ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
+        temperature_category = processed_data.Temperature_Category.value_counts() / 10
+        temperature_category.plot.bar(color='#537979', rot=-45, fontsize=12)
+        plt.xticks(
+            range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'],
+            fontsize=12)
+        plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
+        plt.ylabel('($\\times$10)', fontsize=12, rotation=0)
+        ax2.yaxis.set_label_coords(0.0, 1.01)
+
+        ax3 = plt.subplot2grid((1, 8), (0, 3))
+        track_orientation = processed_data.Track_Orientation.value_counts() / 100
+        track_orientation.index = [i.replace('_', '-') for i in track_orientation.index]
+        track_orientation.plot.bar(color='#a72a3d', rot=-45, fontsize=12)
+        plt.xlabel('Track orientation', fontsize=13)
+        plt.ylabel('($\\times$10$^2$)', fontsize=12, rotation=0)
+        ax3.yaxis.set_label_coords(0.0, 1.01)
+
+        ax4 = plt.subplot2grid((1, 8), (0, 4))
+        processed_data.WindSpeed_avg.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
+        ax4.set_xticklabels('')
+        plt.xlabel('Average\nWind speed', fontsize=13, labelpad=29)
+        plt.ylabel('($\\times$10 mph)', fontsize=12, rotation=0)
+        ax4.yaxis.set_label_coords(0.2, 1.01)
+
+        ax5 = plt.subplot2grid((1, 8), (0, 5))
+        processed_data.RelativeHumidity_avg.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
+        ax5.set_xticklabels('')
+        plt.xlabel('Average\nR.H.', fontsize=13, labelpad=29)
+        plt.ylabel('(%)', fontsize=12, rotation=0)
+        # plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
+        ax5.yaxis.set_label_coords(0.0, 1.01)
+
+        ax6 = plt.subplot2grid((1, 8), (0, 6))
+        processed_data.TotalPrecipitation_avg.plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
+        ax6.set_xticklabels('')
+        plt.xlabel('Average\nTotal Precip.', fontsize=13, labelpad=29)
+        plt.ylabel('(mm)', fontsize=12, rotation=0)
+        ax6.yaxis.set_label_coords(0.0, 1.01)
+
+        ax7 = plt.subplot2grid((1, 8), (0, 7))
+        processed_data.CoverPercentOpenSpace.plot.box(color=colour, ax=ax7, widths=0.5, fontsize=12)
+        ax7.set_xticklabels('')
+        plt.xlabel('Open Space\nCoverage', fontsize=13, labelpad=29)
+        plt.ylabel('(%)', fontsize=12, rotation=0)
+        ax7.yaxis.set_label_coords(0.0, 1.01)
+
+        plt.tight_layout()
+
+        if save_as:
+            path_to_fig_file = self.cdd_trial("variables" + save_as)
+            save_fig(path_to_fig_file, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
+
+    def logistic_regression_model(self, add_intercept=True, random_seed=0, pickle_it=True, verbose=True):
+        """
+        Logistic regression model.
+
+        :param add_intercept: whether to add a constant in the model specification
+        :param add_intercept: bool
+        :param random_seed: random seed number
+        :type random_seed: int or None
+        :param pickle_it: whether to save the result as a pickle file
+        :type pickle_it: bool
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
+        :return: estimated model and relevant results
+        :rtype: tuple
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> output = heat_attributed_incidents.logistic_regression_model(random_seed=0)
+        """
+
+        _, train_set, test_set = self.prep_training_and_test_sets()
+
+        if add_intercept:
+            explanatory_variables = ['const'] + self.ExplanatoryVariables
+        else:
+            explanatory_variables = self.ExplanatoryVariables.copy()
+
+        self.__setattr__('TrainingSet', train_set)
+        self.__setattr__('TestSet', test_set)
+
+        try:
+            np.random.seed(random_seed)
+
+            if self.ModelType == 'logit':
+                mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
+            else:
+                mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
+            result_summary = mod.fit(maxiter=10000, full_output=True, disp=False)  # method='newton'
+            print(result_summary.summary2()) if verbose else print("")
+
+            # Odds ratios
+            odds_ratios = pd.DataFrame(np.exp(result_summary.params), columns=['OddsRatio'])
+            print("\n{}".format(odds_ratios)) if verbose else print("")
+
+            # Prediction
+            test_set['incident_prob'] = result_summary.predict(test_set[explanatory_variables])
+
+            # ROC  # False Positive Rate (FPR), True Positive Rate (TPR), Threshold
+            fpr, tpr, thr = metrics.roc_curve(test_set.IncidentReported, test_set.incident_prob)
+            # Area under the curve (AUC)
+            auc = metrics.auc(fpr, tpr)
+            ind = list(np.where((tpr + 1 - fpr) == np.max(tpr + np.ones(tpr.shape) - fpr))[0])
+            threshold = np.min(thr[ind])
+
+            self.__setattr__('FPR', fpr)
+            self.__setattr__('TPR', tpr)
+            self.__setattr__('AUC', auc)
+            self.__setattr__('Threshold', threshold)
+
+            # prediction accuracy
+            test_set['incident_prediction'] = test_set.incident_prob.apply(
+                lambda x: 1 if x >= threshold else 0)
+            test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
+            model_accuracy = np.divide(sum(test), len(test))
+            print("\nAccuracy: %f" % model_accuracy) if verbose else print("")
+
+            # incident prediction accuracy
+            incident_only = test_set[test_set.IncidentReported == 1]
+            test_acc = pd.Series(incident_only.IncidentReported == incident_only.incident_prediction)
+            incident_accuracy = np.divide(sum(test_acc), len(test_acc))
+            print("Incident accuracy: %f" % incident_accuracy) if verbose else print("")
+
+        except Exception as e:
+            print(e)
+            result_summary = e
+            model_accuracy, incident_accuracy, threshold = np.nan, np.nan, np.nan
+
+        if pickle_it:
+            repo = locals()
+            var_names = ['train_set', 'test_set',
+                         'result_summary', 'model_accuracy', 'incident_accuracy', 'threshold']
+            resources = {k: repo[k] for k in list(var_names)}
+            result_pickle = make_filename(
+                "result", self.Route, self.WeatherCategory,
+                self.IP_StartHrs, self.LP, self.NIP_StartHrs,
+                self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile)
+
+            save_pickle(resources, self.cdd_trial(result_pickle), verbose=verbose)
+
+        return train_set, test_set, result_summary, model_accuracy, incident_accuracy, threshold
+
+    def plot_roc(self, save_as=".tif", dpi=600, verbose=True):
+        """
+        Plot ROC.
+
+        :param save_as: whether to save the figure or file extension
+        :type save_as: str or bool or None
+        :param dpi: DPI
+        :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> _ = heat_attributed_incidents.logistic_regression_model()
+            >>> heat_attributed_incidents.plot_roc(save_as=None)
+        """
+
+        fpr = self.__getattribute__('FPR')
+        tpr = self.__getattribute__('TPR')
+        auc = self.__getattribute__('AUC')
+
+        plt.figure()
+
+        plt.plot(fpr, tpr, label="ROC curve (area = %0.2f)" % auc, color='#6699cc', lw=2.5)
+        plt.plot([0, 1], [0, 1], 'r--', linewidth=1.5, label="Random guess")
+
+        plt.xlim([-0.01, 1.0])
+        plt.ylim([0.0, 1.01])
+        plt.xlabel("False positive rate", fontsize=14, fontweight='bold')
+        plt.ylabel("True positive rate", fontsize=14, fontweight='bold')
+        plt.xticks(fontsize=13)
+        plt.yticks(fontsize=13)
+
+        # plt.title('Receiver operating characteristic example')
+
+        plt.legend(loc='lower right', fontsize=14)
+        plt.fill_between(fpr, tpr, 0, color='#6699cc', alpha=0.2)
+
+        plt.tight_layout()
+
+        if save_as:
+            path_to_roc_fig = self.cdd_trial("roc" + save_as)
+            save_fig(path_to_roc_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
+
+    def plot_pred_likelihood(self, save_as=".tif", dpi=600, verbose=True):
+        """
+        Plot incident delay minutes against predicted probabilities
+
+        :param save_as: whether to save the figure or file extension
+        :type save_as: str or bool or None
+        :param dpi: DPI
+        :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> _ = heat_attributed_incidents.logistic_regression_model()
+            >>> heat_attributed_incidents.plot_pred_likelihood(save_as=None)
+        """
+
+        test_set = self.__getattribute__('TestSet')
+        threshold = self.__getattribute__('Threshold')
+
+        incident_ind = test_set.IncidentReported == 1
+
+        plt.figure()
+        ax = plt.subplot2grid((1, 1), (0, 0))
+
+        ax.scatter(
+            test_set[incident_ind].incident_prob, test_set[incident_ind].DelayMinutes,
+            c='#D87272', edgecolors='k', marker='o', linewidths=1.5, s=80,  # alpha=.5,
+            label="Heat-related incident (2014/15)")
+        plt.axvline(
+            x=threshold, label="Threshold: %.2f" % threshold, color='#e5c100', linewidth=2)
+
+        legend = plt.legend(scatterpoints=1, loc=2, fontsize=14, fancybox=True, labelspacing=0.6)
+        frame = legend.get_frame()
+        frame.set_edgecolor('k')
+
+        plt.xlim(xmin=0, xmax=1.03)
+        plt.ylim(ymin=-15)
+
+        ax.set_xlabel("Likelihood of heat-related incident occurrence", fontsize=14, fontweight='bold')
+        ax.set_ylabel("Delay minutes", fontsize=14, fontweight='bold')
+        plt.xticks(fontsize=13)
+        plt.yticks(fontsize=13)
+        plt.tight_layout()
+
+        if save_as:
+            path_to_pred_fig = self.cdd_trial("predicted_likelihood" + save_as)
+            save_fig(path_to_pred_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
+
+    def evaluate_prototype_model(self, add_intercept=True, pickle_each_run=False, verbose=True):
+        """
+        Evaluate the primer model given different settings.
+
+        :return: summary of the evaluation results
+        :rtype: pandas.DataFrame
+
+        **Test**::
+
+            >>> from modeller.prototype import HeatAttributedIncidents
+
+            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+
+            >>> eval_summary = heat_attributed_incidents.evaluate_prototype_model()
+        """
+
+        start_time = time.time()
+
+        params_set = extmath.cartesian((range(-24, -17, 3), range(5, 10), range(-24, -17, 3)))
+
+        results = []
+        nobs = []
+        mod_aic = []
+        mod_bic = []
+        mod_accuracy = []
+        incid_accuracy = []
+        msg = []
+        train_sets = []
+        test_sets = []
+        thresholds = []
+
+        if verbose:
+            print("Evaluation starts ... ")
+
+        total_no = len(params_set)
+        counter = 0
+
+        for params in params_set:
+
+            if verbose:
+                counter += 1
+                print("\tParameter set {} / {}".format(counter, total_no), end=" ... ")
+
+            (self.IP_StartHrs, self.LP, self.NIP_StartHrs) = params
+
+            result, mod_acc, incid_acc, threshold = self.logistic_regression_model(
+                add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
+
+            train_set = self.__getattribute__('TrainingSet')
+            test_set = self.__getattribute__('TestSet')
+
+            train_sets.append(train_set)
+            test_sets.append(test_set)
+            results.append(result)
+            mod_accuracy.append(mod_acc)
+            incid_accuracy.append(incid_acc)
+            thresholds.append(threshold)
+
+            if isinstance(result, sm_dcm.BinaryResultsWrapper):
+                if verbose:
+                    print("Done.")
+
+                nobs.append(result.nobs)
+                mod_aic.append(result.aic)
+                mod_bic.append(result.bic)
+                msg.append(result.summary().extra_txt)
+
+            else:
+                if verbose:
+                    print("Problems may occur given the parameter set {}: {}.".format(counter, params))
+
+                nobs.append(len(train_set))
+                mod_aic.append(np.nan)
+                mod_bic.append(np.nan)
+                msg.append(result.__str__())
+
+        # Create a dataframe that summarises the test results
+        columns = ['IP_StartHrs', 'LP', 'NIP_StartHrs',
+                   'Obs_No', 'AIC', 'BIC', 'Threshold',
+                   'PredAcc', 'PredAcc_Incid', 'Extra_Info']
+
+        data = [list(x) for x in params_set.T]
+        data += [nobs, mod_aic, mod_bic, thresholds, mod_accuracy, incid_accuracy, msg]
+
+        evaluation_summary = pd.DataFrame(dict(zip(columns, data)), columns=columns)
+        evaluation_summary.sort_values(
+            ['PredAcc', 'PredAcc_Incid', 'AIC', 'BIC'], ascending=[False, False, True, True],
+            inplace=True)
+
+        save_pickle(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
+        save_pickle(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
+
+        if verbose:
+            print("\nTotal elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))
+
+        return evaluation_summary
