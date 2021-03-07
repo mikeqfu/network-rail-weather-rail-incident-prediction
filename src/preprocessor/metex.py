@@ -952,6 +952,9 @@ class METExLite:
     """
     METEX database.
 
+    :param database_name: name of the database, defaults to ``'NR_METEx_20190203'``
+    :type database_name: str
+
     :ivar str Name: name of the data resource
     :ivar str Desc: brief description of the data resource
     :ivar str DatabaseName: name of the database that stores the data
@@ -970,12 +973,12 @@ class METExLite:
         METEX
     """
 
-    def __init__(self):
+    def __init__(self, database_name='NR_METEx_20190203'):
         self.Name = 'METExLite'
         self.Desc = 'METExLite is a geographic information system (GIS) based decision support tool, ' \
                     'used to assess asset and system vulnerability to weather.'
 
-        self.DatabaseName = 'NR_METEx_20190203'
+        self.DatabaseName = database_name
         self.DatabaseConn = establish_mssql_connection(database_name=self.DatabaseName)
 
         self.DAG = DelayAttributionGlossary()

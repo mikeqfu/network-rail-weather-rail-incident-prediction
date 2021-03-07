@@ -26,6 +26,9 @@ class MIDAS:
     """
     Met Office RADTOB.
 
+    :param database_name: name of the database, defaults to ``'Weather'``
+    :type database_name: str
+
     :ivar str Name: name of the data resource
     :ivar str Acronym: acronym of the data resource name
     :ivar str RadStnInfoFilename: filename of the radiation stations information
@@ -46,7 +49,7 @@ class MIDAS:
         'Met Office RADTOB (Radiation values currently being reported).'
     """
 
-    def __init__(self):
+    def __init__(self, database_name='Weather'):
         self.Name = 'Met Office RADTOB (Radiation values currently being reported).'
         self.Acronym = 'MIDAS'
 
@@ -55,7 +58,7 @@ class MIDAS:
         self.HeadersFilename = "radiation-observation-data-headers"
 
         # Create an engine to the MSSQL server
-        self.DatabaseConn = establish_mssql_connection(database_name='Weather')
+        self.DatabaseConn = establish_mssql_connection(database_name=database_name)
 
         self.SchemaName = self.Acronym
         self.RadtobTblName = 'RADTOB'
@@ -631,6 +634,8 @@ class UKCP09:
 
     :param start_date: start date on which the observation data was collected, formatted as 'yyyy-mm-dd'
     :type start_date: str
+    :param database_name: name of the database, defaults to ``'Weather'``
+    :type database_name: str
 
     :ivar str Name:
     :ivar str Acronym:
@@ -648,7 +653,7 @@ class UKCP09:
         UK Climate Projections
     """
 
-    def __init__(self, start_date='2006-01-01'):
+    def __init__(self, start_date='2006-01-01', database_name='Weather'):
         self.Name = 'UK Climate Projections'
         self.Acronym = 'UKCP09'
         self.Description = 'UKCP09 gridded weather observations: ' \
@@ -657,7 +662,7 @@ class UKCP09:
         self.StartDate = start_date
 
         # Create an engine to the MSSQL server
-        self.DatabaseConn = establish_mssql_connection(database_name='Weather')
+        self.DatabaseConn = establish_mssql_connection(database_name=database_name)
 
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
