@@ -1,7 +1,7 @@
-from .prototype import *
-from .prototype_ext import *
+from .prototype import HeatAttributedIncidents, WindAttributedIncidents
+from .prototype_ext import HeatAttributedIncidentsPlus
 
 __all__ = [
     'prototype', 'WindAttributedIncidents', 'HeatAttributedIncidents',
-    'prototype_ext',
+    'prototype_ext', 'HeatAttributedIncidentsPlus',
 ]
