@@ -996,14 +996,14 @@ class WindAttributedIncidents:
             path_to_file_veg = self.cdd_trial("vegetation_variables" + save_as)
             save_fig(path_to_file_veg, dpi=dpi, conv_svg_to_emf=True, verbose=verbose)
 
-    def logistic_regression_model(self, add_intercept=True, random_seed=0, pickle_it=True, verbose=True):
+    def logistic_regression(self, add_intercept=True, random_state=0, pickle_it=True, verbose=True):
         """
         Logistic regression model.
 
         :param add_intercept: whether to add a constant in the model specification
         :param add_intercept: bool
-        :param random_seed: random seed number
-        :type random_seed: int or None
+        :param random_state: random seed number
+        :type random_state: int or None
         :param pickle_it: whether to save the result as a pickle file
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``True``
@@ -1017,7 +1017,7 @@ class WindAttributedIncidents:
 
             >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
 
-            >>> output = wind_attributed_incidents.logistic_regression_model(random_seed=0)
+            >>> output = wind_attributed_incidents.logistic_regression(random_state=0)
         """
 
         _, train_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
@@ -1031,7 +1031,7 @@ class WindAttributedIncidents:
         self.__setattr__('TestSet', test_set)
 
         try:
-            np.random.seed(random_seed)
+            np.random.seed(random_state)
 
             if self.ModelType == 'logit':
                 mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
@@ -1160,7 +1160,7 @@ class WindAttributedIncidents:
 
             >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
 
-            >>> _ = wind_attributed_incidents.logistic_regression_model(pickle_it=False)
+            >>> _ = wind_attributed_incidents.logistic_regression(pickle_it=False)
             >>> wind_attributed_incidents.plot_roc(save_as=None)
         """
 
@@ -1208,7 +1208,7 @@ class WindAttributedIncidents:
 
             >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
 
-            >>> _ = wind_attributed_incidents.logistic_regression_model(pickle_it=False)
+            >>> _ = wind_attributed_incidents.logistic_regression(pickle_it=False)
             >>> wind_attributed_incidents.plot_pred_likelihood(save_as=None)
         """
 
@@ -1298,7 +1298,7 @@ class WindAttributedIncidents:
              self.ShiftYardsForDiffELRs,
              self.HazardsPercentile) = params
 
-            result, mod_acc, incid_acc, threshold = self.logistic_regression_model(
+            result, mod_acc, incid_acc, threshold = self.logistic_regression(
                 add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
 
             train_set = self.__getattribute__('TrainingSet')
@@ -1370,7 +1370,7 @@ class WindAttributedIncidents:
 
         else:
             try:
-                results = self.logistic_regression_model(pickle_it=pickle_it, verbose=True)
+                results = self.logistic_regression(pickle_it=pickle_it, verbose=True)
             except Exception as e:
                 print(e)
                 results = None
@@ -2401,14 +2401,14 @@ class HeatAttributedIncidents:
             path_to_fig_file = self.cdd_trial("variables" + save_as)
             save_fig(path_to_fig_file, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
-    def logistic_regression_model(self, add_intercept=True, random_seed=0, pickle_it=True, verbose=True):
+    def logistic_regression(self, add_intercept=True, random_state=0, pickle_it=True, verbose=True):
         """
         Logistic regression model.
 
         :param add_intercept: whether to add a constant in the model specification
         :param add_intercept: bool
-        :param random_seed: random seed number
-        :type random_seed: int or None
+        :param random_state: random seed number
+        :type random_state: int or None
         :param pickle_it: whether to save the result as a pickle file
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``True``
@@ -2422,7 +2422,7 @@ class HeatAttributedIncidents:
 
             >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
 
-            >>> output = heat_attributed_incidents.logistic_regression_model(random_seed=0)
+            >>> output = heat_attributed_incidents.logistic_regression(random_state=0)
         """
 
         _, train_set, test_set = self.prep_training_and_test_sets()
@@ -2436,7 +2436,7 @@ class HeatAttributedIncidents:
         self.__setattr__('TestSet', test_set)
 
         try:
-            np.random.seed(random_seed)
+            np.random.seed(random_state)
 
             if self.ModelType == 'logit':
                 mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
@@ -2513,7 +2513,7 @@ class HeatAttributedIncidents:
 
             >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
 
-            >>> _ = heat_attributed_incidents.logistic_regression_model()
+            >>> _ = heat_attributed_incidents.logistic_regression()
             >>> heat_attributed_incidents.plot_roc(save_as=None)
         """
 
@@ -2561,7 +2561,7 @@ class HeatAttributedIncidents:
 
             >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
 
-            >>> _ = heat_attributed_incidents.logistic_regression_model()
+            >>> _ = heat_attributed_incidents.logistic_regression()
             >>> heat_attributed_incidents.plot_pred_likelihood(save_as=None)
         """
 
@@ -2642,7 +2642,7 @@ class HeatAttributedIncidents:
 
             (self.IP_StartHrs, self.LP, self.NIP_StartHrs) = params
 
-            result, mod_acc, incid_acc, threshold = self.logistic_regression_model(
+            result, mod_acc, incid_acc, threshold = self.logistic_regression(
                 add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
 
             train_set = self.__getattribute__('TrainingSet')
