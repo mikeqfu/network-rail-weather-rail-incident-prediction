@@ -15,7 +15,7 @@ import shapely.geometry
 import shapely.ops
 import shapely.wkt
 import sqlalchemy.types
-from pyhelpers.dir import cd
+from pyhelpers.dir import cd, validate_input_data_dir
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
 from pyhelpers.store import load_pickle, save_pickle
 
@@ -583,16 +583,17 @@ class MIDAS:
             >>> dat = midas.query_radtob_by_grid_datetime(m_stn_id, p, rte, pickle_it=True, verbose=True)
         """
 
-        p_start, p_end = period.left.min().strftime('%Y%m%d%H'), period.right.max().strftime('%Y%m%d%H')
+        p_start = period.left.min().strftime('%Y%m%d%H')
+        p_end = period.right.max().strftime('%Y%m%d%H')
 
         # Make a pickle file
         pickle_filename = "{}-{}.pickle".format(str(met_stn_id[0]), "-".join([p_start, p_end]))
 
         # Specify a directory/path to store the pickle file (if appropriate)
-        if os.path.isabs(dat_dir):
-            dat_dir_ = dat_dir
-        else:
+        if dat_dir is None:
             dat_dir_ = self.cdd("dat")
+        else:
+            dat_dir_ = validate_input_data_dir(dat_dir)
         path_to_pickle = cd(dat_dir_, pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
