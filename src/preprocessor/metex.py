@@ -1138,30 +1138,34 @@ class METExLite:
             4    IMDM Bristol   WESTERN West
         """
 
-        table = '{}."{}"'.format(schema_name, table_name)
         # Connect to the queried database
         conn_metex = establish_mssql_connection(database_name=self.DatabaseName)
+
+        sql_query_ = f'SELECT * FROM %s' % f'[{schema_name}].[{table_name}]'
         # Specify possible scenarios:
         if not route_name and not weather_category:
-            sql_query = f"SELECT * FROM {table}"  # Get all data of a given table
+            sql_query = sql_query_  # Get all data of a given table
         elif route_name and not weather_category:
-            sql_query = f"SELECT * FROM {table} WHERE [Route] = '{route_name}'"  # given Route
+            sql_query = sql_query_ + f" WHERE [Route]='{route_name}'"  # given Route
         elif route_name is None and weather_category is not None:
             # given Weather
-            sql_query = f"SELECT * FROM {table} WHERE [WeatherCategory] = '{weather_category}'"
+            sql_query = sql_query_ + f" WHERE [WeatherCategory]='{weather_category}'"
         else:
-            # Get all data of a table,
-            # given Route and Weather category e.g. data about wind-related events on Anglia Route
-            sql_query = f"SELECT * FROM {table} " \
-                        f"WHERE [Route]='{route_name}' AND [WeatherCategory]='{weather_category}'"
+            # Get data given Route and weather category e.g. wind-attributed incidents on Anglia Route
+            sql_query = \
+                sql_query_ + f" WHERE [Route]='{route_name}' AND [WeatherCategory]='{weather_category}'"
+
         # Create a pd.DataFrame of the queried table
         table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, **kwargs)
+
         # Disconnect the database
         conn_metex.close()
+
         if save_as:
             path_to_file = self.cdd_tables(table_name + save_as)
             if not os.path.isfile(path_to_file) or update:
                 save(table_data, path_to_file, index=True if index_col else False)
+
         return table_data
 
     def get_primary_key(self, table_name):
@@ -1235,8 +1239,9 @@ class METExLite:
 
         else:
             try:
-                imdm = self.read_table(METExLite.IMDM, index_col=self.get_primary_key(METExLite.IMDM),
-                                       save_as=save_original_as, update=update)
+                imdm = self.read_table(
+                    table_name=METExLite.IMDM, index_col=self.get_primary_key(METExLite.IMDM),
+                    save_as=save_original_as, update=update)
                 imdm.index.rename(name='IMDM', inplace=True)  # Rename index
 
                 # Update route names
@@ -1314,18 +1319,22 @@ class METExLite:
 
         else:
             try:
-                imdm_alias = self.read_table(METExLite.ImdmAlias,
-                                             index_col=self.get_primary_key(METExLite.ImdmAlias),
-                                             save_as=save_original_as, update=update)
+                imdm_alias = self.read_table(
+                    table_name=METExLite.ImdmAlias, index_col=self.get_primary_key(METExLite.ImdmAlias),
+                    save_as=save_original_as, update=update)
                 imdm_alias.index.rename(name='ImdmAlias', inplace=True)  # Rename index
                 imdm_alias.rename(columns={'Imdm': 'IMDM'}, inplace=True)  # Rename a column
+
                 if as_dict:
                     imdm_alias = imdm_alias.to_dict()  # imdm_alias = imdm_alias['IMDM']
+
                 save(imdm_alias, path_to_file, verbose=verbose)
+
             except Exception as e:
                 print("Failed to get \"{}\"{}. {}.".format(
                     METExLite.ImdmAlias, " as a dictionary" if as_dict else "", e))
                 imdm_alias = None
+
         return imdm_alias
 
     def get_imdm_weather_cell_map(self, route_info=True, grouped=False, update=False,
@@ -1413,7 +1422,7 @@ class METExLite:
             try:
                 # Read IMDMWeatherCellMap table
                 weather_cell_map = self.read_table(
-                    METExLite.IMDMWeatherCellMap,
+                    table_name=METExLite.IMDMWeatherCellMap,
                     index_col=self.get_primary_key(METExLite.IMDMWeatherCellMap),
                     coerce_float=False, save_as=save_original_as, update=update)
 
@@ -1500,7 +1509,7 @@ class METExLite:
             try:
                 # Get data from the database
                 incident_reason_info = self.read_table(
-                    METExLite.IncidentReasonInfo,
+                    table_name=METExLite.IncidentReasonInfo,
                     index_col=self.get_primary_key(METExLite.IncidentReasonInfo),
                     save_as=save_original_as, update=update)
 
@@ -1576,14 +1585,18 @@ class METExLite:
         else:
             try:
                 weather_codes = self.read_table(
-                    METExLite.WeatherCodes, index_col=self.get_primary_key(METExLite.WeatherCodes),
+                    table_name=METExLite.WeatherCodes,
+                    index_col=self.get_primary_key(METExLite.WeatherCodes),
                     save_as=save_original_as, update=update)
+
                 weather_codes.rename(
                     columns={'Code': 'WeatherCategoryCode', 'Weather Category': 'WeatherCategory'},
                     inplace=True)
+
                 if as_dict:
                     weather_codes.set_index('WeatherCategoryCode', inplace=True)
                     weather_codes = weather_codes.to_dict()
+
                 save(weather_codes, path_to_file, verbose=verbose)
 
             except Exception as e:
@@ -1656,7 +1669,8 @@ class METExLite:
         else:
             try:
                 incident_record = self.read_table(
-                    METExLite.IncidentRecord, index_col=self.get_primary_key(METExLite.IncidentRecord),
+                    table_name=METExLite.IncidentRecord,
+                    index_col=self.get_primary_key(METExLite.IncidentRecord),
                     save_as=save_original_as, update=update)
 
                 if use_amendment_csv:
@@ -1735,6 +1749,7 @@ class METExLite:
                 location = self.read_table(
                     table_name=METExLite.Location, index_col=self.get_primary_key(METExLite.Location),
                     coerce_float=False, save_as=save_original_as, update=update)
+
                 location.index.rename('LocationId', inplace=True)
                 location.rename(columns={'Imdm': 'IMDM'}, inplace=True)
                 location[['WeatherCell', 'SMDCell']] = location[['WeatherCell', 'SMDCell']].applymap(
@@ -1798,8 +1813,9 @@ class METExLite:
 
         else:
             try:
-                pfpi = self.read_table(METExLite.PfPI, index_col=self.get_primary_key(METExLite.PfPI),
-                                       save_as=save_original_as, update=update)
+                pfpi = self.read_table(
+                    table_name=METExLite.PfPI, index_col=self.get_primary_key(METExLite.PfPI),
+                    save_as=save_original_as, update=update)
 
                 if use_amendment_csv:
                     ir_tbl = self.get_incident_record()
@@ -1883,7 +1899,8 @@ class METExLite:
 
         else:
             try:
-                route = self.read_table(table_name, save_as=save_original_as, update=update)
+                route = self.read_table(table_name=table_name, save_as=save_original_as, update=update)
+
                 route.rename(columns={'Name': 'Route'}, inplace=True)
                 update_nr_route_names(route)
 
@@ -1967,8 +1984,9 @@ class METExLite:
         else:
             try:
                 # Read StanoxLocation table from the database
-                stanox_location = self.read_table(table_name=METExLite.StanoxLocation, index_col=None,
-                                                  save_as=save_original_as, update=update)
+                stanox_location = self.read_table(
+                    table_name=METExLite.StanoxLocation, index_col=None, save_as=save_original_as,
+                    update=update)
 
                 # Likely errors
                 stanox_location.loc[stanox_location.Stanox == '52053', 'ELR':'LocationId'] = (
@@ -2136,9 +2154,11 @@ class METExLite:
         else:
             try:
                 # Read StanoxSection table from the database
-                stanox_section = self.read_table(METExLite.StanoxSection,
-                                                 index_col=self.get_primary_key(METExLite.StanoxSection),
-                                                 save_as=save_original_as, update=update)
+                stanox_section = self.read_table(
+                    table_name=METExLite.StanoxSection,
+                    index_col=self.get_primary_key(METExLite.StanoxSection),
+                    save_as=save_original_as, update=update)
+
                 stanox_section.index.name = METExLite.StanoxSection + 'Id'
                 stanox_section.LocationId = stanox_section.LocationId.apply(
                     lambda x: '' if np.isnan(x) else int(x))
@@ -2267,9 +2287,11 @@ class METExLite:
 
         else:
             try:
-                trust_incident = self.read_table(METExLite.TrustIncident,
-                                                 index_col=self.get_primary_key(METExLite.TrustIncident),
-                                                 save_as=save_original_as, update=update)
+                trust_incident = self.read_table(
+                    table_name=METExLite.TrustIncident,
+                    index_col=self.get_primary_key(METExLite.TrustIncident),
+                    save_as=save_original_as, update=update)
+
                 if use_amendment_csv:
                     zip_file = zipfile.ZipFile(self.cdd("updates", METExLite.TrustIncident + ".zip"))
                     corrected_csv = pd.concat(
@@ -2279,8 +2301,8 @@ class METExLite:
                          for f in zip_file.infolist()])
                     zip_file.close()
                     # Remove raw data >= '2018-01-01', pd.to_datetime('2018-01-01')
-                    trust_incident.drop(trust_incident[trust_incident.StartDate >= '2018-01-01'].index,
-                                        inplace=True)
+                    trust_incident.drop(
+                        trust_incident[trust_incident.StartDate >= '2018-01-01'].index, inplace=True)
                     # Append corrected data
                     trust_incident = trust_incident.append(corrected_csv)
 
@@ -2536,9 +2558,10 @@ class METExLite:
 
         else:
             try:
-                weather_cell = self.read_table(table_name=METExLite.WeatherCell,
-                                               index_col=self.get_primary_key(METExLite.WeatherCell),
-                                               save_as=save_original_as, update=update)
+                weather_cell = self.read_table(
+                    table_name=METExLite.WeatherCell,
+                    index_col=self.get_primary_key(METExLite.WeatherCell),
+                    save_as=save_original_as, update=update)
 
                 id_name = METExLite.WeatherCell + 'Id'
                 weather_cell.index.rename(id_name, inplace=True)
