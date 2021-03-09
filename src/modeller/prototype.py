@@ -1,4 +1,8 @@
-""" Prototype """
+"""
+A prototype model for predictions of weather-attributed incidents.
+
+*(Currently this includes only wind- and heat-related incidents.)
+"""
 
 import itertools
 import os
@@ -16,10 +20,10 @@ from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 from sklearn import metrics
 from sklearn.utils import extmath
 
-from integrator.furlong import get_furlongs_data, get_incident_location_furlongs
+from coordinator.feature import categorise_track_orientations, get_data_by_season, get_data_by_season_
+from coordinator.furlong import get_furlongs_data, get_incident_location_furlongs
 from preprocessor import METExLite
-from utils import categorise_track_orientations, cd_models, get_data_by_season, \
-    get_data_by_season_, make_filename
+from utils import cd_models, make_filename
 
 
 class WindAttributedIncidents:
