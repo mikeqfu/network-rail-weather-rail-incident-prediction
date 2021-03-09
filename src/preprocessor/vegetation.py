@@ -109,19 +109,19 @@ class Vegetation:
 
     # == Read table data from the database ============================================================
 
-    def read_table(self, table_name, index_col=None, route_name=None, schema_name='dbo', save_as=None,
+    def read_table(self, table_name, schema_name='dbo', index_col=None, route_name=None, save_as=None,
                    update=False, **kwargs):
         """
         Read tables stored in NR_Vegetation_* database.
     
         :param table_name: name of a table
         :type table_name: str
+        :param schema_name: name of schema, defaults to ``'dbo'``
+        :type schema_name: str
         :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
         :type index_col: str or list or None
         :param route_name: name of a Route; if ``None`` (default), all Routes
         :type route_name: str or None
-        :param schema_name: name of schema, defaults to ``'dbo'``
-        :type schema_name: str
         :param save_as: file extension, defaults to ``None``
         :type save_as: str or None
         :param update: whether to check on update and proceed to update the package data,
@@ -147,14 +147,14 @@ class Vegetation:
             0  ANGLIA               0.000678
         """
 
-        table = schema_name + '.' + table_name
+        sql_query_ = f'SELECT * FROM %s' % f'[{schema_name}].[{table_name}]'
 
         if route_name is None:
             # Get all data of a given table
-            sql_query = f"SELECT * FROM {table}"
+            sql_query = sql_query_
         else:
             # given a specific Route
-            sql_query = f"SELECT * FROM {table} WHERE [Route] = '{route_name}'"
+            sql_query = sql_query_ + f" WHERE [Route] = '{route_name}'"
 
         # Create a pd.DataFrame of the queried table
         data = pd.read_sql(sql=sql_query, con=self.DatabaseConn, index_col=index_col, **kwargs)
@@ -162,6 +162,7 @@ class Vegetation:
         # Save the DataFrame as a worksheet locally?
         if save_as:
             path_to_file = self.cdd_tables(table_name + save_as)
+
             if not os.path.isfile(path_to_file) or update:
                 save(data, path_to_file, index=False if index_col is None else True)
 
@@ -236,8 +237,8 @@ class Vegetation:
 
         else:
             try:
-                adverse_wind = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                               update=update)
+                adverse_wind = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 update_nr_route_names(adverse_wind, route_col_name='Route')  # Update route names
                 adverse_wind = adverse_wind.groupby('Route').agg(list).applymap(
@@ -286,9 +287,9 @@ class Vegetation:
 
         else:
             try:
-                cutting_angle = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                                save_as=save_original_as,
-                                                update=update)
+                cutting_angle = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(cutting_angle, path_to_pickle, verbose=verbose)
 
@@ -333,9 +334,9 @@ class Vegetation:
 
         else:
             try:
-                cutting_depth = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                                save_as=save_original_as,
-                                                update=update)
+                cutting_depth = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(cutting_depth, path_to_pickle, verbose=verbose)
 
@@ -398,9 +399,9 @@ class Vegetation:
 
         else:
             try:
-                du_list = self.read_table(table_name,
-                                          index_col=self.get_primary_key(table_name) if index else None,
-                                          save_as=save_original_as, update=update)
+                du_list = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name) if index else None,
+                    save_as=save_original_as, update=update)
 
                 save_pickle(du_list, path_to_pickle, verbose=verbose)
 
@@ -453,9 +454,9 @@ class Vegetation:
 
         else:
             try:
-                path_route = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                             save_as=save_original_as,
-                                             update=update)
+                path_route = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(path_route, path_to_pickle, verbose=verbose)
 
@@ -509,9 +510,9 @@ class Vegetation:
         else:
             try:
                 # (Note that 'Routes' table contains information about Delivery Units)
-                routes = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                         save_as=save_original_as,
-                                         update=update)
+                routes = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 # Replace values in (index) column 'DUName'
                 routes.index = routes.index.to_series().replace(
@@ -574,9 +575,9 @@ class Vegetation:
 
         else:
             try:
-                s8data = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                         save_as=save_original_as,
-                                         update=update)
+                s8data = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 update_nr_route_names(s8data, route_col_name='Route')
 
@@ -623,8 +624,9 @@ class Vegetation:
 
         else:
             try:
-                tree_age_class = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                                 save_as=save_original_as, update=update)
+                tree_age_class = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(tree_age_class, path_to_pickle, verbose=verbose)
 
@@ -669,8 +671,9 @@ class Vegetation:
 
         else:
             try:
-                tree_size_class = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                                  save_as=save_original_as, update=update)
+                tree_size_class = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(tree_size_class, path_to_pickle, verbose=verbose)
 
@@ -715,9 +718,9 @@ class Vegetation:
 
         else:
             try:
-                tree_type = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                            save_as=save_original_as,
-                                            update=update)
+                tree_type = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(tree_type, path_to_pickle, verbose=verbose)
 
@@ -762,9 +765,9 @@ class Vegetation:
 
         else:
             try:
-                felling_type = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                               save_as=save_original_as,
-                                               update=update)
+                felling_type = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(felling_type, path_to_pickle, verbose=verbose)
 
@@ -809,9 +812,9 @@ class Vegetation:
 
         else:
             try:
-                area_work_type = self.read_table(table_name,
-                                                 index_col=self.get_primary_key('AreaWorkType'),
-                                                 save_as=save_original_as, update=update)
+                area_work_type = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key('AreaWorkType'),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(area_work_type, path_to_pickle, verbose=verbose)
 
@@ -864,9 +867,9 @@ class Vegetation:
 
         else:
             try:
-                service_detail = self.read_table(table_name,
-                                                 index_col=self.get_primary_key('ServiceDetail'),
-                                                 save_as=save_original_as, update=update)
+                service_detail = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key('ServiceDetail'),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(service_detail, path_to_pickle, verbose=verbose)
 
@@ -918,9 +921,9 @@ class Vegetation:
 
         else:
             try:
-                service_path = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                               save_as=save_original_as,
-                                               update=update)
+                service_path = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(service_path, path_to_pickle, verbose=verbose)
 
@@ -965,9 +968,9 @@ class Vegetation:
 
         else:
             try:
-                supplier = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                           save_as=save_original_as,
-                                           update=update)
+                supplier = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(supplier, path_to_pickle, verbose=verbose)
 
@@ -1012,8 +1015,8 @@ class Vegetation:
 
         else:
             try:
-                supplier_costs = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                                 update=update)
+                supplier_costs = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 update_nr_route_names(supplier_costs, route_col_name='Route')
                 supplier_costs.set_index(self.get_primary_key(table_name), inplace=True)
@@ -1061,8 +1064,8 @@ class Vegetation:
 
         else:
             try:
-                costs_area = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                             update=update)
+                costs_area = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 update_nr_route_names(costs_area, route_col_name='Route')
                 costs_area.set_index(self.get_primary_key(table_name), inplace=True)
@@ -1110,8 +1113,8 @@ class Vegetation:
 
         else:
             try:
-                costs_simple = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                               update=update)
+                costs_simple = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 update_nr_route_names(costs_simple, route_col_name='Route')
                 costs_simple.set_index(self.get_primary_key(table_name), inplace=True)
@@ -1159,9 +1162,9 @@ class Vegetation:
 
         else:
             try:
-                tree_action_fractions = self.read_table(table_name,
-                                                        index_col=self.get_primary_key(table_name),
-                                                        save_as=save_original_as, update=update)
+                tree_action_fractions = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(tree_action_fractions, path_to_pickle, verbose=verbose)
 
@@ -1206,9 +1209,9 @@ class Vegetation:
 
         else:
             try:
-                veg_surv_type_class = self.read_table(table_name,
-                                                      index_col=self.get_primary_key(table_name),
-                                                      save_as=save_original_as, update=update)
+                veg_surv_type_class = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(veg_surv_type_class, path_to_pickle, verbose=verbose)
 
@@ -1253,9 +1256,9 @@ class Vegetation:
 
         else:
             try:
-                wb_factors = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                             save_as=save_original_as,
-                                             update=update)
+                wb_factors = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(wb_factors, path_to_pickle, verbose=verbose)
 
@@ -1300,8 +1303,8 @@ class Vegetation:
 
         else:
             try:
-                weed_spray = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                             update=update)
+                weed_spray = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 update_nr_route_names(weed_spray, route_col_name='Route')
                 weed_spray.set_index('RouteAlias', inplace=True)
@@ -1349,9 +1352,9 @@ class Vegetation:
 
         else:
             try:
-                work_hours = self.read_table(table_name, index_col=self.get_primary_key(table_name),
-                                             save_as=save_original_as,
-                                             update=update)
+                work_hours = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
 
                 save_pickle(work_hours, path_to_pickle, verbose=verbose)
 
@@ -1414,9 +1417,9 @@ class Vegetation:
 
         else:
             try:
-                furlong_data = self.read_table(table_name, index_col=None, coerce_float=False,
-                                               save_as=save_original_as,
-                                               update=update)
+                furlong_data = self.read_table(
+                    table_name=table_name, index_col=None, coerce_float=False, save_as=save_original_as,
+                    update=update)
 
                 # Re-format mileage data
                 furlong_data[['StartMileage', 'EndMileage']] = furlong_data[
@@ -1560,9 +1563,10 @@ class Vegetation:
         else:
             try:
                 # Read data from database
-                furlong_location = self.read_table(table_name,
-                                                   index_col=self.get_primary_key(table_name),
-                                                   save_as=save_original_as, update=update)
+                furlong_location = self.read_table(
+                    table_name=table_name, index_col=self.get_primary_key(table_name),
+                    save_as=save_original_as, update=update)
+
                 # Re-format mileage data
                 furlong_location[['StartMileage', 'EndMileage']] = \
                     furlong_location[['StartMileage', 'EndMileage']].applymap(nr_mileage_num_to_str)
@@ -1632,8 +1636,9 @@ class Vegetation:
 
         else:
             try:
-                hazard_tree = self.read_table(table_name, index_col=None, save_as=save_original_as,
-                                              update=update)
+                hazard_tree = self.read_table(
+                    table_name=table_name, index_col=None, save_as=save_original_as, update=update)
+
                 # Re-format mileage data
                 hazard_tree.Mileage = hazard_tree.Mileage.apply(nr_mileage_num_to_str)
 
