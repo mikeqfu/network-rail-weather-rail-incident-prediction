@@ -12,8 +12,9 @@ import pandas as pd
 from pyhelpers.geom import find_closest_points, get_midpoint, wgs84_to_osgb36
 from pyhelpers.store import save
 
+from coordinator.geometry import get_shp_coordinates
 from preprocessor import METExLite
-from utils import cdd_exploration, get_shp_coordinates
+from utils import cdd_exploration
 
 
 def calc_stats(s8weather_incidents):
@@ -165,10 +166,6 @@ def create_bar_plot_for_delay_cost(s8weather_incidents, save_as=".png"):
 
 # == For the paper to Nature Communications ============================================
 
-railway_coordinates = get_shp_coordinates(osm_subregion='Great Britain', osm_layer='railways',
-                                          osm_feature='rail')
-
-
 def find_midpoint_of_each_incident_location(incident_data):
     """
     Find the "midpoint" of each incident location.
@@ -192,6 +189,9 @@ def find_midpoint_of_each_incident_location(incident_data):
                                     as_geom=False)
 
     # Find the "midpoint" of each incident location
+    railway_coordinates = get_shp_coordinates(osm_subregion='Great Britain', osm_layer='railways',
+                                              osm_feature='rail')
+
     midpoints = find_closest_points(pseudo_midpoints, railway_coordinates)
 
     data[['MidLongitude', 'MidLatitude']] = pd.DataFrame(midpoints)
@@ -202,7 +202,6 @@ def find_midpoint_of_each_incident_location(incident_data):
 
 
 # == 1st dataset =======================================================================
-
 
 def prepare_stats_data(route_name=None, weather_category=None, update=False,
                        verbose=True):
@@ -253,7 +252,6 @@ def prepare_stats_data(route_name=None, weather_category=None, update=False,
 
 
 # == 2nd dataset =======================================================================
-
 
 def prepare_monthly_stats_data(route_name=None, weather_category=None, update=False, verbose=True):
     """
