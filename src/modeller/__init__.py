@@ -1,3 +1,7 @@
+"""
+Modeller.
+"""
+
 from .prototype import HeatAttributedIncidents, WindAttributedIncidents
 from .prototype_ext import HeatAttributedIncidentsPlus
 
