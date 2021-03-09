@@ -1,4 +1,6 @@
-""" Plotting hotspots of Weather-related Incidents in the context of wind-related delays """
+"""
+Hotspots of weather-related incidents (in the context of wind-related delays).
+"""
 
 import os
 
@@ -18,9 +20,9 @@ from pyhelpers.ops import colour_bar_index, confirmed
 from pyhelpers.settings import mpl_preferences, pd_preferences
 from pyhelpers.store import load_pickle, save_fig, save_pickle
 
+from coordinator.geometry import get_shp_coordinates, get_shp_file_path_for_basemap
 from preprocessor import METExLite, Vegetation
-from utils import cd_models, cdd_network, get_shp_coordinates, get_shp_file_path_for_basemap, \
-    get_subset, make_filename
+from utils import cd_models, cdd_network, get_subset, make_filename
 
 
 class Hotspots:
@@ -1098,7 +1100,6 @@ class Hotspots:
         """
 
         if confirmed(confirmation_required=confirmation_required):
-
             # Fig. 1.
             self.plot_base_map_plus(save_as=save_as, dpi=dpi)
 
