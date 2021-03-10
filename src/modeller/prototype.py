@@ -184,13 +184,13 @@ class WindAttributedIncidents:
             >>> import os
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> os.path.relpath(wind_attributed_incidents.cdd())
+            >>> os.path.relpath(w_model.cdd())
             'models\\prototype\\wind'
         """
 
-        path = cd_models("prototype", self.WeatherCategory.lower, *sub_dir, mkdir=mkdir)
+        path = cd_models("prototype", self.WeatherCategory.lower(), *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -210,9 +210,9 @@ class WindAttributedIncidents:
             >>> import os
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> os.path.relpath(wind_attributed_incidents.cdd_trial())
+            >>> os.path.relpath(w_model.cdd_trial())
             'models\\prototype\\wind\\0'
         """
 
@@ -235,9 +235,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> wind_attributed_incidents.get_weather_variable_names()
+            >>> w_model.get_weather_variable_names()
             ['Temperature_max',
              'Temperature_min',
              'Temperature_avg',
@@ -499,9 +499,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
             
-            >>> incid_loc_weather = wind_attributed_incidents.get_incident_location_weather()
+            >>> incid_loc_weather = w_model.get_incident_location_weather()
 
             >>> incid_loc_weather.tail()
                   FinancialYear       StartDateTime  ... Temperature_dif IncidentReported
@@ -697,9 +697,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> incid_loc_vegetation = wind_attributed_incidents.get_incident_location_vegetation()
+            >>> incid_loc_vegetation = w_model.get_incident_location_vegetation()
 
             >>> incid_loc_vegetation.tail()
                   Route            IMDM  ... TreeNumberUp CoverPercentVegetation
@@ -783,9 +783,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> integrated_data_set = wind_attributed_incidents.integrate_data()
+            >>> integrated_data_set = w_model.integrate_data()
 
             >>> integrated_data_set.tail()
                   FinancialYear  ... WindDirection_avg_[270, 360)
@@ -853,9 +853,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> _, training_data, test_data = wind_attributed_incidents.prep_training_and_test_sets()
+            >>> _, training_data, test_data = w_model.prep_training_and_test_sets()
         """
 
         # Get the mdata for modelling
@@ -917,9 +917,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> wind_attributed_incidents.illustrate_explanatory_variables(save_as=None)
+            >>> w_model.illustrate_explanatory_variables(save_as=None)
         """
 
         processed_data, _, _ = self.prep_training_and_test_sets()
@@ -1019,9 +1019,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> output = wind_attributed_incidents.logistic_regression(random_state=0)
+            >>> output = w_model.logistic_regression(random_state=0)
         """
 
         _, train_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
@@ -1162,10 +1162,10 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> _ = wind_attributed_incidents.logistic_regression(pickle_it=False)
-            >>> wind_attributed_incidents.plot_roc(save_as=None)
+            >>> _ = w_model.logistic_regression(pickle_it=False)
+            >>> w_model.plot_roc(save_as=None)
         """
 
         fpr = self.__getattribute__('FPR')
@@ -1210,10 +1210,10 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> _ = wind_attributed_incidents.logistic_regression(pickle_it=False)
-            >>> wind_attributed_incidents.plot_pred_likelihood(save_as=None)
+            >>> _ = w_model.logistic_regression(pickle_it=False)
+            >>> w_model.plot_pred_likelihood(save_as=None)
         """
 
         test_set = self.__getattribute__('TestSet')
@@ -1258,9 +1258,9 @@ class WindAttributedIncidents:
 
             >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> wind_attributed_incidents = WindAttributedIncidents(trial_id=0)
+            >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> eval_summary = wind_attributed_incidents.evaluate_prototype_model()
+            >>> eval_summary = w_model.evaluate_prototype_model()
         """
 
         start_time = time.time()
@@ -1326,7 +1326,8 @@ class WindAttributedIncidents:
 
             else:
                 if verbose:
-                    print("Problems may occur given the parameter set {}: {}.".format(counter, params))
+                    print("There might be a problem with the parameter set {}: {}.".format(
+                        counter, params))
 
                 nobs.append(len(train_set))
                 mod_aic.append(np.nan)
@@ -1385,7 +1386,7 @@ class WindAttributedIncidents:
 class HeatAttributedIncidents:
 
     def __init__(self, trial_id,
-                 ip_start_hrs=-24, lp=-8, nip_start_hrs=-24,
+                 ip_start_hrs=-24, lp_days=-8, nip_start_hrs=-24,
                  shift_yards_same_elr=220, shift_yards_diff_elr=220,
                  hazard_pctl=50, outlier_pctl=99,
                  model_type='logit', in_seasons='summer'):
@@ -1399,7 +1400,7 @@ class HeatAttributedIncidents:
         self.WeatherCategory = 'Heat'
 
         self.IP_StartHrs = ip_start_hrs
-        self.LP = lp
+        self.LP = lp_days
         self.NIP_StartHrs = nip_start_hrs
 
         self.ShiftYardsForSameELRs = shift_yards_same_elr
@@ -1543,9 +1544,9 @@ class HeatAttributedIncidents:
             >>> import os
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> os.path.relpath(heat_attributed_incidents.cdd())
+            >>> os.path.relpath(h_model.cdd())
             'models\\prototype\\heat'
         """
 
@@ -1569,9 +1570,9 @@ class HeatAttributedIncidents:
             >>> import os
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> os.path.relpath(heat_attributed_incidents.cdd_trial())
+            >>> os.path.relpath(h_model.cdd_trial())
             'models\\prototype\\heat\\0'
         """
 
@@ -1805,9 +1806,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> incid_loc_weather = heat_attributed_incidents.get_incident_location_weather()
+            >>> incid_loc_weather = h_model.get_incident_location_weather()
 
             >>> incid_loc_weather.tail()
                   FinancialYear  ... Temperature_max ≥ 30°C
@@ -2037,22 +2038,34 @@ class HeatAttributedIncidents:
 
         return incident_location_weather
 
-    def plot_temperature_deviation(self, lp_days=14, add_err_bar=True, update=False, verbose=False,
-                                   save_as=".tif", dpi=600):
+    def plot_temperature_deviation(self, lp_range=14, add_err_bar=True, update=False, save_as=".tif",
+                                   dpi=600, verbose=False):
         """
+
+        :param lp_range:
+        :param add_err_bar:
+        :param update:
+        :param save_as: whether to save the figure or file extension
+        :type save_as: str or bool or None
+        :param dpi: DPI
+        :type dpi: int or None
+        :param verbose: whether to print relevant information in console, defaults to ``True``
+        :type verbose: bool or int
+        :return:
+
         **Test**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> heat_attributed_incidents.plot_temperature_deviation(verbose=True, save_as=None)
+            >>> h_model.plot_temperature_deviation(save_as=None, verbose=True)
         """
 
         default_lp = self.LP
 
         data_sets = []
-        for d in range(1, lp_days + 1):
+        for d in range(1, lp_range + 1):
             self.__setattr__('LP', -d)
             data_sets.append(self.get_incident_location_weather(update=update, pickle_it=True))
 
@@ -2065,7 +2078,7 @@ class HeatAttributedIncidents:
         ip_temperature_max = base_data[base_data.IncidentReported == 1][selected_cols]
 
         diff_means, diff_std = [], []
-        for i in range(0, lp_days):
+        for i in range(0, lp_range):
             data = data_sets[i]
 
             nip_temperature_max = data[data.IncidentReported == 0][selected_cols]
@@ -2125,9 +2138,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> incid_loc_vegetation = heat_attributed_incidents.get_incident_location_vegetation()
+            >>> incid_loc_vegetation = h_model.get_incident_location_vegetation()
 
             >>> incid_loc_vegetation.tail()
                   Route            IMDM  ... TreeNumberUp CoverPercentVegetation
@@ -2211,9 +2224,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> integrated_data_set = heat_attributed_incidents.integrate_data()
+            >>> integrated_data_set = h_model.integrate_data()
 
             >>> integrated_data_set.tail()
                   FinancialYear       StartDateTime  ... TreeNumberUp CoverPercentVegetation
@@ -2267,9 +2280,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> _, training_data, test_data = heat_attributed_incidents.prep_training_and_test_sets()
+            >>> _, training_data, test_data = h_model.prep_training_and_test_sets()
 
             >>> training_data.tail()
                   FinancialYear  ...  CoverPercentOpenSpace
@@ -2334,9 +2347,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> heat_attributed_incidents.illustrate_explanatory_variables(save_as=None)
+            >>> h_model.illustrate_explanatory_variables(save_as=None)
         """
 
         processed_data, _, _ = self.prep_training_and_test_sets()
@@ -2424,9 +2437,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> output = heat_attributed_incidents.logistic_regression(random_state=0)
+            >>> output = h_model.logistic_regression(random_state=0)
         """
 
         _, train_set, test_set = self.prep_training_and_test_sets()
@@ -2439,19 +2452,21 @@ class HeatAttributedIncidents:
         self.__setattr__('TrainingSet', train_set)
         self.__setattr__('TestSet', test_set)
 
-        try:
-            np.random.seed(random_state)
+        np.random.seed(random_state)
 
+        try:
             if self.ModelType == 'logit':
                 mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
             else:
                 mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
             result_summary = mod.fit(maxiter=10000, full_output=True, disp=False)  # method='newton'
-            print(result_summary.summary2()) if verbose else print("")
+            if verbose:
+                print(result_summary.summary2())
 
             # Odds ratios
             odds_ratios = pd.DataFrame(np.exp(result_summary.params), columns=['OddsRatio'])
-            print("\n{}".format(odds_ratios)) if verbose else print("")
+            if verbose:
+                print("\n{}".format(odds_ratios))
 
             # Prediction
             test_set['incident_prob'] = result_summary.predict(test_set[explanatory_variables])
@@ -2473,13 +2488,15 @@ class HeatAttributedIncidents:
                 lambda x: 1 if x >= threshold else 0)
             test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
             model_accuracy = np.divide(sum(test), len(test))
-            print("\nAccuracy: %f" % model_accuracy) if verbose else print("")
+            if verbose:
+                print("\nAccuracy: %f" % model_accuracy)
 
             # incident prediction accuracy
             incident_only = test_set[test_set.IncidentReported == 1]
             test_acc = pd.Series(incident_only.IncidentReported == incident_only.incident_prediction)
             incident_accuracy = np.divide(sum(test_acc), len(test_acc))
-            print("Incident accuracy: %f" % incident_accuracy) if verbose else print("")
+            if verbose:
+                print("Incident accuracy: %f" % incident_accuracy)
 
         except Exception as e:
             print(e)
@@ -2498,7 +2515,7 @@ class HeatAttributedIncidents:
 
             save_pickle(resources, self.cdd_trial(result_pickle), verbose=verbose)
 
-        return train_set, test_set, result_summary, model_accuracy, incident_accuracy, threshold
+        return result_summary, model_accuracy, incident_accuracy, threshold
 
     def plot_roc(self, save_as=".tif", dpi=600, verbose=True):
         """
@@ -2515,10 +2532,10 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> _ = heat_attributed_incidents.logistic_regression()
-            >>> heat_attributed_incidents.plot_roc(save_as=None)
+            >>> _ = h_model.logistic_regression()
+            >>> h_model.plot_roc(save_as=None)
         """
 
         fpr = self.__getattribute__('FPR')
@@ -2563,10 +2580,10 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> _ = heat_attributed_incidents.logistic_regression()
-            >>> heat_attributed_incidents.plot_pred_likelihood(save_as=None)
+            >>> _ = h_model.logistic_regression()
+            >>> h_model.plot_pred_likelihood(save_as=None)
         """
 
         test_set = self.__getattribute__('TestSet')
@@ -2612,9 +2629,9 @@ class HeatAttributedIncidents:
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
-            >>> heat_attributed_incidents = HeatAttributedIncidents(trial_id=0)
+            >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> eval_summary = heat_attributed_incidents.evaluate_prototype_model()
+            >>> eval_summary = h_model.evaluate_prototype_model()
         """
 
         start_time = time.time()
@@ -2670,7 +2687,8 @@ class HeatAttributedIncidents:
 
             else:
                 if verbose:
-                    print("Problems may occur given the parameter set {}: {}.".format(counter, params))
+                    print("There might be a problem with the parameter set {}: {}.".format(
+                        counter, params))
 
                 nobs.append(len(train_set))
                 mod_aic.append(np.nan)
