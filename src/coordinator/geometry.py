@@ -26,6 +26,118 @@ from utils import cdd_network
 metex = METExLite()
 
 
+# == Weather grid ==
+
+def find_closest_weather_grid(x, obs_grids, obs_centroid_geom):
+    """
+    Find the closest grid centroid and return the corresponding (pseudo) grid id.
+
+    :param x: e.g. Incidents.StartNE.iloc[0]
+    :param obs_grids:
+    :param obs_centroid_geom:
+    :return:
+
+    **Test**::
+
+        import copy
+
+        x = incidents.StartXY.iloc[0]
+    """
+
+    x_ = shapely.ops.nearest_points(x, obs_centroid_geom)[1]
+
+    pseudo_id = [i for i, y in enumerate(obs_grids.Centroid_XY) if y.equals(x_)]
+
+    return pseudo_id[0]
+
+
+def create_weather_grid_buffer(start, end, midpoint, whisker=500):
+    """
+    Create a circle buffer for start/end location.
+
+    :param start:
+    :type start: shapely.geometry.Point
+    :param end:
+    :type end: shapely.geometry.Point
+    :param midpoint:
+    :type midpoint: shapely.geometry.Point
+    :param whisker: extended length on both sides of the start and end locations, defaults to ``500``
+    :type whisker: int
+    :return: a buffer zone
+    :rtype: shapely.geometry.Polygon
+
+    **Test**::
+
+        whisker = 0
+
+        start = incidents.StartXY.iloc[0]
+        end = incidents.EndXY.iloc[0]
+        midpoint = incidents.MidpointXY.iloc[0]
+    """
+
+    if start == end:
+        buffer_circle = start.buffer(2000 + whisker)
+    else:
+        radius = (start.distance(end) + whisker) / 2
+        buffer_circle = midpoint.buffer(radius)
+    return buffer_circle
+
+
+def find_intersecting_weather_grid(x, obs_grids, obs_grids_geom, as_grid_id=True):
+    """
+    Find all intersecting geom objects.
+
+    :param x:
+    :param obs_grids:
+    :param obs_grids_geom:
+    :param as_grid_id: whether to return grid id number
+    :type as_grid_id: bool
+    :return:
+
+    **Test**::
+
+        x = incidents.Buffer_Zone.iloc[0]
+        as_grid_id = True
+    """
+
+    intxn_grids = [grid for grid in obs_grids_geom if x.intersects(grid)]
+
+    if as_grid_id:
+        x_ = shapely.ops.cascaded_union(intxn_grids)
+        intxn_grids = [i for i, y in enumerate(obs_grids.Grid) if y.within(x_)]
+
+    return intxn_grids
+
+
+def find_closest_met_stn(x, met_stations, met_stations_geom):
+    """
+    Find the closest grid centroid and return the corresponding (pseudo) grid id.
+
+    :param x:
+    :param met_stations:
+    :param met_stations_geom:
+    :return:
+
+    **Test**::
+
+        x = incidents.MidpointXY.iloc[0]
+    """
+
+    x_1 = shapely.ops.nearest_points(x, met_stations_geom)[1]
+
+    # rest = shapely.geometry.MultiPoint([p for p in met_stations_geom if not p.equals(x_1)])
+    # x_2 = shapely.ops.nearest_points(x, rest)[1]
+    # rest = shapely.geometry.MultiPoint([p for p in rest if not p.equals(x_2)])
+    # x_3 = shapely.ops.nearest_points(x, rest)[1]
+
+    idx = [i for i, y in enumerate(met_stations.EN_GEOM) if y.equals(x_1)]
+    src_id = met_stations.index[idx].to_list()
+
+    return src_id
+
+
+# == Weather cell ==
+
 def find_weather_cell_id(longitude, latitude):
     """
     Find weather cell ID.
