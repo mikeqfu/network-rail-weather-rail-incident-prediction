@@ -1347,3 +1347,40 @@ class HeatAttributedIncidentsPlus:
         if save_as:
             path_to_pred_fig = self.cdd_trial("predicted_likelihood" + save_as)
             save_fig(path_to_pred_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
+
+
+"""
+# 'IR' - Broken/cracked/twisted/buckled/flawed rail
+# 'XH' - Severe heat affecting infrastructure the responsibility of Network Rail 
+#        (excl. Heat related speed restrictions)
+# 'IB' - Points failure
+# 'JH' - Critical Rail Temperature speeds, (other than buckled rails)
+'IZ' - Other infrastructure causes INF OTHER
+'XW' - High winds affecting infrastructure the responsibility of Network
+'IS' - Track defects (other than rail defects) inc. fish plates, wet beds etc.
+
+0. 'IR'
+1. 'XH'
+2. 'IB'
+3. 'IR', 'XH', 'IB'
+4. 'JH'
+5. 'IR', 'XH', 'IB', 'JH'
+6. 'IR', 'IB'
+"""
+
+# == 'IR' - Broken/cracked/twisted/buckled/flawed rail ==
+
+
+# == 'IB' - Points failure ==
+
+
+# == 'IR', 'XH', 'IB' ==
+
+
+# == 'JH' - Critical Rail Temperature speeds, (other than buckled rails) ==
+
+
+# == 'IR', 'XH', 'IB', 'JH' ==
+
+
+# == 'IR', 'IB' ==
