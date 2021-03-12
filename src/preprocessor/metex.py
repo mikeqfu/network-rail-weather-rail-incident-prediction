@@ -3846,9 +3846,9 @@ class METExLite:
         Get Schedule 8 costs by datetime, location and incident reason.
 
         :param route_name: name of a Route, defaults to ``None``
-        :type route_name: str or None
+        :type route_name: str or list or None
         :param weather_category: weather category, defaults to ``None``
-        :type weather_category: str or None
+        :type weather_category: str or list or None
         :param update: whether to check on update and proceed to update the package data,
             defaults to ``False``
         :type update: bool
@@ -3933,8 +3933,8 @@ class METExLite:
                     extracted_data = get_subset(temp_data, route_name, weather_category)
 
                 else:
-                    schedule8_data = self.view_schedule8_data(route_name, weather_category,
-                                                              rearrange_index=True)
+                    schedule8_data = self.view_schedule8_data(
+                        route_name, weather_category, rearrange_index=True)
 
                     selected_features = ['PfPIId',
                                          'FinancialYear',
@@ -3961,8 +3961,8 @@ class METExLite:
 
                     selected_data = schedule8_data[selected_features]
 
-                    extracted_data = self.calculate_pfpi_stats(selected_data, selected_features,
-                                                               sort_by=['StartDateTime', 'EndDateTime'])
+                    extracted_data = self.calculate_pfpi_stats(
+                        selected_data, selected_features, sort_by=['StartDateTime', 'EndDateTime'])
 
                 if pickle_it:
                     save_pickle(extracted_data, path_to_pickle, verbose=verbose)
