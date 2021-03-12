@@ -20,7 +20,7 @@ from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
 from sklearn import metrics
 from sklearn.utils import extmath
 
-from coordinator.feature import categorise_track_orientations, get_data_by_season, get_data_by_season_
+from coordinator.feature import categorise_track_orientations, get_data_by_meteorological_seasons
 from coordinator.furlong import get_furlongs_data, get_incident_location_furlongs
 from preprocessor import METExLite
 from utils import cd_models, make_filename
@@ -861,9 +861,9 @@ class WindAttributedIncidents:
         # Get the mdata for modelling
         integrated_dat = self.integrate_data()
 
-        # Select season data: 'Spring', 'Summer', 'Autumn', 'Winter'
-        processed_data = get_data_by_season_(
-            integrated_dat, in_seasons=self.Seasons, incident_datetime_col='StartDate')
+        # Select season data: 'spring', 'summer', 'autumn', 'winter'
+        processed_data = get_data_by_meteorological_seasons(
+            integrated_dat, in_seasons=self.Seasons, datetime_col='StartDate')
 
         # Remove outliers
         if 95 <= self.OutlierPercentile <= 100:
@@ -897,12 +897,15 @@ class WindAttributedIncidents:
         processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
 
         # Select data before 2014 as training data set, with the rest being test set
-        train_set = processed_data[processed_data.FinancialYear < 2014]
+        training_set = processed_data[processed_data.FinancialYear < 2014]
         test_set = processed_data[processed_data.FinancialYear == 2014]
 
-        return processed_data, train_set, test_set
+        self.__setattr__('TrainingSet', training_set)
+        self.__setattr__('TestSet', test_set)
 
-    def illustrate_explanatory_variables(self, save_as=".tif", dpi=None, verbose=False):
+        return processed_data, training_set, test_set
+
+    def describe_training_set(self, save_as=".tif", dpi=None, verbose=False):
         """
         Describe basic statistics about the main explanatory variables.
 
@@ -919,24 +922,24 @@ class WindAttributedIncidents:
 
             >>> w_model = WindAttributedIncidents(trial_id=2)
 
-            >>> w_model.illustrate_explanatory_variables(save_as=None)
+            >>> w_model.describe_training_set(save_as=None)
         """
 
-        processed_data, _, _ = self.prep_training_and_test_sets()
+        _, training_set, _ = self.prep_training_and_test_sets()
 
         fig = plt.figure(figsize=(12, 5))
         colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
         ax1 = fig.add_subplot(161)
-        processed_data['WindGust_max'].plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
-        # train_set[['WindGust_max']].boxplot(column='WindGust_max', ax=ax1, boxprops=dict(color='k'))
+        training_set['WindGust_max'].plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
+        # training_set[['WindGust_max']].boxplot(column='WindGust_max', ax=ax1, boxprops=dict(color='k'))
         ax1.set_xticklabels('')
         plt.xlabel('Max. Gust', fontsize=13, labelpad=16)
         plt.ylabel('($\\times$10 mph)', fontsize=12, rotation=0)
         ax1.yaxis.set_label_coords(-0.1, 1.02)
 
         ax2 = fig.add_subplot(162)
-        processed_data['WindDirection_avg_quadrant'].value_counts().sort_index().plot.bar(
+        training_set['WindDirection_avg_quadrant'].value_counts().sort_index().plot.bar(
             color='#4c76e1', rot=0, fontsize=12)
         plt.xlabel('Avg. Wind Direction', fontsize=13)
         plt.ylabel('No.', fontsize=12, rotation=0)
@@ -944,28 +947,28 @@ class WindAttributedIncidents:
         ax2.yaxis.set_label_coords(-0.1, 1.02)
 
         ax3 = fig.add_subplot(163)
-        processed_data['Temperature_dif'].plot.box(color=colour, ax=ax3, widths=0.5, fontsize=12)
+        training_set['Temperature_dif'].plot.box(color=colour, ax=ax3, widths=0.5, fontsize=12)
         ax3.set_xticklabels('')
         plt.xlabel('Temp. Diff.', fontsize=13, labelpad=16)
         plt.ylabel('(°C)', fontsize=12, rotation=0)
         ax3.yaxis.set_label_coords(-0.1, 1.02)
 
         ax4 = fig.add_subplot(164)
-        processed_data['RelativeHumidity_max'].plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
+        training_set['RelativeHumidity_max'].plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
         ax4.set_xticklabels('')
         plt.xlabel('Max. R.H.', fontsize=13, labelpad=16)
         plt.ylabel('($\\times$10%)', fontsize=12, rotation=0)
         ax4.yaxis.set_label_coords(-0.1, 1.02)
 
         ax5 = fig.add_subplot(165)
-        processed_data['Snowfall_max'].plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
+        training_set['Snowfall_max'].plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
         ax5.set_xticklabels('')
         plt.xlabel('Max. Snowfall', fontsize=13, labelpad=16)
         plt.ylabel('(mm)', fontsize=12, rotation=0)
         ax5.yaxis.set_label_coords(-0.1, 1.02)
 
         ax6 = fig.add_subplot(166)
-        processed_data['TotalPrecipitation_max'].plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
+        training_set['TotalPrecipitation_max'].plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
         ax6.set_xticklabels('')
         plt.xlabel('Max. Total Precip.', fontsize=13, labelpad=16)
         plt.ylabel('(mm)', fontsize=12, rotation=0)
@@ -983,12 +986,12 @@ class WindAttributedIncidents:
         ax = fig_veg.add_subplot(111)
         colour_veg = dict(boxes='DarkGreen', whiskers='DarkOrange', medians='DarkBlue', caps='Gray')
 
-        cover_percent_cols = [c for c in processed_data.columns if c.startswith('CoverPercent')
+        cover_percent_cols = [c for c in training_set.columns if c.startswith('CoverPercent')
                               and not (c.endswith('Vegetation') or c.endswith('Diff'))]
         cover_percent_cols += [cover_percent_cols.pop(cover_percent_cols.index('CoverPercentOpenSpace'))]
         cover_percent_cols += [cover_percent_cols.pop(cover_percent_cols.index('CoverPercentOther'))]
-        processed_data[cover_percent_cols].plot.box(color=colour_veg, ax=ax, widths=0.5, fontsize=12)
-        # plt.boxplot([train_set[c] for c in cover_percent_cols])
+        training_set[cover_percent_cols].plot.box(color=colour_veg, ax=ax, widths=0.5, fontsize=12)
+        # plt.boxplot([training_set[c] for c in cover_percent_cols])
         # plt.tick_params(axis='x', labelbottom='off')
         ax.set_xticklabels([re.search('(?<=CoverPercent).*', c).group() for c in cover_percent_cols],
                            rotation=45)
@@ -1024,23 +1027,20 @@ class WindAttributedIncidents:
             >>> output = w_model.logistic_regression(random_state=0)
         """
 
-        _, train_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
+        _, training_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
 
         if add_intercept:
             explanatory_variables = ['const'] + self.ExplanatoryVariables
         else:
             explanatory_variables = self.ExplanatoryVariables.copy()
 
-        self.__setattr__('TrainingSet', train_set)
-        self.__setattr__('TestSet', test_set)
-
         try:
             np.random.seed(random_state)
 
             if self.ModelType == 'logit':
-                mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
+                mod = sm_dcm.Logit(training_set.IncidentReported, training_set[explanatory_variables])
             else:
-                mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
+                mod = sm_dcm.Probit(training_set.IncidentReported, training_set[explanatory_variables])
             result_summary = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
 
             if verbose:
@@ -1086,7 +1086,7 @@ class WindAttributedIncidents:
             # if dig_deeper:
             #     tmp_cols = explanatory_variables.copy()
             #     tmp_cols.remove('Electrified')
-            #     tmps = [np.linspace(train_set[i].min(), train_set[i].max(), 5) for i in tmp_cols]
+            #     tmps = [np.linspace(training_set[i].min(), training_set[i].max(), 5) for i in tmp_cols]
             #
             #     combos = pd.DataFrame(sklearn.utils.extmath.cartesian(tmps + [np.array([0, 1])]))
             #     combos.columns = explanatory_variables
@@ -1135,7 +1135,7 @@ class WindAttributedIncidents:
 
         if pickle_it:
             repo = locals()
-            var_names = ['train_set', 'test_set',
+            var_names = ['training_set', 'test_set',
                          'result_summary', 'mod_accuracy', 'incid_accuracy', 'threshold']
             resources = {k: repo[k] for k in list(var_names)}
             result_pickle = make_filename("result", self.Route, self.WeatherCategory,
@@ -1279,7 +1279,7 @@ class WindAttributedIncidents:
         mod_accuracy = []
         incid_accuracy = []
         msg = []
-        train_sets = []
+        training_sets = []
         test_sets = []
         thresholds = []
 
@@ -1305,10 +1305,10 @@ class WindAttributedIncidents:
             result, mod_acc, incid_acc, threshold = self.logistic_regression(
                 add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
 
-            train_set = self.__getattribute__('TrainingSet')
+            training_set = self.__getattribute__('TrainingSet')
             test_set = self.__getattribute__('TestSet')
 
-            train_sets.append(train_set)
+            training_sets.append(training_set)
             test_sets.append(test_set)
             results.append(result)
             mod_accuracy.append(mod_acc)
@@ -1329,7 +1329,7 @@ class WindAttributedIncidents:
                     print("There might be a problem with the parameter set {}: {}.".format(
                         counter, params))
 
-                nobs.append(len(train_set))
+                nobs.append(len(training_set))
                 mod_aic.append(np.nan)
                 mod_bic.append(np.nan)
                 msg.append(result.__str__())
@@ -2041,6 +2041,7 @@ class HeatAttributedIncidents:
     def plot_temperature_deviation(self, lp_range=14, add_err_bar=True, update=False, save_as=".tif",
                                    dpi=600, verbose=False):
         """
+        Plot temperature deviation.
 
         :param lp_range:
         :param add_err_bar:
@@ -2307,16 +2308,17 @@ class HeatAttributedIncidents:
         integrated_data = self.integrate_data()
 
         # Select season data: 'spring', 'summer', 'autumn', 'winter'
-        processed_data = get_data_by_season(integrated_data, season=self.Seasons)
+        processed_data = get_data_by_meteorological_seasons(
+            integrated_data, in_seasons=self.Seasons, datetime_col='StartDateTime')
 
         # Remove outliers
         if 95 <= self.OutlierPercentile <= 100:
             upper_limit = np.percentile(processed_data.DelayMinutes, self.OutlierPercentile)
             processed_data = processed_data[processed_data.DelayMinutes <= upper_limit]
             # from pyhelpers.ops import get_extreme_outlier_bounds
-            # l, u = get_extreme_outlier_bounds(integrated_data.DelayMinutes, k=1.5)
-            # integrated_data = integrated_data[
-            #     integrated_data.DelayMinutes.between(l, u, inclusive=True)]
+            # l, u = get_extreme_outlier_bounds(processed_data.DelayMinutes, k=1.5)
+            # processed_data = processed_data[
+            #     processed_data.DelayMinutes.between(l, u, inclusive=True)]
 
         # Add the intercept
         if add_intercept:
@@ -2327,12 +2329,15 @@ class HeatAttributedIncidents:
         processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
 
         # Select data before 2014 as training data set, with the rest being test set
-        train_set = processed_data[processed_data.FinancialYear < 2014]
+        training_set = processed_data[processed_data.FinancialYear < 2014]
         test_set = processed_data[processed_data.FinancialYear == 2014]
 
-        return processed_data, train_set, test_set
+        self.__setattr__('TrainingSet', training_set)
+        self.__setattr__('TestSet', test_set)
 
-    def illustrate_explanatory_variables(self, save_as=".tif", dpi=None, verbose=False):
+        return processed_data, training_set, test_set
+
+    def describe_training_set(self, save_as=".tif", dpi=None, verbose=False):
         """
         Describe basic statistics about the main explanatory variables.
 
@@ -2349,24 +2354,24 @@ class HeatAttributedIncidents:
 
             >>> h_model = HeatAttributedIncidents(trial_id=2)
 
-            >>> h_model.illustrate_explanatory_variables(save_as=None)
+            >>> h_model.describe_training_set(save_as=None)
         """
 
-        processed_data, _, _ = self.prep_training_and_test_sets()
+        _, training_set, _ = self.prep_training_and_test_sets()
 
         plt.figure(figsize=(14, 5))
 
         colour = dict(boxes='#4c76e1', whiskers='DarkOrange', medians='#ff5555', caps='Gray')
 
         ax1 = plt.subplot2grid((1, 8), (0, 0))
-        processed_data.Temperature_dif.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
+        training_set.Temperature_dif.plot.box(color=colour, ax=ax1, widths=0.5, fontsize=12)
         ax1.set_xticklabels('')
         plt.xlabel('Temp. Diff.', fontsize=13, labelpad=39)
         plt.ylabel('(°C)', fontsize=12, rotation=0)
         ax1.yaxis.set_label_coords(0.05, 1.01)
 
         ax2 = plt.subplot2grid((1, 8), (0, 1), colspan=2)
-        temperature_category = processed_data.Temperature_Category.value_counts() / 10
+        temperature_category = training_set.Temperature_Category.value_counts() / 10
         temperature_category.plot.bar(color='#537979', rot=-45, fontsize=12)
         plt.xticks(
             range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'],
@@ -2376,7 +2381,7 @@ class HeatAttributedIncidents:
         ax2.yaxis.set_label_coords(0.0, 1.01)
 
         ax3 = plt.subplot2grid((1, 8), (0, 3))
-        track_orientation = processed_data.Track_Orientation.value_counts() / 100
+        track_orientation = training_set.Track_Orientation.value_counts() / 100
         track_orientation.index = [i.replace('_', '-') for i in track_orientation.index]
         track_orientation.plot.bar(color='#a72a3d', rot=-45, fontsize=12)
         plt.xlabel('Track orientation', fontsize=13)
@@ -2384,14 +2389,14 @@ class HeatAttributedIncidents:
         ax3.yaxis.set_label_coords(0.0, 1.01)
 
         ax4 = plt.subplot2grid((1, 8), (0, 4))
-        processed_data.WindSpeed_avg.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
+        training_set.WindSpeed_avg.plot.box(color=colour, ax=ax4, widths=0.5, fontsize=12)
         ax4.set_xticklabels('')
         plt.xlabel('Average\nWind speed', fontsize=13, labelpad=29)
         plt.ylabel('($\\times$10 mph)', fontsize=12, rotation=0)
         ax4.yaxis.set_label_coords(0.2, 1.01)
 
         ax5 = plt.subplot2grid((1, 8), (0, 5))
-        processed_data.RelativeHumidity_avg.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
+        training_set.RelativeHumidity_avg.plot.box(color=colour, ax=ax5, widths=0.5, fontsize=12)
         ax5.set_xticklabels('')
         plt.xlabel('Average\nR.H.', fontsize=13, labelpad=29)
         plt.ylabel('(%)', fontsize=12, rotation=0)
@@ -2399,14 +2404,14 @@ class HeatAttributedIncidents:
         ax5.yaxis.set_label_coords(0.0, 1.01)
 
         ax6 = plt.subplot2grid((1, 8), (0, 6))
-        processed_data.TotalPrecipitation_avg.plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
+        training_set.TotalPrecipitation_avg.plot.box(color=colour, ax=ax6, widths=0.5, fontsize=12)
         ax6.set_xticklabels('')
         plt.xlabel('Average\nTotal Precip.', fontsize=13, labelpad=29)
         plt.ylabel('(mm)', fontsize=12, rotation=0)
         ax6.yaxis.set_label_coords(0.0, 1.01)
 
         ax7 = plt.subplot2grid((1, 8), (0, 7))
-        processed_data.CoverPercentOpenSpace.plot.box(color=colour, ax=ax7, widths=0.5, fontsize=12)
+        training_set.CoverPercentOpenSpace.plot.box(color=colour, ax=ax7, widths=0.5, fontsize=12)
         ax7.set_xticklabels('')
         plt.xlabel('Open Space\nCoverage', fontsize=13, labelpad=29)
         plt.ylabel('(%)', fontsize=12, rotation=0)
@@ -2442,23 +2447,20 @@ class HeatAttributedIncidents:
             >>> output = h_model.logistic_regression(random_state=0)
         """
 
-        _, train_set, test_set = self.prep_training_and_test_sets()
+        _, training_set, test_set = self.prep_training_and_test_sets()
 
         if add_intercept:
             explanatory_variables = ['const'] + self.ExplanatoryVariables
         else:
             explanatory_variables = self.ExplanatoryVariables.copy()
 
-        self.__setattr__('TrainingSet', train_set)
-        self.__setattr__('TestSet', test_set)
-
         np.random.seed(random_state)
 
         try:
             if self.ModelType == 'logit':
-                mod = sm_dcm.Logit(train_set.IncidentReported, train_set[explanatory_variables])
+                mod = sm_dcm.Logit(training_set.IncidentReported, training_set[explanatory_variables])
             else:
-                mod = sm_dcm.Probit(train_set.IncidentReported, train_set[explanatory_variables])
+                mod = sm_dcm.Probit(training_set.IncidentReported, training_set[explanatory_variables])
             result_summary = mod.fit(maxiter=10000, full_output=True, disp=False)  # method='newton'
             if verbose:
                 print(result_summary.summary2())
@@ -2505,7 +2507,7 @@ class HeatAttributedIncidents:
 
         if pickle_it:
             repo = locals()
-            var_names = ['train_set', 'test_set',
+            var_names = ['training_set', 'test_set',
                          'result_summary', 'model_accuracy', 'incident_accuracy', 'threshold']
             resources = {k: repo[k] for k in list(var_names)}
             result_pickle = make_filename(
@@ -2645,7 +2647,7 @@ class HeatAttributedIncidents:
         mod_accuracy = []
         incid_accuracy = []
         msg = []
-        train_sets = []
+        training_sets = []
         test_sets = []
         thresholds = []
 
@@ -2666,10 +2668,10 @@ class HeatAttributedIncidents:
             result, mod_acc, incid_acc, threshold = self.logistic_regression(
                 add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
 
-            train_set = self.__getattribute__('TrainingSet')
+            training_set = self.__getattribute__('TrainingSet')
             test_set = self.__getattribute__('TestSet')
 
-            train_sets.append(train_set)
+            training_sets.append(training_set)
             test_sets.append(test_set)
             results.append(result)
             mod_accuracy.append(mod_acc)
@@ -2690,7 +2692,7 @@ class HeatAttributedIncidents:
                     print("There might be a problem with the parameter set {}: {}.".format(
                         counter, params))
 
-                nobs.append(len(train_set))
+                nobs.append(len(training_set))
                 mod_aic.append(np.nan)
                 mod_bic.append(np.nan)
                 msg.append(result.__str__())
