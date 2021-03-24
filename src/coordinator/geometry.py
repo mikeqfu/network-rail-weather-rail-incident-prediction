@@ -14,8 +14,8 @@ import pandas as pd
 import pyproj
 import shapely.geometry
 import shapely.ops
-from pydriosm import GeofabrikDownloader, GeofabrikReader
-from pydriosm.reader import read_shp_file, unzip_shp_zip
+from pydriosm.downloader import GeofabrikDownloader
+from pydriosm.reader import GeofabrikReader, read_shp_file, unzip_shp_zip
 from pyhelpers.dir import cd
 from pyhelpers.geom import wgs84_to_osgb36
 from pyhelpers.store import load_pickle, save_pickle
