@@ -340,7 +340,8 @@ class Hotspots:
         :param show_osm_landuse_forest: [bool] (default: True)
         :param add_osm_natural_tree: [bool] (default: False)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [int; None (default)]
         :param verbose:
 
@@ -578,7 +579,8 @@ class Hotspots:
         :param show_metex_weather_cells: [bool] (default: True)
         :param show_osm_landuse_forest: [bool] (default: True)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [numbers.Number; None (default)]
 
         **Test**::
@@ -676,7 +678,8 @@ class Hotspots:
         :param show_metex_weather_cells: [bool] (default: True)
         :param show_osm_landuse_forest: [bool] (default: True)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [numbers.Number; None (default)]
 
         **Test**::
@@ -779,7 +782,8 @@ class Hotspots:
         :param show_metex_weather_cells: [bool] (default: True)
         :param show_osm_landuse_forest: [bool] (default: True)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [numbers.Number; None (default)]
 
         **Test**::
@@ -882,7 +886,8 @@ class Hotspots:
         :param show_metex_weather_cells: [bool] (default: True)
         :param show_osm_landuse_forest: [bool] (default: True)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [numbers.Number; None (default)]
 
         **Test**::
@@ -991,7 +996,8 @@ class Hotspots:
         :param show_metex_weather_cells: [bool] (default: True)
         :param show_osm_landuse_forest: [bool] (default: True)
         :param show_nr_hazardous_trees: [bool] (default: True)
-        :param save_as: [str; None (default)]
+        :param save_as: defaults to ``None``
+        :type save_as: str or None
         :param dpi: [numbers.Number; None (default)]
 
         **Test**::
