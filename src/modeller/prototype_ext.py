@@ -706,8 +706,7 @@ class HeatAttributedIncidentsPlus:
 
         return incidents
 
-    def get_incident_location_weather(self, random_state=0, update=False, pickle_it=False,
-                                      verbose=True):
+    def get_incident_location_weather(self, random_state=0, update=False, pickle_it=False, verbose=True):
         """
         Process data of weather conditions for each incident location.
 
@@ -1175,7 +1174,7 @@ class HeatAttributedIncidentsPlus:
 
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
 
-            >>> h_model_plus.logistic_regression()
+            >>> model_results = h_model_plus.logistic_regression()
         """
 
         # Get data for modelling
