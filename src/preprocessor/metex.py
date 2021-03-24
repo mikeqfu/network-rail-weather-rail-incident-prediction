@@ -2013,7 +2013,7 @@ class METExLite:
                     dat.drop(duplicated_stanox[nan_idx].index, inplace=True)
                     dat.drop_duplicates(subset=['Stanox'], keep='last', inplace=True)
 
-                    location_codes = self.LocationID.fetch_location_codes()['Location codes']
+                    location_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
 
                     for i, x in dat[dat.Description.isnull()].Stanox.items():
                         idx = location_codes[location_codes.STANOX == x].index
@@ -3433,7 +3433,7 @@ class METExLite:
                                           inplace=True)
 
                     # Use 'Station' data from Railway Codes website
-                    station_locations = self.StationCode.fetch_station_data()['Railway station data']
+                    station_locations = self.StationCode.fetch_station_data()[self.StationCode.StnKey]
 
                     station_locations = station_locations[
                         ['Station', 'Degrees Longitude', 'Degrees Latitude']]
@@ -4913,14 +4913,14 @@ class Schedule8IncidentReports:
                                                                axis=1)
 
         # Rectify 'STANOX'+'STANME'
-        location_codes = self.LocationID.fetch_location_codes()['Location codes']
+        location_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
         location_codes = location_codes.drop_duplicates(['TIPLOC', 'Location']).set_index(
             ['TIPLOC', 'Location'])
         temp = dat.join(location_codes, on=['TIPLOC', 'LOOKUP_NAME'], rsuffix='_Ref').fillna('')
         dat.loc[temp.index, 'STANOX':'STANME'] = temp[['STANOX_Ref', 'STANME_Ref']].values
 
         # Update coordinates with reference data from RailwayCodes
-        station_data = self.StationCode.fetch_station_data()['Railway station data']
+        station_data = self.StationCode.fetch_station_data()[self.StationCode.StnKey]
         station_data = station_data[['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
         station_data = station_data.drop_duplicates(subset=['Station']).set_index('Station')
         temp = dat.join(station_data, on='LOOKUP_NAME')
@@ -5148,7 +5148,7 @@ class Schedule8IncidentReports:
                 metex_stanox_location = metex_stanox_location.replace({'Name': errata_stanme})
 
                 # Get reference data from the Railway Codes website
-                rc_codes = self.LocationID.fetch_location_codes()['Location codes']
+                rc_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
                 rc_codes = rc_codes[['Location', 'TIPLOC', 'STANME', 'STANOX']].drop_duplicates()
 
                 # Fill in NA 'Description's (i.e. Location names)
@@ -5500,8 +5500,7 @@ class Schedule8IncidentReports:
                     loc_meta_plus.index.difference(temp.index), 'ApproximateEndLocation'] = True
 
                 # Get reference metadata from RailwayCodes
-                stn = Stations()
-                station_data = stn.fetch_station_data()['Railway station data']
+                station_data = self.StationCode.fetch_station_data()[self.StationCode.StnKey]
                 station_data = station_data[
                     ['Station', 'Degrees Longitude', 'Degrees Latitude']].dropna()
                 station_data.drop_duplicates(subset=['Station'], inplace=True)
@@ -5731,8 +5730,7 @@ class Schedule8IncidentReports:
             temp.Longitude.values, temp.Latitude.values)
 
         # ref 2 ----------------------------------------------
-        stn = Stations()
-        ref_metadata_2 = stn.fetch_station_data()['Railway station data']
+        ref_metadata_2 = self.StationCode.fetch_station_data()[self.StationCode.StnKey]
         ref_metadata_2 = ref_metadata_2[['Station', 'Degrees Longitude', 'Degrees Latitude']]
         ref_metadata_2 = ref_metadata_2.dropna().drop_duplicates('Station')
         ref_metadata_2.columns = [x.replace('Degrees ', '') for x in ref_metadata_2.columns]
