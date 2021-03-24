@@ -8,6 +8,8 @@ from sklearn.model_selection import train_test_split
 
 from preprocessor import METExLite, Schedule8IncidentReports
 
+metex = METExLite()
+
 
 # == Task 1: Broad classification of incidents into weather-related and non-weather-related ===========
 
@@ -36,8 +38,6 @@ def get_task_1_train_test_data(random_state=0, test_size=0.2):
         print(test_set)
         # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
     """
-
-    metex = METExLite()
 
     dat = metex.view_schedule8_costs_by_datetime_location_reason()
     dat['weather_related'] = dat.WeatherCategory.map(lambda x: 0 if x == '' else 1)
@@ -154,8 +154,6 @@ def get_task_2_train_test_data():
     schedule8_weather_incidents.rename(
         columns={'Year': 'FinancialYear', 'IncidentReason': 'IncidentReasonCode'},
         inplace=True)
-
-    metex = METExLite()
 
     dat = metex.view_schedule8_costs_by_datetime_location_reason()
     dat.WeatherCategory.fillna('', inplace=True)
