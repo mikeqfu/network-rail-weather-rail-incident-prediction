@@ -759,7 +759,7 @@ def get_incident_location_furlongs(route_name=None, weather_category=None,
 
     **Test**::
 
-        >>> from integrator.furlong import get_incident_location_furlongs
+        >>> from coordinator.furlong import get_incident_location_furlongs
 
         weather_category     = None
         shift_yards_same_elr = 220
