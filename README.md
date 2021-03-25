@@ -51,6 +51,6 @@ The prototype data models are generic and should also be adaptable to other othe
 
 #### Open-source Python packages
 
-- [**PyDriosm**](https://zenodo.org/record/4281195): an open-source tool for downloading, reading and PostgreSQL-based I/O of OpenStreetMap data. 
-- [**PyRCS**](https://zenodo.org/record/4429969): an open-source tool for collecting railway codes used in different UK rail industry systems. 
-- [**PyHelpers**](https://github.com/mikeqfu/pyhelpers): an open-source toolkit for facilitating Python users' data manipulation tasks. 
+- [**PyDriosm**](https://pydriosm.readthedocs.io/en/latest/): an open-source tool for downloading, reading and PostgreSQL-based I/O of OpenStreetMap data. 
+- [**PyRCS**](https://pyrcs.readthedocs.io/en/latest/): an open-source tool for collecting railway codes used in different UK rail industry systems. 
+- [**PyHelpers**](https://pyhelpers.readthedocs.io/en/latest/): an open-source toolkit for facilitating Python users' data manipulation tasks. 
