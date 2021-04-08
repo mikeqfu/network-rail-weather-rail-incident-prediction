@@ -31,7 +31,7 @@ class WindAttributedIncidents:
 
     :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_same_elr: int, float
+    :type shift_yards_same_elr: int or float
     :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
         given that StartELR != EndELR, defaults to ``220``
     :param hazard_pctl:
@@ -168,7 +168,8 @@ class WindAttributedIncidents:
         mpl_preferences(font_name='Cambria')
         pd_preferences()
 
-    def cdd(self, *sub_dir, mkdir=False):
+    @staticmethod
+    def cdd(*sub_dir, mkdir=False):
         """
         Change directory to "models\\prototype\\wind" and sub-directories / a file.
 
@@ -190,7 +191,7 @@ class WindAttributedIncidents:
             'models\\prototype\\wind'
         """
 
-        path = cd_models("prototype", self.WeatherCategory.lower(), *sub_dir, mkdir=mkdir)
+        path = cd_models("prototype", "wind", *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -1528,7 +1529,8 @@ class HeatAttributedIncidents:
         mpl_preferences(font_name='Cambria')
         pd_preferences()
 
-    def cdd(self, *sub_dir, mkdir=False):
+    @staticmethod
+    def cdd(*sub_dir, mkdir=False):
         """
         Change directory to "models\\prototype\\heat" and sub-directories / a file.
 
@@ -1550,7 +1552,7 @@ class HeatAttributedIncidents:
             'models\\prototype\\heat'
         """
 
-        path = cd_models("prototype", self.WeatherCategory.lower(), *sub_dir, mkdir=mkdir)
+        path = cd_models("prototype", "heat", *sub_dir, mkdir=mkdir)
 
         return path
 
