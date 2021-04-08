@@ -587,7 +587,8 @@ class MIDAS:
         p_end = period.right.max().strftime('%Y%m%d%H')
 
         # Make a pickle file
-        pickle_filename = "{}-{}.pickle".format(str(met_stn_id[0]), "-".join([p_start, p_end]))
+        pickle_filename = "{}-{}.pickle".format(
+            "-".join(str(x) for x in met_stn_id), "-".join([p_start, p_end]))
 
         # Specify a directory/path to store the pickle file (if appropriate)
         if dat_dir is None:
@@ -601,20 +602,19 @@ class MIDAS:
 
         else:
             # Specify database sql query
-            ms_id = met_stn_id[0]
+            ms_id = tuple(met_stn_id)
             dates = tuple(
                 x.strftime('%Y-%m-%d %H:%M:%S') for x in [period.left.min(), period.right.max()])
 
             sql_query = \
                 f"SELECT * FROM dbo.[MIDAS_RADTOB] " \
-                f"WHERE [SRC_ID] = {ms_id} " \
+                f"WHERE [SRC_ID] IN {ms_id} " \
                 f"AND [OB_END_DATE_TIME] BETWEEN '{dates[0]}' AND '{dates[1]}';"
 
             midas_radtob = pd.read_sql(sql=sql_query, con=self.DatabaseConn)  # Query the weather data
 
             if midas_radtob.empty and use_suppl_dat:
-                dates = tuple(
-                    x.strftime('%Y-%m-%d') for x in [period.left.min(), period.right.max()])
+                dates = tuple(x.strftime('%Y-%m-%d') for x in [period.left.min(), period.right.max()])
 
                 sql_query = \
                     f"SELECT * FROM dbo.[MIDAS_RADTOB_suppl] " \
@@ -1124,8 +1124,7 @@ class UKCP09:
             pickle_it = True
             grids = incidents.Weather_Grid.iloc[1]
             period = incidents.Critical_Period.iloc[1]
-            ukcp09_dat = query_by_grid_datetime(grids, period, pickle_it=pickle_it,
-                                                       verbose=verbose)
+            ukcp09_dat = query_by_grid_datetime(grids, period, pickle_it=pickle_it, verbose=verbose)
         """
 
         period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
@@ -1203,8 +1202,7 @@ class UKCP09:
             pickle_it = True
             grids = incidents.Weather_Grid.iloc[1]
             period = incidents.Critical_Period.iloc[1]
-            ukcp09_dat = query_by_grid_datetime_(grids, period, pickle_it=pickle_it,
-                                                        verbose=verbose)
+            ukcp09_dat = query_by_grid_datetime_(grids, period, pickle_it=pickle_it, verbose=verbose)
         """
 
         period = pd.date_range(period.left.date[0], period.right.date[0], normalize=True)
