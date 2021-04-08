@@ -8,6 +8,7 @@ from .vegetation import Vegetation
 from .weather import MIDAS, UKCP09
 
 __all__ = [
+    'explorer',
     'network', 'Anglia',
     'metex', 'METExLite', 'WeatherThresholds', 'Schedule8IncidentReports', 'DelayAttributionGlossary',
     'vegetation', 'Vegetation',
