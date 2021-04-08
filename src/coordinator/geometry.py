@@ -51,7 +51,7 @@ def find_closest_weather_grid(x, obs_grids, obs_centroid_geom):
     return pseudo_id[0]
 
 
-def create_weather_grid_buffer(start, end, midpoint, whisker=500):
+def create_weather_grid_buffer(start, end, midpoint, min_radius=1000, whisker=500):
     """
     Create a circle buffer for start/end location.
 
@@ -61,6 +61,8 @@ def create_weather_grid_buffer(start, end, midpoint, whisker=500):
     :type end: shapely.geometry.Point
     :param midpoint:
     :type midpoint: shapely.geometry.Point
+    :param min_radius:
+    :type min_radius:
     :param whisker: extended length on both sides of the start and end locations, defaults to ``500``
     :type whisker: int
     :return: a buffer zone
@@ -75,11 +77,14 @@ def create_weather_grid_buffer(start, end, midpoint, whisker=500):
         midpoint = incidents.MidpointXY.iloc[0]
     """
 
-    if start == end:
-        buffer_circle = start.buffer(2000 + whisker)
+    if (start == end) or (start.distance(end) < min_radius):
+        radius = min_radius + whisker
+        buffer_circle = start.buffer(radius)
+
     else:
         radius = (start.distance(end) + whisker) / 2
         buffer_circle = midpoint.buffer(radius)
+
     return buffer_circle
 
 
@@ -125,12 +130,13 @@ def find_closest_met_stn(x, met_stations, met_stations_geom):
 
     x_1 = shapely.ops.nearest_points(x, met_stations_geom)[1]
 
-    # rest = shapely.geometry.MultiPoint([p for p in met_stations_geom if not p.equals(x_1)])
-    # x_2 = shapely.ops.nearest_points(x, rest)[1]
-    # rest = shapely.geometry.MultiPoint([p for p in rest if not p.equals(x_2)])
-    # x_3 = shapely.ops.nearest_points(x, rest)[1]
+    rest = shapely.geometry.MultiPoint([p for p in met_stations_geom if not p.equals(x_1)])
+    x_2 = shapely.ops.nearest_points(x, rest)[1]
 
-    idx = [i for i, y in enumerate(met_stations.EN_GEOM) if y.equals(x_1)]
+    rest = shapely.geometry.MultiPoint([p for p in rest if not p.equals(x_2)])
+    x_3 = shapely.ops.nearest_points(x, rest)[1]
+
+    idx = [i for i, y in enumerate(met_stations.EN_GEOM) if y in (x_1, x_2, x_3)]
     src_id = met_stations.index[idx].to_list()
 
     return src_id
