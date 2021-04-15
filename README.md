@@ -18,7 +18,7 @@ The prototype data model for the wind-related rail incidents was initially explo
 
 The study investigated a variety of data sources, including historical records of rail incidents (attributed to poor weather), and weather observations and vegetation conditions in the vicinity of the incident locations. It showed on how those data could be modelled with logistic regression analysis, based on data integration in both temporal and spatial contexts. A number of factors contributing to the wind- / heat-related incidents have been identified and then used for making predictions of the occurrences of such incidents. 
 
-The prototype data models are generic and should also be adaptable to other other categories of weather-related incidents or a wider range of common industry tasks. 
+The prototype data models are generic and should also be adaptable to other categories of weather-related incidents, or a wider range of common industry tasks. 
 
 
 
