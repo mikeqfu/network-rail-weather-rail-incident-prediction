@@ -51,6 +51,6 @@ The prototype data models are generic and should also be adaptable to other othe
 
 #### Open-source Python packages
 
-- **Fu, Q.** (2020). [**PyHelpers**](https://pyhelpers.readthedocs.io/en/latest/): an open-source toolkit for facilitating Python users' data manipulation tasks. [doi:10.5281/zenodo.4081634](https://doi.org/10.5281/zenodo.4017438)
-- **Fu, Q.** (2020). [**PyRCS**](https://pyrcs.readthedocs.io/en/latest/): an open-source tool for collecting railway codes used in different UK rail industry systems. [doi:10.5281/zenodo.4026744](https://doi.org/10.5281/zenodo.4026744)
-- **Fu, Q.** (2020). [**PyDriosm**](https://pydriosm.readthedocs.io/en/latest/): an open-source tool for downloading, reading and PostgreSQL-based I/O of OpenStreetMap data. [doi:10.5281/zenodo.4281194](http://doi.org/10.5281/zenodo.4281194)
+- **Fu, Q.** (2020). [**PyHelpers**](https://pypi.org/project/pyhelpers/): an open-source toolkit for facilitating Python users' data manipulation tasks. [doi:10.5281/zenodo.4081634](https://doi.org/10.5281/zenodo.4017438)
+- **Fu, Q.** (2020). [**PyRCS**](https://pypi.org/project/pyrcs/): an open-source tool for collecting railway codes used in different UK rail industry systems. [doi:10.5281/zenodo.4026744](https://doi.org/10.5281/zenodo.4026744)
+- **Fu, Q.** (2020). [**PyDriosm**](https://pypi.org/project/pydriosm/): an open-source tool for downloading, reading and PostgreSQL-based I/O of OpenStreetMap data. [doi:10.5281/zenodo.4281194](http://doi.org/10.5281/zenodo.4281194)
