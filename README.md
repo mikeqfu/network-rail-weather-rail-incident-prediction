@@ -1,8 +1,5 @@
 ## Understanding and predicting weather-related incidents on GB's rail network
 
-**Qian Fu** [![LinkedIn](https://img.shields.io/badge/LinkedIn-blue?style=square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/qianfu/)
-
-
 This repo presents data models for predicting weather-related incidents on GB's rail network. Two case study examples are demonstrated in the context of delays caused primarily by high winds and high temperatures, respectively.
 
 
