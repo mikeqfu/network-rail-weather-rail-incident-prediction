@@ -2992,7 +2992,7 @@ class METExLite:
         # noinspection PyTypeChecker
         temp1 = pd.DataFrame.from_dict(route_names_changes, orient='index', columns=['Route'])
         route_names_in_table = list(dat.SubRoute.unique())
-        route_alt = [find_similar_str(x, temp1.index) for x in route_names_in_table]
+        route_alt = [find_similar_str(x, temp1.index.tolist()) for x in route_names_in_table]
 
         temp2 = pd.DataFrame.from_dict(dict(zip(route_names_in_table, route_alt)), 'index',
                                        columns=['RouteAlias'])
