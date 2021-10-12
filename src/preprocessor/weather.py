@@ -409,6 +409,7 @@ class MIDAS:
 
         temp_file = tempfile.NamedTemporaryFile()
         csv_filename = temp_file.name + ".csv"
+        # noinspection PyTypeChecker
         midas_radtob.to_csv(csv_filename, index=False, chunksize=chunk_size)
 
         tsql_chunksize = 2097 // len(midas_radtob.columns)
@@ -1066,6 +1067,7 @@ class UKCP09:
         print("Importing UKCP09 data to MSSQL Server", end=" ... ")
 
         with tempfile.NamedTemporaryFile() as temp_file:
+            # noinspection PyTypeChecker
             ukcp09_data.to_csv(temp_file.name + ".csv", index=False, chunksize=chunk_size)
 
             tsql_chunksize = 2100 // len(ukcp09_data.columns)
