@@ -109,6 +109,7 @@ Shapely==1.7.1
 six==1.16.0
 soupsieve==2.2.1
 SQLAlchemy==1.4.25
+SQLAlchemy-Utils==0.37.8
 statsmodels==0.13.0
 sympy==1.9
 terminado==0.12.1
