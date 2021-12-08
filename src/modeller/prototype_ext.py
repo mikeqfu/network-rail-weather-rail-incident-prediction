@@ -1,3 +1,4 @@
+# noinspection GrazieInspection
 """
 An extended version of the prototype model in the context of heat-related rail incidents.
 
@@ -253,13 +254,13 @@ class HeatAttributedIncidentsPlus:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype_ext\\heat" and sub-directories / a file.
+        Change directory to "models\\prototype_ext\\heat" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype_ext\\heat" and sub-directories / a file
+        :return: absolute path to "models\\prototype_ext\\heat" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -279,13 +280,13 @@ class HeatAttributedIncidentsPlus:
 
     def cdd_trial(self, *sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype_ext\\heat\\<trial_id>" and sub-directories / a file.
+        Change directory to "models\\prototype_ext\\heat\\<trial_id>" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype_ext\\heat\\<trial_id>" and sub-directories / a file
+        :return: absolute path to "models\\prototype_ext\\heat\\<trial_id>" and subdirectories / a file
         :rtype: str
 
         **Test**::

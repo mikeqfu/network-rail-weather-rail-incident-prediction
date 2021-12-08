@@ -171,13 +171,13 @@ class WindAttributedIncidents:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\wind" and sub-directories / a file.
+        Change directory to "models\\prototype\\wind" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\wind" and sub-directories / a file
+        :return: absolute path to "models\\prototype\\wind" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -197,13 +197,13 @@ class WindAttributedIncidents:
 
     def cdd_trial(self, *sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\wind\\<trial_id>" and sub-directories / a file.
+        Change directory to "models\\prototype\\wind\\<trial_id>" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\wind\\<trial_id>" and sub-directories / a file
+        :return: absolute path to "models\\prototype\\wind\\<trial_id>" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -826,7 +826,7 @@ class WindAttributedIncidents:
                 integrated_weather_vegetation.Electrified = \
                     integrated_weather_vegetation.Electrified.astype(int)
 
-                # Categorise average wind directions into 4 quadrants
+                # Categorize average wind directions into 4 quadrants
                 wind_direction = pd.cut(
                     integrated_weather_vegetation.WindDirection_avg.values,
                     [0, 90, 180, 270, 360], right=False)
@@ -1335,7 +1335,7 @@ class WindAttributedIncidents:
                 mod_bic.append(np.nan)
                 msg.append(result.__str__())
 
-        # Create a dataframe that summarises the test results
+        # Create a dataframe that summarizes the test results
         columns = ['IP_StartHrs', 'IP_EndHrs', 'NIP_StartHrs',
                    'YardShift_same_ELR', 'YardShift_diff_ELR', 'HazardsPercentile', 'Obs_No',
                    'AIC', 'BIC', 'Threshold', 'PredAcc', 'PredAcc_Incid', 'Extra_Info']
@@ -1532,13 +1532,13 @@ class HeatAttributedIncidents:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\heat" and sub-directories / a file.
+        Change directory to "models\\prototype\\heat" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\heat" and sub-directories / a file
+        :return: absolute path to "models\\prototype\\heat" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1558,13 +1558,13 @@ class HeatAttributedIncidents:
 
     def cdd_trial(self, *sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\heat\\<trial_id>" and sub-directories / a file.
+        Change directory to "models\\prototype\\heat\\<trial_id>" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\heat\\<trial_id>" and sub-directories / a file
+        :return: absolute path to "models\\prototype\\heat\\<trial_id>" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1792,6 +1792,7 @@ class HeatAttributedIncidents:
     # == Data integration =============================================================================
 
     def get_incident_location_weather(self, update=False, pickle_it=False, verbose=False):
+        # noinspection GrazieInspection
         """
         Get TRUST data and the weather conditions for each incident location.
 
@@ -2008,7 +2009,7 @@ class HeatAttributedIncidents:
                 incident_location_weather = pd.concat(
                     [nip_data, ip_data], axis=0, ignore_index=True, sort=False)
 
-                # Categorise average wind directions into 4 quadrants
+                # Categorize average wind directions into 4 quadrants
                 wind_direction = pd.cut(
                     incident_location_weather.WindDirection_avg.values,
                     bins=[0, 90, 180, 270, 360], right=False)
@@ -2016,7 +2017,7 @@ class HeatAttributedIncidents:
                     pd.DataFrame(wind_direction, columns=['WindDirection_avg_quadrant'])).join(
                     pd.get_dummies(wind_direction, prefix='WindDirection_avg'))
 
-                # Categorise track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
+                # Categorize track orientations into four directions (N-S, E-W, NE-SW, NW-SE)
                 track_orientation = categorise_track_orientations(incident_location_weather)
                 incident_location_weather = incident_location_weather.join(track_orientation)
 
@@ -2376,7 +2377,7 @@ class HeatAttributedIncidents:
         temperature_category = training_set.Temperature_Category.value_counts() / 10
         temperature_category.plot.bar(color='#537979', rot=-45, fontsize=12)
         plt.xticks(
-            range(0, 8), ['< 24°C', '24°C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'],
+            range(0, 8), ['< 24 °C', '24 °C', '25°C', '26°C', '27°C', '28°C', '29°C', '≥ 30°C'],
             fontsize=12)
         plt.xlabel('Max. Temp.', fontsize=13, labelpad=7)
         plt.ylabel('($\\times$10)', fontsize=12, rotation=0)
@@ -2699,7 +2700,7 @@ class HeatAttributedIncidents:
                 mod_bic.append(np.nan)
                 msg.append(result.__str__())
 
-        # Create a dataframe that summarises the test results
+        # Create a dataframe that summarizes the test results
         columns = ['IP_StartHrs', 'LP', 'NIP_StartHrs',
                    'Obs_No', 'AIC', 'BIC', 'Threshold',
                    'PredAcc', 'PredAcc_Incid', 'Extra_Info']
