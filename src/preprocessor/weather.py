@@ -15,7 +15,7 @@ import shapely.geometry
 import shapely.ops
 import shapely.wkt
 import sqlalchemy.types
-from pyhelpers.dir import cd, validate_input_data_dir
+from pyhelpers.dir import cd, validate_dir
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
 from pyhelpers.store import load_pickle, save_pickle
 
@@ -66,13 +66,13 @@ class MIDAS:
 
     def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\weather\\midas" and sub-directories / a file.
+        Change directory to "data\\weather\\midas" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a file)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: full path to ``"data\\weather\\midas"`` and sub-directories / a file
+        :return: full path to ``"data\\weather\\midas"`` and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -595,7 +595,7 @@ class MIDAS:
         if dat_dir is None:
             dat_dir_ = self.cdd("dat")
         else:
-            dat_dir_ = validate_input_data_dir(dat_dir)
+            dat_dir_ = validate_dir(dat_dir)
         path_to_pickle = cd(dat_dir_, pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
@@ -669,13 +669,13 @@ class UKCP09:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "data\\weather\\ukcp" and sub-directories / a file.
+        Change directory to "data\\weather\\ukcp" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a file)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: full path to ``"data\\weather\\ukcp"`` and sub-directories / a file
+        :return: full path to ``"data\\weather\\ukcp"`` and subdirectories / a file
         :rtype: str
 
         **Test**::

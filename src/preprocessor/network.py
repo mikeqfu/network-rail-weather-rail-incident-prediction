@@ -42,13 +42,13 @@ class Anglia:
 
     def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\network\\routes\\Anglia" and sub-directories / a file.
+        Change directory to "data\\network\\routes\\Anglia" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a file)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: full path to ``"data\\network\\routes\\Anglia"`` and sub-directories / a file
+        :return: full path to ``"data\\network\\routes\\Anglia"`` and subdirectories / a file
         :rtype: str
 
         **Test**::

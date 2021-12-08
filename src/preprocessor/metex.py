@@ -15,7 +15,6 @@ import string
 import urllib.request
 import zipfile
 
-import fake_useragent
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -49,13 +48,13 @@ class DelayAttributionGlossary:
 
     def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\incidents\\delay attribution\\glossary" and sub-directories / a file.
+        Change directory to "data\\incidents\\delay attribution\\glossary" and subdirectories / a file.
 
-        :param sub_dir: sub-directory name(s) or filename(s)
+        :param sub_dir: subdirectory name(s) or filename(s)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: path to "data\\incidents\\delay attribution\\glossary" and sub-directories / a file
+        :return: path to "data\\incidents\\delay attribution\\glossary" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -135,8 +134,7 @@ class DelayAttributionGlossary:
 
         for y, m in list(itertools.product(years, months)):
             url = 'https://www.networkrail.co.uk/wp-content/uploads/{}/{}/{}'.format(y, m, filename)
-            user_agent = fake_useragent.UserAgent().random
-            response = requests.get(url, headers={'User-Agent': user_agent})
+            response = requests.get(url, headers=fake_requests_headers())
             if response.ok:
                 if os.path.isfile(self.path_to_original_file()):
                     if confirmed("Replace the current version?",
@@ -990,13 +988,13 @@ class METExLite:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "data\\metex\\database_lite" and sub-directories / a file.
+        Change directory to "data\\metex\\database_lite" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "data\\metex\\database_lite" and sub-directories / a file
+        :return: absolute path to "data\\metex\\database_lite" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1016,13 +1014,13 @@ class METExLite:
 
     def cdd_tables(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\metex\\database_lite\\tables" and sub-directories / a file.
+        Change directory to "data\\metex\\database_lite\\tables" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "data\\metex\\database_lite\\tables" and sub-directories / a file
+        :return: absolute path to "data\\metex\\database_lite\\tables" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1042,13 +1040,13 @@ class METExLite:
 
     def cdd_views(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\metex\\database_lite\\views" and sub-directories / a file.
+        Change directory to "data\\metex\\database_lite\\views" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "data\\metex\\database_lite\\views" and sub-directories / a file
+        :return: absolute path to "data\\metex\\database_lite\\views" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1068,13 +1066,13 @@ class METExLite:
 
     def cdd_figures(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\metex\\database_lite\\figures" and sub-directories / a file.
+        Change directory to "data\\metex\\database_lite\\figures" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "data\\metex\\database_lite\\figures" and sub-directories / a file
+        :return: absolute path to "data\\metex\\database_lite\\figures" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -1103,7 +1101,7 @@ class METExLite:
         :type table_name: str
         :param schema_name: name of schema, defaults to ``'dbo'``
         :type schema_name: str
-        :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
+        :param index_col: index column(s) of the returned data frame, defaults to ``None``
         :type index_col: str or list or None
         :param route_name: name of a Route; if ``None`` (default), all Routes
         :type route_name: str or None
@@ -2013,7 +2011,7 @@ class METExLite:
                     dat.drop(duplicated_stanox[nan_idx].index, inplace=True)
                     dat.drop_duplicates(subset=['Stanox'], keep='last', inplace=True)
 
-                    location_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
+                    location_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
 
                     for i, x in dat[dat.Description.isnull()].Stanox.items():
                         idx = location_codes[location_codes.STANOX == x].index
@@ -2215,7 +2213,7 @@ class METExLite:
                 start_end[point_idx] = stanox_section.StartStanox_temp[point_idx]
                 stanox_section['StanoxSection'] = start_end
 
-                # Finalising the cleaning process
+                # Finalizing the cleaning process
                 stanox_section.drop('Description', axis=1, inplace=True)  # Drop original
                 stanox_section.rename(
                     columns={'StartStanox_temp': 'StartLocation', 'EndStanox_temp': 'EndLocation'},
@@ -4658,6 +4656,7 @@ class WeatherThresholds:
         return metex_weather_thresholds
 
     def get_schedule8_weather_thresholds(self, update=False, verbose=False):
+        # noinspection GrazieInspection
         """
         Get threshold data available in ``workbook_filename``.
 
@@ -4797,13 +4796,13 @@ class Schedule8IncidentReports:
 
     def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\metex\\reports" and sub-directories / a file.
+        Change directory to "data\\metex\\reports" and subdirectories / a file.
 
-        :param sub_dir: sub-directory name(s) or filename(s)
+        :param sub_dir: subdirectory name(s) or filename(s)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: path to "data\\metex\\reports" and sub-directories / a file
+        :return: path to "data\\metex\\reports" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -4811,9 +4810,9 @@ class Schedule8IncidentReports:
             >>> import os
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> s8ir = Schedule8IncidentReports()
 
-            >>> dat_dir = sis.cdd()
+            >>> dat_dir = s8ir.cdd()
 
             >>> os.path.relpath(dat_dir)
             'data\\metex\\reports'
@@ -4913,7 +4912,7 @@ class Schedule8IncidentReports:
                                                                axis=1)
 
         # Rectify 'STANOX'+'STANME'
-        location_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
+        location_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
         location_codes = location_codes.drop_duplicates(['TIPLOC', 'Location']).set_index(
             ['TIPLOC', 'Location'])
         temp = dat.join(location_codes, on=['TIPLOC', 'LOOKUP_NAME'], rsuffix='_Ref').fillna('')
@@ -5148,7 +5147,7 @@ class Schedule8IncidentReports:
                 metex_stanox_location = metex_stanox_location.replace({'Name': errata_stanme})
 
                 # Get reference data from the Railway Codes website
-                rc_codes = self.LocationID.fetch_location_codes()[self.LocationID.Key]
+                rc_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
                 rc_codes = rc_codes[['Location', 'TIPLOC', 'STANME', 'STANOX']].drop_duplicates()
 
                 # Fill in NA 'Description's (i.e. Location names)
@@ -5159,7 +5158,7 @@ class Schedule8IncidentReports:
 
                 # Fill in NA 'Name's (i.e. STANME)
                 na_name = metex_stanox_location[metex_stanox_location.Name.isnull()]
-                # Some 'Description's are recorded by 'TIPLOC' instead
+                # Some records of the 'Description' are recorded by 'TIPLOC' instead
                 rc_tiploc_dict = self.LocationID.make_loc_id_dict('TIPLOC')
                 temp = na_name.join(rc_tiploc_dict, on='Description')
                 temp = temp.join(rc_codes.set_index(['STANOX', 'TIPLOC', 'Location']),
@@ -5211,7 +5210,7 @@ class Schedule8IncidentReports:
                         lambda x: find_similar_str(x[1], x[2]) if isinstance(x[2], list) else x[2],
                         axis=1)
 
-                # Finalise cleansing 'Description' (i.e. location names)
+                # Finalize cleansing 'Description' (i.e. location names)
                 temp = metex_stanox_location.join(rc_stanox_dict, on='Stanox')
                 temp = temp[['Description', 'Name', 'Location']]
                 metex_stanox_location.Description = temp.apply(
@@ -5383,7 +5382,7 @@ class Schedule8IncidentReports:
                 loc_name_regexp_replacement_dict = fetch_loc_names_repl_dict('End', regex=True)
                 stanox_sec = stanox_sec.replace(loc_name_regexp_replacement_dict)
 
-                # Finalise cleansing
+                # Finalize cleansing
                 stanox_sec.End.fillna(stanox_sec.Start, inplace=True)
                 temp = stanox_sec.join(rc_stanox_dict, on='StartStanox')
                 temp = temp[temp.Location.notnull()][['Start', 'Location']]
@@ -5669,27 +5668,28 @@ class Schedule8IncidentReports:
 
         # Find geographical coordinates for each incident location
         ref_loc_dat_1, _ = self.get_location_metadata(update=update_metadata).values()
-        coords_cols = ['EASTING', 'NORTHING', 'DEG_LONG', 'DEG_LAT']
-        coords_cols_alt = ['Easting', 'Northing', 'Longitude', 'Latitude']
-        ref_loc_dat_1.rename(columns=dict(zip(coords_cols, coords_cols_alt)), inplace=True)
-        ref_loc_dat_1 = ref_loc_dat_1[['LOOKUP_NAME'] + coords_cols_alt].drop_duplicates('LOOKUP_NAME')
+        coordinates_cols = ['EASTING', 'NORTHING', 'DEG_LONG', 'DEG_LAT']
+        coordinates_cols_alt = ['Easting', 'Northing', 'Longitude', 'Latitude']
+        ref_loc_dat_1.rename(columns=dict(zip(coordinates_cols, coordinates_cols_alt)), inplace=True)
+        ref_loc_dat_1 = \
+            ref_loc_dat_1[['LOOKUP_NAME'] + coordinates_cols_alt].drop_duplicates('LOOKUP_NAME')
 
         tmp, idx = [], []
         for i in ref_loc_dat_1.index:
             x_ = ref_loc_dat_1.LOOKUP_NAME.loc[i]
             if isinstance(x_, tuple):
                 for y in x_:
-                    tmp.append([y] + ref_loc_dat_1[coords_cols_alt].loc[i].to_list())
-        ref_colname_1 = ['LOOKUP_NAME'] + coords_cols_alt
+                    tmp.append([y] + ref_loc_dat_1[coordinates_cols_alt].loc[i].to_list())
+        ref_colname_1 = ['LOOKUP_NAME'] + coordinates_cols_alt
         ref_loc_dat_1 = ref_loc_dat_1[ref_colname_1].append(pd.DataFrame(tmp, columns=ref_colname_1))
-        ref_loc_dat_1.drop_duplicates(subset=coords_cols_alt, keep='last', inplace=True)
+        ref_loc_dat_1.drop_duplicates(subset=coordinates_cols_alt, keep='last', inplace=True)
         ref_loc_dat_1.set_index('LOOKUP_NAME', inplace=True)
 
-        dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='StartLocation')
-        dat.rename(columns=dict(zip(coords_cols_alt, ['Start' + c for c in coords_cols_alt])),
+        dat = dat.join(ref_loc_dat_1[coordinates_cols_alt], on='StartLocation')
+        dat.rename(columns=dict(zip(coordinates_cols_alt, ['Start' + c for c in coordinates_cols_alt])),
                    inplace=True)
-        dat = dat.join(ref_loc_dat_1[coords_cols_alt], on='EndLocation')
-        dat.rename(columns=dict(zip(coords_cols_alt, ['End' + c for c in coords_cols_alt])),
+        dat = dat.join(ref_loc_dat_1[coordinates_cols_alt], on='EndLocation')
+        dat.rename(columns=dict(zip(coordinates_cols_alt, ['End' + c for c in coordinates_cols_alt])),
                    inplace=True)
 
         # Get location metadata for reference --------------------------------
@@ -5856,6 +5856,7 @@ class Schedule8IncidentReports:
 
     def get_schedule8_weather_incidents_02062006_31032014(self, route_name=None, weather_category=None,
                                                           update=False, verbose=False):
+        # noinspection GrazieInspection
         """
         Get data of Schedule 8 weather incident from Schedule8WeatherIncidents-02062006-31032014.xlsm.
 

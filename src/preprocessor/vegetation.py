@@ -52,13 +52,13 @@ class Vegetation:
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
         """
-        Change directory to "data\\vegetation\\database\\" and sub-directories / a file.
+        Change directory to "data\\vegetation\\database\\" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "data\\vegetation\\database\\" and sub-directories / a file
+        :return: absolute path to "data\\vegetation\\database\\" and subdirectories / a file
         :rtype: str
 
         **Test**::
@@ -78,13 +78,13 @@ class Vegetation:
 
     def cdd_tables(self, *sub_dir, mkdir=False):
         """
-        Change directory to "..\\data\\vegetation\\database\\tables\\" and sub-directories / a file.
+        Change directory to "..\\data\\vegetation\\database\\tables\\" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "..\\data\\vegetation\\database\\tables\\" and sub-directories / a file
+        :return: absolute path to "..\\data\\vegetation\\database\\tables\\" and subdirectories / a file
         :rtype: str
         """
 
@@ -94,13 +94,13 @@ class Vegetation:
 
     def cdd_views(self, *sub_dir, mkdir=False):
         """
-        Change directory to "..\\data\\vegetation\\database\\views\\" and sub-directories / a file.
+        Change directory to "..\\data\\vegetation\\database\\views\\" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "..\\data\\vegetation\\database\\views\\" and sub-directories / a file
+        :return: absolute path to "..\\data\\vegetation\\database\\views\\" and subdirectories / a file
         :rtype: str
         """
 
@@ -118,7 +118,7 @@ class Vegetation:
         :type table_name: str
         :param schema_name: name of schema, defaults to ``'dbo'``
         :type schema_name: str
-        :param index_col: column(s) set to be index of the returned data frame, defaults to ``None``
+        :param index_col: index column(s) of the returned data frame, defaults to ``None``
         :type index_col: str or list or None
         :param route_name: name of a Route; if ``None`` (default), all Routes
         :type route_name: str or None
@@ -213,7 +213,7 @@ class Vegetation:
         **Test**::
 
             >>> from preprocessor import Vegetation
-            
+
             >>> veg = Vegetation()
 
             >>> adverse_wind_tbl = veg.get_adverse_wind(update=True, verbose=True)
@@ -1690,7 +1690,7 @@ class Vegetation:
                     'WorkReq_InstallSupport']
                 hazard_tree.rename(columns=dict(zip(work_req, work_req_desc)), inplace=True)
 
-                # Note the feasibility of the the following operation is not guaranteed:
+                # Note the feasibility of the following operation is not guaranteed:
                 hazard_tree[work_req_desc] = hazard_tree[work_req_desc].fillna(value=0)
 
                 # Rearrange DataFrame index

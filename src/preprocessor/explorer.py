@@ -51,8 +51,8 @@ def create_pie_plot_for_incident_proportions(s8weather_incidents, save_as=".png"
 
     **Example**::
 
-        >>> from preprocessor import Schedule8IncidentReports
         >>> from preprocessor.explorer import create_pie_plot_for_incident_proportions
+        >>> from preprocessor import Schedule8IncidentReports
 
         >>> reports = Schedule8IncidentReports()
 
@@ -117,14 +117,14 @@ def create_bar_plot_for_delay_cost(s8weather_incidents, save_as=".png"):
 
     **Example**::
 
-        from spreadsheet.incidents import get_schedule8_weather_incidents_02062006_31032014
-        from misc.explor import create_bar_plot_for_delay_cost
+        >>> from preprocessor.metex import Schedule8IncidentReports
+        >>> from preprocessor.explorer import create_bar_plot_for_delay_cost
 
-        save_as = ".png"
+        >>> s8ir = Schedule8IncidentReports()
 
-        s8weather_incidents = get_schedule8_weather_incidents_02062006_31032014()['Data']
+        >>> s8w_incidents = s8ir.get_schedule8_weather_incidents_02062006_31032014()['Data']
 
-        create_bar_plot_for_delay_cost(s8weather_incidents, save_as)
+        >>> create_bar_plot_for_delay_cost(s8w_incidents, save_as=".png")
     """
 
     stats = calc_stats(s8weather_incidents).reset_index()
