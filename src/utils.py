@@ -1,4 +1,6 @@
-""" Utilities - Helper functions """
+"""
+Utilities - Helper functions
+"""
 
 
 import functools
@@ -21,13 +23,13 @@ from pyhelpers.text import find_similar_str
 
 def cdd_exploration(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\exploration" and sub-directories / a file.
+    Change directory to "data\\exploration" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\exploration" and sub-directories / a file
+    :return: full path to "data\\exploration" and subdirectories / a file
     :rtype: str
     """
     
@@ -38,13 +40,13 @@ def cdd_exploration(*sub_dir, mkdir=False):
 
 def cdd_metex(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\metex" and sub-directories / a file.
+    Change directory to "data\\metex" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\metex" and sub-directories / a file
+    :return: full path to "data\\metex" and subdirectories / a file
     :rtype: str
     """
 
@@ -55,13 +57,13 @@ def cdd_metex(*sub_dir, mkdir=False):
 
 def cdd_network(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\network" and sub-directories / a file.
+    Change directory to "data\\network" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\network" and sub-directories / a file
+    :return: full path to "data\\network" and subdirectories / a file
     :rtype: str
     """
 
@@ -72,13 +74,13 @@ def cdd_network(*sub_dir, mkdir=False):
 
 def cdd_railway_codes(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\network\\railway codes" and sub-directories / a file.
+    Change directory to "data\\network\\railway codes" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\network\\railway codes" and sub-directories / a file
+    :return: full path to "data\\network\\railway codes" and subdirectories / a file
     :rtype: str
     """
 
@@ -89,13 +91,13 @@ def cdd_railway_codes(*sub_dir, mkdir=False):
 
 def cdd_vegetation(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\vegetation" and sub-directories / a file.
+    Change directory to "data\\vegetation" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\vegetation" and sub-directories / a file
+    :return: full path to "data\\vegetation" and subdirectories / a file
     :rtype: str
     """
 
@@ -106,13 +108,13 @@ def cdd_vegetation(*sub_dir, mkdir=False):
 
 def cdd_weather(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\weather" and sub-directories / a file.
+    Change directory to "data\\weather" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\weather" and sub-directories / a file
+    :return: full path to "data\\weather" and subdirectories / a file
     :rtype: str
     """
 
@@ -123,13 +125,13 @@ def cdd_weather(*sub_dir, mkdir=False):
 
 def cd_models(*sub_dir, mkdir=False):
     """
-    Change directory to "models" and sub-directories / a file.
+    Change directory to "models" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "models" and sub-directories / a file
+    :return: full path to "models" and subdirectories / a file
     :rtype: str
     """
 
@@ -191,19 +193,17 @@ def specify_server_name():
     """
     Specify database server name.
 
-    .. note::
+    Alternative methods to get the computer name:
 
-        Alternative methods to get the computer name:
+    .. code-block: python
 
-        .. code-block: python
+        >>> # method 1:
+        >>> import platform
+        >>> platform.node()
 
-            # method 1:
-            import platform
-            platform.node()
-
-            # method 2:
-            import socket
-            socket.gethostname()
+        >>> # method 2:
+        >>> import socket
+        >>> socket.gethostname()
     """
 
     server_name = os.environ['COMPUTERNAME']
@@ -492,7 +492,7 @@ def save_table_by_chunk(database_name, table_name, schema_name='dbo', col_names=
     table_col_names = [x for x in get_table_column_names(database_name, table_name)
                        if x not in geom_col_names]
 
-    # Specify SQL query - read all of the selected non-geom columns
+    # Specify SQL query - read all the selected non-geom columns
     selected_col_names = [x for x in col_names if x not in geom_col_names] if col_names \
         else table_col_names
 
@@ -554,9 +554,10 @@ def get_table_names(database_name, schema_name='dbo', table_type='TABLE'):
     """
 
     # Create a cursor with a direct connection to the queried database
-    db_cursor = create_mssql_db_cursor(database_name)
-    # Get a results set of tables defined in the data source
-    table_list = [t.table_name for t in db_cursor.tables(schema=schema_name, tableType=table_type)]
+    db_cursor = create_mssql_db_cursor(database_name=database_name)
+    # noinspection PyArgumentList
+    table_list = [  # Get a results set of tables defined in the data source
+        t.table_name for t in db_cursor.tables(schema=schema_name, tableType=table_type)]
     # Close the connection
     db_cursor.close()
     # Return a list of the names of table names
@@ -578,8 +579,10 @@ def get_table_column_names(database_name, table_name, schema_name='dbo'):
     """
 
     db_cursor = create_mssql_db_cursor(database_name)
-    col_names = [x.column_name for x in db_cursor.columns(table_name, schema=schema_name)]
+    # noinspection PyArgumentList
+    col_names = [x.column_name for x in db_cursor.columns(table=table_name, schema=schema_name)]
     db_cursor.close()
+
     return col_names
 
 
@@ -601,12 +604,14 @@ def get_table_primary_keys(database_name, table_name=None, schema_name='dbo', ta
 
     try:
         db_cursor = create_mssql_db_cursor(database_name)
-        # Get all table names
-        table_names = [table.table_name
-                       for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
-        # Get primary keys for each table
-        tbl_pks = [{k.table_name: k.column_name} for tbl_name in table_names
-                   for k in db_cursor.primaryKeys(tbl_name)]
+        # noinspection PyArgumentList
+        table_names = [  # Get all table names
+            table.table_name for table in db_cursor.tables(schema=schema_name, tableType=table_type)]
+        # noinspection PyArgumentList
+        tbl_pks = [  # Get primary keys for each table
+            {k.table_name: k.column_name} for tbl_name in table_names
+            for k in db_cursor.primaryKeys(table=tbl_name)
+        ]
         # Close the cursor
         db_cursor.close()
         # ( Each element of 'tbl_pks' (as a dict) is in the format of {'table_name':'primary key'} )
@@ -651,21 +656,21 @@ def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="
         route_name = None
         weather_category = None
         make_filename(base_name, route_name, weather_category)
-        # test.pickle
+        # 'test.pickle'
 
         route_name = None
         weather_category = 'Heat'
         make_filename(None, route_name, weather_category, "test1")
-        # test1.pickle
+        # 'test1.pickle'
 
         make_filename(name, route_name, weather_category, "test1", "test2")
-        # test-test1-test2.pickle
+        # 'test-test1-test2.pickle'
 
         make_filename(name, 'Anglia', weather_category, "test2")
-        # test-Anglia-test2.pickle
+        # 'test-Anglia-test2.pickle'
 
         make_filename(name, 'North and East', 'Heat', "test1", "test2")
-        # test-North_and_East-Heat-test1-test2.pickle
+        # 'test-North_and_East-Heat-test1-test2.pickle'
     """
 
     base_name = "" if name is None else name
