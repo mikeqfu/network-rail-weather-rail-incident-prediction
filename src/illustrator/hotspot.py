@@ -743,7 +743,7 @@ class Hotspots:
         # Add descriptions
         cb.ax.text(0., 0 + 6.75, "Total delay minutes (2006/07-2018/19)",
                    ha='left', va='bottom', size=14, color='#555555', weight='bold', fontname='Cambria')
-        # Show highest delays, in descending order
+        # Show the highest delays, in descending order
         cb.ax.text(0., 0 - 1.45, "Locations accounted for most delays:",
                    ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
         cb.ax.text(0., 0 - 5.65, "\n".join(hotspots_data.StanoxSection[:10]),  # highest
@@ -851,7 +851,7 @@ class Hotspots:
         # Add descriptions
         cb.ax.text(0., 0 + 6.75, "Count of Incidents (2006/07-2018/19)",
                    ha='left', va='bottom', size=14, color='#555555', weight='bold', fontname='Cambria')
-        # Show highest frequency, in descending order
+        # Show the highest frequency, in descending order
         cb.ax.text(0., 0 - 1.45, "Most incident-prone locations: ",
                    ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
         cb.ax.text(0., 0 - 5.65, "\n".join(hotspots_data.StanoxSection[:10]),
@@ -961,7 +961,7 @@ class Hotspots:
         # Add descriptions
         cb.ax.text(0., 0 + 6.75, "Compensation payments (2006/07-2018/19)",
                    ha='left', va='bottom', size=13, color='#555555', weight='bold', fontname='Cambria')
-        # Show highest cost, in descending order
+        # Show the highest cost, in descending order
         cb.ax.text(0., 0 - 1.45, "Locations accounted for most cost: ",
                    ha='left', va='bottom', size=15, color='#555555', weight='bold', fontname='Cambria')
         cb.ax.text(0., 0 - 5.65, "\n".join(hotspots_data.StanoxSection[:10]),
