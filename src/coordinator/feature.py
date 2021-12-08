@@ -85,7 +85,7 @@ def get_data_by_meteorological_seasons(incident_records, in_seasons, datetime_co
 
 def get_data_by_astronomical_seasons(mod_data, in_seasons, datetime_col):
     """
-    Get data for a astronomical season or seasons.
+    Get data for an astronomical season or seasons.
 
     The astronomical start of a season is based on the position of the Earth in relation to the Sun.
     More specifically, the start of each season is marked by either a solstice (for winter and summer)

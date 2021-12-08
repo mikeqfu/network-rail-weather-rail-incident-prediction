@@ -19,13 +19,13 @@ vegetation = Vegetation()
 
 def cdd_geodata(*sub_dir, mkdir=False):
     """
-    Change directory to "data\\network\\geodata" and sub-directories / a file.
+    Change directory to "data\\network\\geodata" and subdirectories / a file.
 
     :param sub_dir: name of directory or names of directories (and/or a filename)
     :type sub_dir: str
     :param mkdir: whether to create a directory, defaults to ``False``
     :type mkdir: bool
-    :return: full path to "data\\network\\geodata" and sub-directories / a file
+    :return: full path to "data\\network\\geodata" and subdirectories / a file
     :rtype: str
     """
 
@@ -55,12 +55,15 @@ def adjust_incident_mileages(ref_furlongs, elr, start_mileage_num, end_mileage_n
 
     **Test**::
 
-        from mssqlserver.metex import view_metex_schedule8_incident_locations
-        from mssqlserver.vegetation import view_nr_vegetation_furlong_data
-        from models.prototype.furlong import adjust_incident_mileages
+        from preprocessor import METExLite
+        from preprocessor import Vegetation
+        from coordinator.furlong import adjust_incident_mileages
 
-        ref_furlongs                = view_nr_vegetation_furlong_data()
-        incident_locations_same_elr = view_metex_schedule8_incident_locations(start_and_end_elr='same')
+        metex = METExLite()
+        veg = Vegetation()
+
+        ref_furlongs                = veg.view_nr_vegetation_furlong_data()
+        incident_locations_same_elr = metex.view_metex_schedule8_incident_locations()
         shift_yards_same_elr        = 220
         shift_yards_diff_elr        = 220
 
