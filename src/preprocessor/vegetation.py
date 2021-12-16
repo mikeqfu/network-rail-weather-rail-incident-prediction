@@ -2,52 +2,45 @@
 Read and cleanse data of NR_Vegetation_* database.
 """
 
-import datetime
-import os
-import re
-
-import numpy as np
-import pandas as pd
 from pyhelpers.geom import osgb36_to_wgs84
-from pyhelpers.ops import confirmed
-from pyhelpers.store import load_pickle, save, save_pickle
-from pyhelpers.text import find_similar_str
-from pyrcs.utils import nr_mileage_num_to_str, nr_mileage_str_to_num
+from pyhelpers.store import load_pickle
+from pyrcs.utils import *
 
-from utils import cdd_vegetation, establish_mssql_connection, get_table_primary_keys, make_filename, \
-    update_nr_route_names
+from utils import *
 
 
 class Vegetation:
     """
     Vegetation database.
-
-    :param database_name: name of the database, defaults to ``'NR_Vegetation_20141031'``
-    :type database_name: str
-
-    :ivar str Name: name of the data resource
-    :ivar str Desc: brief description of the data resource
-    :ivar str DatabaseName: name of the database that stores the data
-    :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
-
-    **Test**::
-
-        >>> from preprocessor import Vegetation
-
-        >>> veg = Vegetation()
-
-        >>> print(veg.Name)
-        Vegetation
     """
 
+    #: Name of the data
+    NAME = 'Vegetation'
+    #: Brief description of the data
+    DESCRIPTION = 'Vegetation'
+
     def __init__(self, database_name='NR_Vegetation_20141031'):
-        self.Name = 'Vegetation'
-        self.Desc = 'Vegetation'
+        """
+        :param database_name: name of the database, defaults to ``'NR_Vegetation_20141031'``
+        :type database_name: str
+
+        :ivar str DatabaseName: name of the database that stores the data
+        :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
+
+        **Test**::
+
+            >>> from preprocessor.vegetation import Vegetation
+
+            >>> veg = Vegetation()
+
+            >>> veg.NAME
+            'Vegetation'
+        """
 
         self.DatabaseName = database_name
         self.DatabaseConn = establish_mssql_connection(database_name=self.DatabaseName)
 
-    # == Change directories ===========================================================================
+    # == Change directories ======================================================================
 
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
@@ -63,8 +56,8 @@ class Vegetation:
 
         **Test**::
 
+            >>> from preprocessor.vegetation import Vegetation
             >>> import os
-            >>> from preprocessor import Vegetation
 
             >>> veg = Vegetation()
 
@@ -86,6 +79,16 @@ class Vegetation:
         :type mkdir: bool
         :return: absolute path to "..\\data\\vegetation\\database\\tables\\" and subdirectories / a file
         :rtype: str
+
+        **Test**::
+
+            >>> from preprocessor.vegetation import Vegetation
+            >>> import os
+
+            >>> veg = Vegetation()
+
+            >>> os.path.relpath(veg.cdd_tables())
+            'data\\vegetation\\database\\tables'
         """
 
         path = self.cdd("tables", *sub_dir, mkdir=mkdir)
@@ -102,12 +105,22 @@ class Vegetation:
         :type mkdir: bool
         :return: absolute path to "..\\data\\vegetation\\database\\views\\" and subdirectories / a file
         :rtype: str
+
+        **Test**::
+
+            >>> from preprocessor.vegetation import Vegetation
+            >>> import os
+
+            >>> veg = Vegetation()
+
+            >>> os.path.relpath(veg.cdd_views())
+            'data\\vegetation\\database\\views'
         """
 
         path = self.cdd("views", *sub_dir, mkdir=mkdir)
         return path
 
-    # == Read table data from the database ============================================================
+    # == Read table data from the database =======================================================
 
     def read_table(self, table_name, schema_name='dbo', index_col=None, route_name=None, save_as=None,
                    update=False, **kwargs):
@@ -136,15 +149,12 @@ class Vegetation:
     
         **Test**::
     
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> adverse_wind_tbl = veg.read_table(table_name='AdverseWind', route_name='Anglia')
-
             >>> adverse_wind_tbl
-                Route  DaysPerFurlongPerYear
-            0  ANGLIA               0.000678
         """
 
         sql_query_ = f'SELECT * FROM %s' % f'[{schema_name}].[{table_name}]'
@@ -179,21 +189,19 @@ class Vegetation:
     
         **Test**::
     
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> primary_key = veg.get_primary_key(table_name='AdverseWind')
-            
             >>> primary_key
-            ['Route']
         """
 
         pri_key = get_table_primary_keys(database_name=self.DatabaseName, table_name=table_name)
 
         return pri_key
 
-    # == Get table data ===============================================================================
+    # == Get table data ==========================================================================
 
     def get_adverse_wind(self, update=False, save_original_as=None, verbose=False):
         """
@@ -212,21 +220,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
 
             >>> veg = Vegetation()
 
             >>> adverse_wind_tbl = veg.get_adverse_wind(update=True, verbose=True)
             Updating "AdverseWind.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> adverse_wind_tbl = veg.get_adverse_wind()
             >>> adverse_wind_tbl.tail()
-                                                   RouteAlias       DaysPerFurlongPerYear
-            Route
-            Scotland                                 SCOTLAND                    0.001052
-            South East                         [KENT, SUSSEX]  [0.001615151, 0.002434749]
-            Wales                                       WALES                     0.00201
-            Wessex                                     WESSEX                    0.001116
-            Western     [WESTERN Thames Valley, WESTERN West]  [0.001520801, 0.001573427]
         """
 
         table_name = 'AdverseWind'
@@ -240,7 +241,7 @@ class Vegetation:
                 adverse_wind = self.read_table(
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
-                update_nr_route_names(adverse_wind, route_col_name='Route')  # Update route names
+                update_route_names(adverse_wind, route_col_name='Route')  # Update route names
                 adverse_wind = adverse_wind.groupby('Route').agg(list).applymap(
                     lambda x: x if len(x) > 1 else x[0])
 
@@ -269,13 +270,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> cutting_angle_tbl = veg.get_cutting_angle_class(update=True, verbose=True)
-            Updating "CuttingAngleClass.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            Updating "CuttingAngleClass.pickle" at "data\\vegetation\\...\\tables" ... Done.
+            >>> cutting_angle_tbl = veg.get_cutting_angle_class()
             >>> cutting_angle_tbl.tail()
         """
 
@@ -316,13 +317,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> cutting_depth_tbl = veg.get_cutting_depth_class(update=True, verbose=True)
             Updating "CuttingDepthClass.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> cutting_depth_tbl = veg.get_cutting_depth_class()
             >>> cutting_depth_tbl.tail()
         """
 
@@ -365,30 +366,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> du_list_tbl = veg.get_du_list(update=True, verbose=True)
             Updating "DUList-indexed.pickle" at "data\\vegetation\\database\\tables" ... Done.
+            >>> du_list_tbl = veg.get_du_list()
             >>> du_list_tbl.tail()
-                                                             StartMiles  EndMiles
-            DUName         ELR  TrackID StartYards EndYards
-            York MDU - HG7 HOS  3950     1555.0    1589.0        0.1555    0.1589
-                           LEN2 1100    -44.0      16.0         -0.0044    0.0016
-                                2100     87.0      129.0         0.0087    0.0129
-                           LEN3 1901     75824.0   76007.0      43.0144   43.0327
-                                1902     75912.0   76007.0      43.0232   43.0327
 
             >>> du_list_tbl = veg.get_du_list(index=False, update=True, verbose=True)
             Updating "DUList.pickle" at "data\\vegetation\\database\\tables" ... Done.
+            >>> du_list_tbl = veg.get_du_list(index=False)
             >>> du_list_tbl.tail()
-                          DUName   ELR  TrackID  StartMiles  StartYards  EndMiles  EndYards
-            6260  York MDU - HG7   HOS     3950      0.1555      1555.0    0.1589    1589.0
-            6261  York MDU - HG7  LEN2     1100     -0.0044       -44.0    0.0016      16.0
-            6262  York MDU - HG7  LEN2     2100      0.0087        87.0    0.0129     129.0
-            6263  York MDU - HG7  LEN3     1901     43.0144     75824.0   43.0327   76007.0
-            6264  York MDU - HG7  LEN3     1902     43.0232     75912.0   43.0327   76007.0
         """
 
         table_name = 'DUList'
@@ -428,22 +418,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> path_route_tbl = veg.get_path_route(update=True, verbose=True)
             Updating "PathRoute.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> path_route_tbl = veg.get_path_route()
             >>> path_route_tbl.tail()
-                               ELR  TrackID  StartYards  ...  PercentUse  Comment Valid
-            ZoneID Path   Seq                            ...
-            SE     555087 30   XTD     1700      4359.0  ...       100.0           True
-                          40   XTD     1507      4261.0  ...       100.0           True
-                          50   LBW     3700       572.0  ...       100.0           True
-                          60   LBW     3610       484.0  ...       100.0           True
-                          70   LBW     3612       397.0  ...       100.0           True
-            [5 rows x 7 columns]
         """
 
         table_name = 'PathRoute'
@@ -483,22 +465,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> routes_tbl = veg.get_du_route(update=True, verbose=True)
             Updating "Routes.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> routes_tbl = veg.get_du_route()
             >>> routes_tbl.tail()
-                                            RouteAlias  ...                 Route
-            DUName                                      ...
-            Stafford MDU - HS0               LNW South  ...  London North Western
-            Swindon MDU - HV2    WESTERN Thames Valley  ...               Western
-            Tottenham MDU - HT8                 ANGLIA  ...                Anglia
-            Woking MDU - HW3                    WESSEX  ...                Wessex
-            York MDU - HG7                         LNE  ...        North and East
-            [5 rows x 3 columns]
         """
 
         table_name = 'Routes'
@@ -522,7 +496,7 @@ class Vegetation:
                 routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'},
                                          inplace=True)
                 # Update route names
-                update_nr_route_names(routes, route_col_name='Route')
+                update_route_names(routes, route_col_name='Route')
 
                 save_pickle(routes, path_to_pickle, verbose=verbose)
 
@@ -549,22 +523,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> s8data_tbl = veg.get_s8data(update=True, verbose=True)
             Updating "S8Data.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> s8data_tbl = veg.get_s8data()
             >>> s8data_tbl.tail()
-                        IncidentNumber           StartDate  ...       Cost                 Route
-            IncidentID                                      ...
-            6323113             437231 2014-03-28 14:46:00  ...  125086.73  London North Western
-            6323221             437608 2014-03-28 17:52:00  ...     136.28  London North Western
-            6323807             439651 2014-03-29 17:00:00  ...     310.26              Scotland
-            6324514             442500 2014-03-31 09:57:00  ...     193.92              Scotland
-            6324647             442184 2014-03-31 02:39:00  ...    1500.24               Western
-            [5 rows x 14 columns]
         """
 
         table_name = 'S8Data'
@@ -579,7 +545,7 @@ class Vegetation:
                     table_name=table_name, index_col=self.get_primary_key(table_name),
                     save_as=save_original_as, update=update)
 
-                update_nr_route_names(s8data, route_col_name='Route')
+                update_route_names(s8data, route_col_name='Route')
 
                 save_pickle(s8data, path_to_pickle, verbose=verbose)
 
@@ -606,13 +572,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> tree_age_class_tbl = veg.get_tree_age_class(update=True, verbose=True)
             Updating "TreeAgeClass.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> tree_age_class_tbl = veg.get_tree_age_class()
             >>> tree_age_class_tbl.tail()
         """
 
@@ -653,13 +619,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> tree_size_class_tbl = veg.get_tree_size_class(update=True, verbose=True)
             Updating "TreeSizeClass.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> tree_size_class_tbl = veg.get_tree_size_class()
             >>> tree_size_class_tbl.tail()
         """
 
@@ -700,13 +666,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> tree_type_tbl = veg.get_tree_type(update=True, verbose=True)
             Updating "TreeType.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> tree_type_tbl = veg.get_tree_type()
             >>> tree_type_tbl.tail()
         """
 
@@ -747,13 +713,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> felling_type_tbl = veg.get_felling_type(update=True, verbose=True)
             Updating "FellingType.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> felling_type_tbl = veg.get_felling_type()
             >>> felling_type_tbl.tail()
         """
 
@@ -794,13 +760,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> area_work_type_tbl = veg.get_area_work_type(update=True, verbose=True)
             Updating "AreaWorkType.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> area_work_type_tbl = veg.get_area_work_type()
             >>> area_work_type_tbl.tail()
         """
 
@@ -841,22 +807,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> service_detail_tbl = veg.get_service_detail(update=True, verbose=True)
             Updating "ServiceDetail.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> service_detail_tbl = veg.get_service_detail()
             >>> service_detail_tbl.tail()
-                     ServiceGroup TOC OrigTiploc  ...   STP  DangerousGoods  Comments
-            Service                               ...
-            50313768     57620170  DB    YORKYSF  ...  True           False     False
-            50313769     57620170  DB    YORKYSF  ...  True           False     False
-            50313770     57620170  DB    YORKYSF  ...  True           False     False
-            50313771     57620170  DB    YORKYSF  ...  True           False     False
-            50313772     72030304  WB    YOVILJN  ...  True           False     False
-            [5 rows x 8 columns]
         """
 
         table_name = 'ServiceDetail'
@@ -896,21 +854,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> service_path_tbl = veg.get_service_path(update=True, verbose=True)
             Updating "ServicePath.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> service_path_tbl = veg.get_service_path()
             >>> service_path_tbl.tail()
-                                        BytConfLvl
-            Service  Seq ZoneID Path
-            50313772 90  SE     552428           7
-                     100 SE     551164           7
-                     110 SE     500955           7
-                     120 SE     503959           7
-                     130 SE     531253           7
         """
 
         table_name = 'ServicePath'
@@ -950,13 +901,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> supplier_tbl = veg.get_supplier(update=True, verbose=True)
             Updating "Supplier.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> supplier_tbl = veg.get_supplier()
             >>> supplier_tbl.tail()
         """
 
@@ -997,13 +948,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> supplier_costs_tbl = veg.get_supplier_costs(update=True, verbose=True)
             Updating "SupplierCosts.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> supplier_costs_tbl = veg.get_supplier_costs()
             >>> supplier_costs_tbl.tail()
         """
 
@@ -1018,7 +969,7 @@ class Vegetation:
                 supplier_costs = self.read_table(
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
-                update_nr_route_names(supplier_costs, route_col_name='Route')
+                update_route_names(supplier_costs, route_col_name='Route')
                 supplier_costs.set_index(self.get_primary_key(table_name), inplace=True)
 
                 save_pickle(supplier_costs, path_to_pickle, verbose=verbose)
@@ -1046,13 +997,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> costs_area_tbl = veg.get_supplier_costs_area(update=True, verbose=True)
             Updating "SupplierCostsArea.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> costs_area_tbl = veg.get_supplier_costs_area()
             >>> costs_area_tbl.tail()
         """
 
@@ -1067,7 +1018,7 @@ class Vegetation:
                 costs_area = self.read_table(
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
-                update_nr_route_names(costs_area, route_col_name='Route')
+                update_route_names(costs_area, route_col_name='Route')
                 costs_area.set_index(self.get_primary_key(table_name), inplace=True)
 
                 save_pickle(costs_area, path_to_pickle, verbose=verbose)
@@ -1095,13 +1046,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> costs_simple_tbl = veg.get_supplier_cost_simple(update=True, verbose=True)
             Updating "SupplierCostsSimple.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> costs_simple_tbl = veg.get_supplier_cost_simple()
             >>> costs_simple_tbl.tail()
         """
 
@@ -1116,7 +1067,7 @@ class Vegetation:
                 costs_simple = self.read_table(
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
-                update_nr_route_names(costs_simple, route_col_name='Route')
+                update_route_names(costs_simple, route_col_name='Route')
                 costs_simple.set_index(self.get_primary_key(table_name), inplace=True)
 
                 save_pickle(costs_simple, path_to_pickle, verbose=verbose)
@@ -1144,13 +1095,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> tree_action_fractions_tbl = veg.get_tree_action_fractions(update=True, verbose=True)
             Updating "TreeActionFractions.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> tree_action_fractions_tbl = veg.get_tree_action_fractions()
             >>> tree_action_fractions_tbl.tail()
         """
 
@@ -1191,13 +1142,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> veg_surv_type_class_tbl = veg.get_veg_surv_type_class(update=True, verbose=True)
             Updating "VegSurvTypeClass.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> veg_surv_type_class_tbl = veg.get_veg_surv_type_class()
             >>> veg_surv_type_class_tbl.tail()
         """
 
@@ -1238,13 +1189,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> wb_factors_tbl = veg.get_wb_factors(update=True, verbose=True)
             Updating "WBFactors.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> wb_factors_tbl = veg.get_wb_factors()
             >>> wb_factors_tbl.tail()
         """
 
@@ -1285,13 +1236,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> weed_spray_tbl = veg.get_weed_spray(update=True, verbose=True)
             Updating "Weedspray.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> weed_spray_tbl = veg.get_weed_spray()
             >>> weed_spray_tbl.tail()
         """
 
@@ -1306,7 +1257,7 @@ class Vegetation:
                 weed_spray = self.read_table(
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
-                update_nr_route_names(weed_spray, route_col_name='Route')
+                update_route_names(weed_spray, route_col_name='Route')
                 weed_spray.set_index('RouteAlias', inplace=True)
 
                 save_pickle(weed_spray, path_to_pickle, verbose=verbose)
@@ -1334,13 +1285,13 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> work_hours_tbl = veg.get_work_hours(update=True, verbose=True)
             Updating "WorkHours.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> work_hours_tbl = veg.get_work_hours()
             >>> work_hours_tbl.tail()
         """
 
@@ -1392,21 +1343,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> furlong_data_tbl = veg.get_furlong_data(update=True, verbose=True)
             Updating "FurlongData.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> furlong_data_tbl = veg.get_furlong_data()
             >>> furlong_data_tbl.tail()
-                   ELR         DU RouteAlias  ...  CuttingDepth FurlongID           Route
-            75242  YMS  IMDM York        LNE  ...             3      9759  North and East
-            75243  YMS  IMDM York        LNE  ...             3      9760  North and East
-            75244  YMS  IMDM York        LNE  ...             2     21842  North and East
-            75245  YMS  IMDM York        LNE  ...             3     30447  North and East
-            75246  YMS  IMDM York        LNE  ...             2     14098  North and East
-            [5 rows x 40 columns]
         """
 
         table_name = 'FurlongData'
@@ -1423,7 +1367,7 @@ class Vegetation:
 
                 # Re-format mileage data
                 furlong_data[['StartMileage', 'EndMileage']] = furlong_data[
-                    ['StartMileage', 'EndMileage']].applymap(nr_mileage_num_to_str)
+                    ['StartMileage', 'EndMileage']].applymap(mileage_num_to_str)
 
                 # Rename columns
                 renamed_cols_dict = {
@@ -1445,7 +1389,7 @@ class Vegetation:
                 furlong_data.DateOfMeasure = furlong_data.DateOfMeasure.map(
                     lambda x: datetime.datetime.strptime(x, '%d/%m/%Y %H:%M'))
                 # Edit route data
-                update_nr_route_names(furlong_data, route_col_name='Route')
+                update_route_names(furlong_data, route_col_name='Route')
 
                 if set_index:
                     furlong_data.set_index(self.get_primary_key(table_name), inplace=True)
@@ -1535,22 +1479,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> furlong_location_tbl = veg.get_furlong_location(update=True, verbose=True)
             Updating "FurlongLocation-cut.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> furlong_location_tbl = veg.get_furlong_location()
             >>> furlong_location_tbl.tail()
-                        Route RouteAlias           DU  ... EndMileage Electrified HazardOnly
-            FurlongID                                  ...
-            77013      Wessex     Wessex  IMDM Woking  ...   723.0660           0          1
-            77014      Wessex     Wessex  IMDM Woking  ...   723.0660           0          1
-            77015      Wessex     Wessex  IMDM Woking  ...    33.0146           0          1
-            77016      Wessex     Wessex  IMDM Woking  ...    33.0170           0          1
-            77017      Wessex     Wessex  IMDM Woking  ...    33.0170           0          1
-            [5 rows x 8 columns]
+
+            >>> furlong_location_tbl = veg.get_furlong_location(False, update=True, verbose=True)
+            Updating "FurlongLocation.pickle" at "data\\vegetation\\database\\tables\\" ... Done.
+            >>> furlong_location_tbl = veg.get_furlong_location(relevant_columns_only=False)
+            >>> furlong_location_tbl.tail()
         """
 
         table_name = 'FurlongLocation'
@@ -1569,13 +1510,13 @@ class Vegetation:
 
                 # Re-format mileage data
                 furlong_location[['StartMileage', 'EndMileage']] = \
-                    furlong_location[['StartMileage', 'EndMileage']].applymap(nr_mileage_num_to_str)
+                    furlong_location[['StartMileage', 'EndMileage']].applymap(mileage_num_to_str)
 
                 # Replace boolean values with binary values
                 furlong_location[['Electrified', 'HazardOnly']] = \
                     furlong_location[['Electrified', 'HazardOnly']].applymap(int)
                 # Replace Route names
-                update_nr_route_names(furlong_location, route_col_name='Route')
+                update_route_names(furlong_location, route_col_name='Route')
 
                 # Select useful columns only?
                 if relevant_columns_only:
@@ -1616,16 +1557,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
             >>> hazard_tree_tbl = veg.get_hazard_tree(update=True, verbose=True)
             Updating "HazardTree.pickle" at "data\\vegetation\\database\\tables" ... Done.
+            >>> hazard_tree_tbl = veg.get_hazard_tree()
+            >>> hazard_tree_tbl.tail()
 
             >>> hazard_tree_tbl = veg.get_hazard_tree(set_index=True, update=True, verbose=True)
             Updating "HazardTree-indexed.pickle" at "data\\vegetation\\database\\tables" ... Done.
-
+            >>> hazard_tree_tbl = veg.get_hazard_tree(set_index=True)
+            >>> hazard_tree_tbl.tail()
         """
 
         table_name = 'HazardTree'
@@ -1640,7 +1584,7 @@ class Vegetation:
                     table_name=table_name, index_col=None, save_as=save_original_as, update=update)
 
                 # Re-format mileage data
-                hazard_tree.Mileage = hazard_tree.Mileage.apply(nr_mileage_num_to_str)
+                hazard_tree.Mileage = hazard_tree.Mileage.apply(mileage_num_to_str)
 
                 # Edit the original data
                 hazard_tree.drop(['Treesurvey', 'Treetunnel'], axis=1, inplace=True)
@@ -1648,7 +1592,7 @@ class Vegetation:
                 hazard_tree.Treespecies.replace({'': 'No data'}, inplace=True)
 
                 # Update route data
-                update_nr_route_names(hazard_tree, route_col_name='Route')
+                update_route_names(hazard_tree, route_col_name='Route')
 
                 # Integrate information from several features in a DataFrame
                 def sum_up_selected_features(data, selected_features, new_feature):
@@ -1700,10 +1644,10 @@ class Vegetation:
                 hazard_tree['Longitude'], hazard_tree['Latitude'] = osgb36_to_wgs84(
                     hazard_tree.Easting.values, hazard_tree.Northing.values)
 
-                save_pickle(hazard_tree, path_to_pickle, verbose=verbose)
-
                 if set_index:
                     hazard_tree.set_index(self.get_primary_key(table_name), inplace=True)
+
+                save_pickle(hazard_tree, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(table_name, e))
@@ -1724,7 +1668,7 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
@@ -1768,7 +1712,7 @@ class Vegetation:
             if verbose:
                 print("\nUpdate finished.")
 
-    # == Get views based on the NR_Vegetation data ====================================================
+    # == Get views based on the NR_Vegetation data ===============================================
 
     def view_vegetation_coverage_per_furlong(self, route_name=None, update=False, pickle_it=True,
                                              verbose=False):
@@ -1790,21 +1734,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
-            >>> fvc = veg.view_vegetation_coverage_per_furlong(update=True, pickle_it=True, verbose=True)
-            Updating "vegetation-coverage-per-furlong.pickle" at "data\\vegetation\\...\\views" ... Done.
-
+            >>> fvc = veg.view_vegetation_coverage_per_furlong(update=True, verbose=True)
+            Updating "vegetation-coverage-per-furlong.pickle" ... ... Done.
+            >>> fvc = veg.view_vegetation_coverage_per_furlong()
             >>> fvc.tail()
-                   ELR         DU  ... Description_CuttingDepth  TreeNumber
-            75242  YMS  IMDM York  ...        NA-Not Applicable           2
-            75243  YMS  IMDM York  ...        NA-Not Applicable           1
-            75244  YMS  IMDM York  ...        MD-Medium (2-10m)           4
-            75245  YMS  IMDM York  ...        NA-Not Applicable           5
-            75246  YMS  IMDM York  ...        MD-Medium (2-10m)          66
-            [5 rows x 45 columns]
+
+            >>> fvc = veg.view_vegetation_coverage_per_furlong('Anglia', update=True, verbose=True)
+            Updating "vegetation-coverage-per-furlong-Anglia.pickle" ... ... Done.
+            >>> fvc = veg.view_vegetation_coverage_per_furlong(route_name='Anglia')
+            >>> fvc.tail()
         """
 
         path_to_pickle = self.cdd_views(make_filename("vegetation-coverage-per-furlong", route_name))
@@ -1876,31 +1818,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
-            >>> ht = veg.view_hazardous_trees(update=True, pickle_it=True, verbose=True)
+            >>> ht = veg.view_hazardous_trees(update=True, verbose=True)
             Updating "hazardous-trees.pickle" at "data\\vegetation\\database\\views" ... Done.
+            >>> ht = veg.view_hazardous_trees()
             >>> ht.tail()
-                               DU   ELR  ... Description_TreeAgeClass  Description_TreeSizeClass
-            22175    IMDM Swindon   BFB  ...               VT-Veteran         VL-Very Large (VL)
-            22176    IMDM Swindon  MLN1  ...               VT-Veteran         VL-Very Large (VL)
-            22177    IMDM Swindon   THA  ...               VT-Veteran         VL-Very Large (VL)
-            22178  IMDM Tottenham   BGK  ...               VT-Veteran         VL-Very Large (VL)
-            22179     IMDM Woking   BKE  ...               VT-Veteran         VL-Very Large (VL)
-            [5 rows x 66 columns]
 
-            >>> ht = veg.view_hazardous_trees('Anglia', update=True, pickle_it=True, verbose=True)
+            >>> ht = veg.view_hazardous_trees(route_name='Anglia', update=True, verbose=True)
             Updating "hazardous-trees-Anglia.pickle" at "data\\vegetation\\database\\views" ... Done.
+            >>> ht = veg.view_hazardous_trees(route_name='Anglia')
             >>> ht.tail()
-                              DU   ELR  ... Description_TreeAgeClass  Description_TreeSizeClass
-            2483    IMDM Ipswich  WHC2  ...               VT-Veteran         VL-Very Large (VL)
-            2484    IMDM Ipswich  WHC2  ...               VT-Veteran         VL-Very Large (VL)
-            2485    IMDM Romford  LTN1  ...               VT-Veteran         VL-Very Large (VL)
-            2486    IMDM Romford   TLL  ...               VT-Veteran         VL-Very Large (VL)
-            2487  IMDM Tottenham   BGK  ...               VT-Veteran         VL-Very Large (VL)
-            [5 rows x 66 columns]
         """
 
         path_to_pickle = self.cdd_views(make_filename("hazardous-trees", route_name))
@@ -1971,21 +1901,19 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
-            >>> fv = veg.view_vegetation_condition_per_furlong(update=True, pickle_it=True, verbose=True)
+            >>> fv = veg.view_vegetation_condition_per_furlong(update=True, verbose=True)
             Updating "vegetation-condition-per-furlong.pickle" at "data\\...\\views" ... Done.
-
+            >>> fv = veg.view_vegetation_condition_per_furlong()
             >>> fv.tail()
-                   ELR         DU  ... HazardTreeprox3py_min  HazardTreeprox3py_max
-            75242  YMS  IMDM York  ...                   NaN                    NaN
-            75243  YMS  IMDM York  ...                   NaN                    NaN
-            75244  YMS  IMDM York  ...                   NaN                    NaN
-            75245  YMS  IMDM York  ...                   NaN                    NaN
-            75246  YMS  IMDM York  ...                   NaN                    NaN
-            [5 rows x 58 columns]
+
+            >>> fv = veg.view_vegetation_condition_per_furlong('Anglia', update=True, verbose=True)
+            Updating "vegetation-condition-per-furlong-Anglia.pickle" ... ... Done.
+            >>> fv = veg.view_vegetation_condition_per_furlong(route_name='Anglia')
+            >>> fv.tail()
         """
 
         path_to_pickle = self.cdd_views(make_filename("vegetation-condition-per-furlong", route_name))
@@ -2038,7 +1966,7 @@ class Vegetation:
 
         return furlong_vegetation_data
 
-    def view_nr_vegetation_furlong_data(self, update=False, pickle_it=True, verbose=False):
+    def view_vegetation_furlong_data(self, update=False, pickle_it=True, verbose=False):
         """
         Get a view of ELR and mileage data of furlong locations.
 
@@ -2055,22 +1983,14 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
-            >>> nr_vf = veg.view_nr_vegetation_furlong_data(update=True, pickle_it=True, verbose=True)
-            Updating "vegetation-furlong-data.pickle" at "data\\vegetation\\database\\views" ... Done.
-
-            >>> nr_vf.tail()
-                       ELR         DU  ... StartMileage_num  EndMileage_num
-            FurlongID                  ...
-            9759       YMS  IMDM York  ...           41.088         41.1100
-            9760       YMS  IMDM York  ...           41.110         41.1320
-            21842      YMS  IMDM York  ...           41.132         41.1540
-            30447      YMS  IMDM York  ...           41.154         42.0000
-            14098      YMS  IMDM York  ...           42.000         42.0145
-            [5 rows x 59 columns]
+            >>> vf = veg.view_vegetation_furlong_data(update=True, verbose=True)
+            Updating "vegetation-furlong-data.pickle" at ... ... Done.
+            >>> vf = veg.view_vegetation_furlong_data()
+            >>> vf.tail()
         """
 
         path_to_pickle = self.cdd_views("vegetation-furlong-data.pickle")
@@ -2100,7 +2020,7 @@ class Vegetation:
                 # Create two new columns of mileage data (as float)
                 num_mileage_colnames = ['StartMileage_num', 'EndMileage_num']
                 nr_vegetation_furlong_data[num_mileage_colnames] = nr_vegetation_furlong_data[
-                    str_mileage_colnames].applymap(nr_mileage_str_to_num)
+                    str_mileage_colnames].applymap(mileage_str_to_num)
 
                 # Sort the furlong data by ELR and mileage
                 nr_vegetation_furlong_data.sort_values(['ELR'] + num_mileage_colnames, inplace=True)
@@ -2131,11 +2051,11 @@ class Vegetation:
 
         **Test**::
 
-            >>> from preprocessor import Vegetation
+            >>> from preprocessor.vegetation import Vegetation
             
             >>> veg = Vegetation()
 
-            >>> veg.update_vegetation_view_pickles(update=True, pickle_it=True, verbose=True)
+            >>> veg.update_vegetation_view_pickles(update=True, verbose=True)
         """
 
         if confirmed("To update the View pickles of the NR_Vegetation data?"):
@@ -2151,7 +2071,7 @@ class Vegetation:
             _ = self.view_vegetation_coverage_per_furlong(route_name=route_name, update=update,
                                                           pickle_it=pickle_it, verbose=verbose)
 
-            _ = self.view_nr_vegetation_furlong_data(update=update, pickle_it=pickle_it, verbose=verbose)
+            _ = self.view_vegetation_furlong_data(update=update, pickle_it=pickle_it, verbose=verbose)
 
             if verbose:
                 print("\nUpdate finished.")
