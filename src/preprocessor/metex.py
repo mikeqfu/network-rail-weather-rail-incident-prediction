@@ -5,34 +5,21 @@ Read and cleanse data of NR_METEX_* database.
 - Schedule 8 compensates train operators for the impact of unplanned service disruption.
 """
 
-import copy
-import datetime
 import gc
-import itertools
-import os
-import re
 import string
 import urllib.request
 import zipfile
 
 import networkx as nx
-import numpy as np
-import pandas as pd
-import requests
 import shapely.geometry
 import shapely.wkt
-from pyhelpers.dir import cd
 from pyhelpers.geom import osgb36_to_wgs84, wgs84_to_osgb36
-from pyhelpers.ops import confirmed, fake_requests_headers
-from pyhelpers.store import load_json, load_pickle, save, save_fig, save_pickle
-from pyhelpers.text import find_similar_str
-from pyrcs.line_data import LocationIdentifiers
-from pyrcs.other_assets import Stations
-from pyrcs.utils import fetch_loc_names_repl_dict, fix_num_stanox, mile_chain_to_nr_mileage, \
-    nr_mileage_num_to_str, nr_mileage_str_to_num, shift_num_nr_mileage, yards_to_nr_mileage
+from pyhelpers.ops import update_dict_keys
+from pyhelpers.store import load_pickle, save_fig
+from pyrcs import LocationIdentifiers, Stations
+from pyrcs.utils import *
 
-from utils import cdd_metex, cdd_network, cdd_railway_codes, establish_mssql_connection, get_subset, \
-    get_table_primary_keys, make_filename, read_table_by_query, update_nr_route_names
+from utils import *
 
 
 class DelayAttributionGlossary:
@@ -41,6 +28,9 @@ class DelayAttributionGlossary:
 
     Information provided by Network Rail – https://www.networkrail.co.uk/transparency/datasets/
     """
+
+    #: Name of the data
+    NAME = 'Historic delay attribution glossary'
 
     def __init__(self):
         self.DataDir = cdd_metex("incidents\\delay attribution\\glossary")
@@ -59,8 +49,8 @@ class DelayAttributionGlossary:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor.metex import DelayAttributionGlossary
+            >>> import os
 
             >>> dag = DelayAttributionGlossary()
 
@@ -83,8 +73,8 @@ class DelayAttributionGlossary:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor.metex import DelayAttributionGlossary
+            >>> import os
 
             >>> dag = DelayAttributionGlossary()
 
@@ -110,7 +100,7 @@ class DelayAttributionGlossary:
             >>> dag = DelayAttributionGlossary()
 
             >>> dag.download_dag(confirmation_required=True, verbose=True)
-            Replace the current version? [No]|Yes: >? yes
+            Replace the current version? [No]|Yes: yes
             Downloading "Historic-Delay-Attribution-Glossary.xlsx" ... Done.
         """
 
@@ -137,8 +127,8 @@ class DelayAttributionGlossary:
             response = requests.get(url, headers=fake_requests_headers())
             if response.ok:
                 if os.path.isfile(self.path_to_original_file()):
-                    if confirmed("Replace the current version?",
-                                 confirmation_required=confirmation_required):
+                    cfm_msg = "Replace the current version?"
+                    if confirmed(prompt=cfm_msg, confirmation_required=confirmation_required):
                         _download(url)
                         break
                 else:
@@ -166,36 +156,38 @@ class DelayAttributionGlossary:
 
             >>> stanox_codes_sheet = dag.get_stanox_codes()
             >>> stanox_codes_sheet
-                 STANOX_NO                   FULL_NAME CRS_CODE           NR_ROUTE
-            0        31048      CASTLETON DOWN SIDINGS                  North West
-            1         5023         GREENHILL UPPER DGL                    Scotland
-            2        87907  3 BRIDGES DN DEP SIG TD127                      Sussex
-            3        87950  3 BRIDGES UP DEP SIG TD165                      Sussex
-            4        87904  3BDGS DN TL SDG ENTRY/EXIT                      Sussex
-                    ...                         ...      ...                ...
-            9904     16439                   YORKLEERD                  East Coast
-            9905     42241                      YORTON      YRT              Wales
-            9906     78362               YSTRAD MYNACH      YSM  Core Valley Lines
-            9907     78363         YSTRAD MYNACH SOUTH           Core Valley Lines
-            9908     78008              YSTRAD RHONDDA      YSR  Core Valley Lines
-            [9909 rows x 4 columns]
+                  STANOX_NO                   FULL_NAME CRS_CODE    Route_Description
+            0         87904  3BDGS DN TL SDG ENTRY/EXIT                        Sussex
+            1         87915  3BDGS DOWN THAMESLINK SDGS                        Sussex
+            2         87907  3 BRIDGES DN DEP SIG TD127                        Sussex
+            3         87950  3 BRIDGES UP DEP SIG TD165                        Sussex
+            4         00005                      AACHEN                    High Speed
+                     ...                         ...      ...                  ...
+            11201     42241                      YORTON      YRT                Wales
+            11202     78362               YSTRAD MYNACH      YSM  TfW Cardiff Valleys
+            11203     78364    YSTRAD MYNACH SIG CF7420           TfW Cardiff Valleys
+            11204     78363         YSTRAD MYNACH SOUTH           TfW Cardiff Valleys
+            11205     78008              YSTRAD RHONDDA      YSR  TfW Cardiff Valleys
+
+            [11206 rows x 4 columns]
 
             >>> stanox_codes_sheet = dag.get_stanox_codes(update=True, verbose=True)
             Updating "Stanox Codes.pickle" at "data\\...\\glossary" ... Done.
             >>> stanox_codes_sheet
-                 STANOX_NO                   FULL_NAME CRS_CODE           NR_ROUTE
-            0        31048      CASTLETON DOWN SIDINGS                  North West
-            1         5023         GREENHILL UPPER DGL                    Scotland
-            2        87907  3 BRIDGES DN DEP SIG TD127                      Sussex
-            3        87950  3 BRIDGES UP DEP SIG TD165                      Sussex
-            4        87904  3BDGS DN TL SDG ENTRY/EXIT                      Sussex
-                    ...                         ...      ...                ...
-            9904     16439                   YORKLEERD                  East Coast
-            9905     42241                      YORTON      YRT              Wales
-            9906     78362               YSTRAD MYNACH      YSM  Core Valley Lines
-            9907     78363         YSTRAD MYNACH SOUTH           Core Valley Lines
-            9908     78008              YSTRAD RHONDDA      YSR  Core Valley Lines
-            [9909 rows x 4 columns]
+                  STANOX_NO                   FULL_NAME CRS_CODE    Route_Description
+            0         87904  3BDGS DN TL SDG ENTRY/EXIT                        Sussex
+            1         87915  3BDGS DOWN THAMESLINK SDGS                        Sussex
+            2         87907  3 BRIDGES DN DEP SIG TD127                        Sussex
+            3         87950  3 BRIDGES UP DEP SIG TD165                        Sussex
+            4         00005                      AACHEN                    High Speed
+                     ...                         ...      ...                  ...
+            11201     42241                      YORTON      YRT                Wales
+            11202     78362               YSTRAD MYNACH      YSM  TfW Cardiff Valleys
+            11203     78364    YSTRAD MYNACH SIG CF7420           TfW Cardiff Valleys
+            11204     78363         YSTRAD MYNACH SOUTH           TfW Cardiff Valleys
+            11205     78008              YSTRAD RHONDDA      YSR  TfW Cardiff Valleys
+
+            [11206 rows x 4 columns]
         """
 
         sheet_name = "Stanox Codes"
@@ -209,11 +201,19 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                stanox_codes = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name,
-                                             dtype={'STANOX NO.': str})
-                stanox_codes['FULL NAME'] = stanox_codes['FULL NAME'].str.strip('`')
+                raw = pd.read_excel(
+                    io=self.path_to_original_file(), sheet_name=sheet_name, dtype={'STANOX NO.': str},
+                    skipfooter=2)
+
+                stanox_codes = raw.copy()
                 stanox_codes.columns = [x.strip('.').replace(' ', '_') for x in stanox_codes.columns]
-                stanox_codes.STANOX_NO = fix_num_stanox(stanox_codes.STANOX_NO)
+
+                stanox_codes.STANOX_NO = fix_stanox(stanox_codes.STANOX_NO)
+
+                stanox_codes.FULL_NAME = stanox_codes.FULL_NAME.str.strip('`')
+
+                # stanox_codes = stanox_codes.where(cond=stanox_codes.notnull(), other=None)
+                stanox_codes.fillna(value='', inplace=True)
 
                 save_pickle(stanox_codes, path_to_pickle, verbose=verbose)
 
@@ -244,36 +244,38 @@ class DelayAttributionGlossary:
 
             >>> period_dates_sheet = dag.get_period_dates()
             >>> period_dates_sheet
-                Financial_Year     Period  ... Period_End_Day No_Of_Days
-            0        2016-2017   Period 1  ...       Saturday         30
-            1        2016-2017   Period 2  ...       Saturday         28
-            2        2016-2017   Period 3  ...       Saturday         28
-            3        2016-2017   Period 4  ...       Saturday         28
-            4        2016-2017   Period 5  ...       Saturday         28
-            ..             ...        ...  ...            ...        ...
-            177      2029-2030   Period 9  ...       Saturday         28
-            178      2029-2030  Period 10  ...       Saturday         28
-            179      2029-2030  Period 11  ...       Saturday         28
-            180      2029-2030  Period 12  ...       Saturday         28
-            181      2029-2030  Period 13  ...         Sunday         29
-            [182 rows x 7 columns]
+                Financial_Year     Period Start_Date  ...   End_Date   End_Day No_of_Days
+            0        2016-2017   Period 1 2016-04-01  ... 2016-04-30  Saturday         30
+            1        2016-2017   Period 2 2016-05-01  ... 2016-05-28  Saturday         28
+            2        2016-2017   Period 3 2016-05-29  ... 2016-06-25  Saturday         28
+            3        2016-2017   Period 4 2016-06-26  ... 2016-07-23  Saturday         28
+            4        2016-2017   Period 5 2016-07-24  ... 2016-08-20  Saturday         28
+            ..             ...        ...        ...  ...        ...       ...        ...
+            242      2034-2035   Period 9 2034-11-12  ... 2034-12-09  Saturday         28
+            243      2034-2035  Period 10 2034-12-10  ... 2035-01-06  Saturday         28
+            244      2034-2035  Period 11 2035-01-07  ... 2035-02-03  Saturday         28
+            245      2034-2035  Period 12 2035-02-04  ... 2035-03-03  Saturday         28
+            246      2034-2035  Period 13 2035-03-04  ... 2035-03-31  Saturday         28
+
+            [247 rows x 7 columns]
 
             >>> period_dates_sheet = dag.get_period_dates(update=True, verbose=True)
             Updating "Period Dates.pickle" at "data\\...\\glossary" ... Done.
             >>> period_dates_sheet
-                Financial_Year     Period  ... Period_End_Day No_Of_Days
-            0        2016-2017   Period 1  ...       Saturday         30
-            1        2016-2017   Period 2  ...       Saturday         28
-            2        2016-2017   Period 3  ...       Saturday         28
-            3        2016-2017   Period 4  ...       Saturday         28
-            4        2016-2017   Period 5  ...       Saturday         28
-            ..             ...        ...  ...            ...        ...
-            177      2029-2030   Period 9  ...       Saturday         28
-            178      2029-2030  Period 10  ...       Saturday         28
-            179      2029-2030  Period 11  ...       Saturday         28
-            180      2029-2030  Period 12  ...       Saturday         28
-            181      2029-2030  Period 13  ...         Sunday         29
-            [182 rows x 7 columns]
+                Financial_Year     Period Start_Date  ...   End_Date   End_Day No_of_Days
+            0        2016-2017   Period 1 2016-04-01  ... 2016-04-30  Saturday         30
+            1        2016-2017   Period 2 2016-05-01  ... 2016-05-28  Saturday         28
+            2        2016-2017   Period 3 2016-05-29  ... 2016-06-25  Saturday         28
+            3        2016-2017   Period 4 2016-06-26  ... 2016-07-23  Saturday         28
+            4        2016-2017   Period 5 2016-07-24  ... 2016-08-20  Saturday         28
+            ..             ...        ...        ...  ...        ...       ...        ...
+            242      2034-2035   Period 9 2034-11-12  ... 2034-12-09  Saturday         28
+            243      2034-2035  Period 10 2034-12-10  ... 2035-01-06  Saturday         28
+            244      2034-2035  Period 11 2035-01-07  ... 2035-02-03  Saturday         28
+            245      2034-2035  Period 12 2035-02-04  ... 2035-03-03  Saturday         28
+            246      2034-2035  Period 13 2035-03-04  ... 2035-03-31  Saturday         28
+
+            [247 rows x 7 columns]
         """
 
         sheet_name = "Period Dates"
@@ -287,7 +289,8 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                raw = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name, skiprows=3)
+                raw = pd.read_excel(
+                    io=self.path_to_original_file(), sheet_name=sheet_name, skiprows=3)
                 raw.dropna(axis=1, how='all', inplace=True)
 
                 periods = raw[['Unnamed: 0']].dropna()
@@ -302,25 +305,28 @@ class DelayAttributionGlossary:
                 raw.drop(0, axis=0, inplace=True)
 
                 no = int(raw.shape[1] / 3)
-                period_dates_data = pd.concat(np.split(raw.dropna(axis='index'), no, axis=1),
-                                              ignore_index=True, sort=False)
+                data = pd.concat(np.split(raw.dropna(axis='index'), no, axis=1), ignore_index=True)
 
-                period_dates_data.columns = [
-                    x.title().replace(' ', '_') for x in period_dates_data.columns]
-                period_dates_data.rename(columns={'Day': 'Period_End_Day'}, inplace=True)
-                period_dates_data.Period_End_Day = period_dates_data.Period_End_Date.dt.day_name()
-                period_dates_data['Period_Start_Date'] = \
-                    period_dates_data.Period_End_Date - period_dates_data.No_Of_Days.map(
-                        lambda x: pd.Timedelta(days=x - 1))
-                period_dates_data['Period_Start_Day'] = period_dates_data.Period_Start_Date.dt.day_name()
-                period_dates_data['Period'] = periods.Period.to_list() * no
-                period_dates_data['Financial_Year'] = np.repeat(financial_years, len(periods))
+                data.columns = [x.replace(' ', '_').strip('.') for x in data.columns]
+                data.rename(columns={'Day_Name': 'End_Day', 'Date': 'End_Date'}, inplace=True)
+                data['Start_Date'] = data.End_Date - data.No_of_Days.map(
+                    lambda x: pd.Timedelta(days=x - 1))
+                data['Start_Day'] = data.Start_Date.dt.day_name()
+                data['Period'] = periods.Period.to_list() * no
+                data['Financial_Year'] = np.repeat(financial_years, len(periods))
 
-                period_dates = period_dates_data[
-                    ['Financial_Year', 'Period', 'Period_Start_Date', 'Period_Start_Day',
-                     'Period_End_Date', 'Period_End_Day', 'No_Of_Days']]
+                sorted_column_names = [
+                    'Financial_Year',
+                    'Period',
+                    'Start_Date',
+                    'Start_Day',
+                    'End_Date',
+                    'End_Day',
+                    'No_of_Days',
+                ]
+                period_dates = data[sorted_column_names]
 
-                save_pickle(period_dates, path_to_pickle, verbose=verbose)
+                save_pickle(period_dates, path_to_pickle=path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(sheet_name, e))
@@ -357,12 +363,13 @@ class DelayAttributionGlossary:
             IQ                            102  ...                                MCG
             ID                            103  ...                               NTAG
                                        ...  ...                                ...
-            SU                        UNKNOWN  ...                            UNKNOWN
-            UNKNOWN                   UNKNOWN  ...                            UNKNOWN
-            X                         UNKNOWN  ...                            UNKNOWN
-            Z1                        UNKNOWN  ...                            UNKNOWN
-            ZQ                        UNKNOWN  ...                            UNKNOWN
-            [397 rows x 6 columns]
+            YO                            902  ...                                  R
+            YQ                            902  ...                                  R
+            YR                            902  ...                                  R
+            YU                            902  ...                                  R
+            YX                            902  ...                                  R
+
+            [364 rows x 6 columns]
 
             >>> ir_metadata = dag.get_incident_reason(update=True, verbose=True)
             Updating "Incident Reason metadata.pickle" at "data\\...\\glossary" ... Done.
@@ -376,38 +383,39 @@ class DelayAttributionGlossary:
             ID                            103  ...                               NTAG
                                        ...  ...                                ...
             YO                            902  ...                                  R
-            OP                        UNKNOWN  ...                            UNKNOWN
-            PE                        UNKNOWN  ...                            UNKNOWN
-            PZ                        UNKNOWN  ...                            UNKNOWN
-            UNKNOWN                   UNKNOWN  ...                            UNKNOWN
-            [325 rows x 6 columns]
+            YQ                            902  ...                                  R
+            YR                            902  ...                                  R
+            YU                            902  ...                                  R
+            YX                            902  ...                                  R
+
+            [364 rows x 6 columns]
         """
 
         sheet_name = "Incident Reason"
         path_to_pickle = self.cdd(sheet_name + " metadata.pickle")
 
         if os.path.isfile(path_to_pickle) and not update:
-            incident_reason_metadata = load_pickle(path_to_pickle)
+            incident_reason = load_pickle(path_to_pickle)
 
         else:
             if not os.path.isfile(self.path_to_original_file()) or hard_update:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                incident_reason_metadata = pd.read_excel(
-                    self.path_to_original_file(), sheet_name=sheet_name)
-                incident_reason_metadata.columns = [
-                    x.replace(' ', '_') for x in incident_reason_metadata.columns]
-                incident_reason_metadata.drop(incident_reason_metadata.tail(1).index, inplace=True)
-                incident_reason_metadata.set_index('Incident_Reason', inplace=True)
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
 
-                save_pickle(incident_reason_metadata, path_to_pickle, verbose=verbose)
+                incident_reason = raw.copy()
+                incident_reason.columns = [x.replace(' ', '_') for x in incident_reason.columns]
+
+                incident_reason.set_index(keys='Incident_Reason', inplace=True)
+
+                save_pickle(incident_reason, path_to_pickle, verbose=verbose)
 
             except Exception as e:
-                print("Failed to get \"Incident Reason\". {}.".format(e))
-                incident_reason_metadata = None
+                print("Failed to get \"{}\". {}.".format(sheet_name, e))
+                incident_reason = None
 
-        return incident_reason_metadata
+        return incident_reason
 
     def get_responsible_manager(self, update=False, hard_update=False, verbose=False):
         """
@@ -431,35 +439,37 @@ class DelayAttributionGlossary:
             >>> rm = dag.get_responsible_manager()
             >>> rm
                  Responsible_Manager  ... Responsible_Org_NR-TOC/FOC_Others
-            0                   ADB3  ...                           TOC/FOC
-            1                   ADBC  ...                           TOC/FOC
-            2                   ADBF  ...                           TOC/FOC
-            3                   ADBH  ...                           TOC/FOC
-            4                   ADBI  ...                           TOC/FOC
+            0                   ACCQ  ...                           TOC/FOC
+            1                   ACDA  ...                           TOC/FOC
+            2                   ACQA  ...                           TOC/FOC
+            3                   ADAA  ...                           TOC/FOC
+            4                   ADAC  ...                           TOC/FOC
                               ...  ...                               ...
-            5459                ZQVH  ...                      Network Rail
-            5460                ZQWA  ...                      Network Rail
-            5461                ZQWB  ...                      Network Rail
-            5462                ZQWL  ...                      Network Rail
-            5463                 NaN  ...                            OTHERS
-            [5464 rows x 6 columns]
+            6867                ZQWL  ...                      Network Rail
+            6868                ZRA4  ...                           TOC/FOC
+            6869                ZRCM  ...                           TOC/FOC
+            6870                ZRDS  ...                           TOC/FOC
+            6871                ZXBA  ...                           TOC/FOC
+
+            [6872 rows x 6 columns]
 
             >>> rm = dag.get_responsible_manager(update=True, verbose=True)
             Updating "Responsible Manager.pickle" at "data\\...\\glossary" ... Done.
             >>> rm
                  Responsible_Manager  ... Responsible_Org_NR-TOC/FOC_Others
-            0                   ADB3  ...                           TOC/FOC
-            1                   ADBC  ...                           TOC/FOC
-            2                   ADBF  ...                           TOC/FOC
-            3                   ADBH  ...                           TOC/FOC
-            4                   ADBI  ...                           TOC/FOC
+            0                   ACCQ  ...                           TOC/FOC
+            1                   ACDA  ...                           TOC/FOC
+            2                   ACQA  ...                           TOC/FOC
+            3                   ADAA  ...                           TOC/FOC
+            4                   ADAC  ...                           TOC/FOC
                               ...  ...                               ...
-            5459                ZQVH  ...                      Network Rail
-            5460                ZQWA  ...                      Network Rail
-            5461                ZQWB  ...                      Network Rail
-            5462                ZQWL  ...                      Network Rail
-            5463                 NaN  ...                            OTHERS
-            [5464 rows x 6 columns]
+            6867                ZQWL  ...                      Network Rail
+            6868                ZRA4  ...                           TOC/FOC
+            6869                ZRCM  ...                           TOC/FOC
+            6870                ZRDS  ...                           TOC/FOC
+            6871                ZXBA  ...                           TOC/FOC
+
+            [6872 rows x 6 columns]
         """
 
         sheet_name = "Responsible Manager"
@@ -473,12 +483,16 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                responsible_manager = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name)
-                responsible_manager.columns = [x.replace(' ', '_') for x in responsible_manager.columns]
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
+
+                responsible_manager = raw.copy()
+                responsible_manager.columns = [
+                    x.replace(' ', '_').replace('Responsible_Managers.', '')
+                    for x in responsible_manager.columns]
                 responsible_manager.Responsible_Manager_Name = \
                     responsible_manager.Responsible_Manager_Name.str.strip()
 
-                save_pickle(responsible_manager, path_to_pickle, verbose=verbose)
+                save_pickle(responsible_manager, path_to_pickle=path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(sheet_name, e))
@@ -514,12 +528,13 @@ class DelayAttributionGlossary:
             3                        AD  ...               WTG STAFF
             4                        AE  ...              CONGESTION
             ..                      ...  ...                     ...
-            338                      ZU  ...              NOCAUSE ID
-            339                      ZW  ...                Sys CANC
-            340                      ZX  ...              SYS L-STRT
-            341                      ZY  ...               SYS OTIME
-            342                      ZZ  ...                 SYS LIR
-            [343 rows x 3 columns]
+            360                      ZU  ...              NOCAUSE ID
+            361                      ZW  ...                Sys CANC
+            362                      ZX  ...              SYS L-STRT
+            363                      ZY  ...               SYS OTIME
+            364                      ZZ  ...                 SYS LIR
+
+            [365 rows x 3 columns]
 
             >>> rrc = dag.get_reactionary_reason_code(update=True, verbose=True)
             Updating "Reactionary Reason Code.pickle" at "data\\...\\glossary" ... Done.
@@ -531,12 +546,13 @@ class DelayAttributionGlossary:
             3                        AD  ...               WTG STAFF
             4                        AE  ...              CONGESTION
             ..                      ...  ...                     ...
-            338                      ZU  ...              NOCAUSE ID
-            339                      ZW  ...                Sys CANC
-            340                      ZX  ...              SYS L-STRT
-            341                      ZY  ...               SYS OTIME
-            342                      ZZ  ...                 SYS LIR
-            [343 rows x 3 columns]
+            360                      ZU  ...              NOCAUSE ID
+            361                      ZW  ...                Sys CANC
+            362                      ZX  ...              SYS L-STRT
+            363                      ZY  ...               SYS OTIME
+            364                      ZZ  ...                 SYS LIR
+
+            [365 rows x 3 columns]
         """
 
         sheet_name = "Reactionary Reason Code"
@@ -550,10 +566,12 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                reactionary_reason_code = pd.read_excel(
-                    self.path_to_original_file(), sheet_name=sheet_name)
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
+
+                reactionary_reason_code = raw.copy()
                 reactionary_reason_code.columns = [
-                    x.replace(' ', '_') for x in reactionary_reason_code.columns]
+                    x.replace(' ', '_').replace('Reactionary_Reasons.', '')
+                    for x in reactionary_reason_code.columns]
 
                 save_pickle(reactionary_reason_code, path_to_pickle, verbose=verbose)
 
@@ -621,10 +639,13 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                performance_event_code = pd.read_excel(
-                    self.path_to_original_file(), sheet_name=sheet_name)
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
+
+                performance_event_code = raw.copy()
                 performance_event_code.columns = [
-                    x.replace(' ', '_') for x in performance_event_code.columns]
+                    x.replace(' ', '_').replace('Performance_Event_Types.', '')
+                    for x in performance_event_code.columns]
+
                 performance_event_code.set_index('Performance_Event_Code', inplace=True)
 
                 save_pickle(performance_event_code, path_to_pickle, verbose=verbose)
@@ -657,35 +678,37 @@ class DelayAttributionGlossary:
             >>> tsc = dag.get_train_service_code()
             >>> tsc
                  Service_Group_Code_Affected  ...                           TSC_Description_Affected
-            0                           0300  ...                        DBC UK: Royal Mail Services
-            1                           0300  ...                          Post Office Parcels Train
-            2                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
-            3                           0302  ...                      DBC UK: Passenger Stock Moves
-            4                           0302  ...             DBC UK: Rolling Stock Trials (CL. 345)
+            0                           0003  ...                   National Adjustment Freight TOCs
+            1                           0300  ...                        DBC UK: Royal Mail Services
+            2                           0300  ...                          Post Office Parcels Train
+            3                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
+            4                           0302  ...                      DBC UK: Passenger Stock Moves
                                       ...  ...                                                ...
-            3634                        XXXX  ...                                            UNKNOWN
-            3635                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
-            3636                        XXXX  ...                                            UNKNOWN
-            3637                        XXXX  ...                                            UNKNOWN
-            3638                        XXXX  ...                                        Invalid TSC
-            [3639 rows x 4 columns]
+            2805                        XXXX  ...       R.E.S Works Trains - Scottish Electric Power
+            2806                        XXXX  ...               Network Rail Use Only For Bus & Ship
+            2807                        XXXX  ...            Rs Deicing/Sandite MPV (Not To Be Used)
+            2808                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
+            2809                        XXXX  ...                                        Invalid TSC
+
+            [2810 rows x 4 columns]
 
             >>> tsc = dag.get_train_service_code(update=True, verbose=True)
             Updating "Train Service Code.pickle" at "data\\...\\glossary" ... Done.
             >>> tsc
                  Service_Group_Code_Affected  ...                           TSC_Description_Affected
-            0                           0300  ...                        DBC UK: Royal Mail Services
-            1                           0300  ...                          Post Office Parcels Train
-            2                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
-            3                           0302  ...                      DBC UK: Passenger Stock Moves
-            4                           0302  ...             DBC UK: Rolling Stock Trials (CL. 345)
+            0                           0003  ...                   National Adjustment Freight TOCs
+            1                           0300  ...                        DBC UK: Royal Mail Services
+            2                           0300  ...                          Post Office Parcels Train
+            3                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
+            4                           0302  ...                      DBC UK: Passenger Stock Moves
                                       ...  ...                                                ...
-            3634                        XXXX  ...                                            UNKNOWN
-            3635                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
-            3636                        XXXX  ...                                            UNKNOWN
-            3637                        XXXX  ...                                            UNKNOWN
-            3638                        XXXX  ...                                        Invalid TSC
-            [3639 rows x 4 columns]
+            2805                        XXXX  ...       R.E.S Works Trains - Scottish Electric Power
+            2806                        XXXX  ...               Network Rail Use Only For Bus & Ship
+            2807                        XXXX  ...            Rs Deicing/Sandite MPV (Not To Be Used)
+            2808                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
+            2809                        XXXX  ...                                        Invalid TSC
+
+            [2810 rows x 4 columns]
         """
 
         sheet_name = "Train Service Code"
@@ -699,7 +722,9 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                train_service_code = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name)
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
+
+                train_service_code = raw.copy()
                 train_service_code.columns = [
                     x.replace(' - ', '_').replace(' ', '_') for x in train_service_code.columns]
 
@@ -732,36 +757,38 @@ class DelayAttributionGlossary:
 
             >>> op_name = dag.get_operator_name()
             >>> op_name
-               Operator_Affected   Operator_Name_Affected
-            0                 D1         Freightliner Inf
-            1                 D2          Freightliner HH
-            2                 DB  Freightliner Intermodal
-            3                 E1             GWR Charters
-            4                 EA                      TPE
-            ..               ...                      ...
-            86                XC             LUL Bakerloo
-            87                XE            LUL DL R'mond
-            88                XH                      DRS
-            89                XX                Wrong Tsc
-            90                ZZ             DBCargo RITS
-            [91 rows x 2 columns]
+                Operator_Affected   Operator_Name_Affected
+            0                  D1         Freightliner Inf
+            1                  D2          Freightliner HH
+            2                  DB  Freightliner Intermodal
+            3                  E1             GWR Charters
+            4                  EA                      TPE
+            ..                ...                      ...
+            100                XE            LUL DL R'mond
+            101                XH                      DRS
+            102                XX                Wrong Tsc
+            103                YG            Hanson & Hall
+            104                ZZ             DBCargo RITS
+
+            [105 rows x 2 columns]
 
             >>> op_name = dag.get_operator_name(update=True, verbose=True)
             Updating "Operator Name.pickle" at "data\\...\\glossary" ... Done.
             >>> op_name
-               Operator_Affected   Operator_Name_Affected
-            0                 D1         Freightliner Inf
-            1                 D2          Freightliner HH
-            2                 DB  Freightliner Intermodal
-            3                 E1             GWR Charters
-            4                 EA                      TPE
-            ..               ...                      ...
-            86                XC             LUL Bakerloo
-            87                XE            LUL DL R'mond
-            88                XH                      DRS
-            89                XX                Wrong Tsc
-            90                ZZ             DBCargo RITS
-            [91 rows x 2 columns]
+                Operator_Affected   Operator_Name_Affected
+            0                  D1         Freightliner Inf
+            1                  D2          Freightliner HH
+            2                  DB  Freightliner Intermodal
+            3                  E1             GWR Charters
+            4                  EA                      TPE
+            ..                ...                      ...
+            100                XE            LUL DL R'mond
+            101                XH                      DRS
+            102                XX                Wrong Tsc
+            103                YG            Hanson & Hall
+            104                ZZ             DBCargo RITS
+
+            [105 rows x 2 columns]
         """
 
         sheet_name = "Operator Name"
@@ -775,9 +802,10 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                operator_name = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name)
-                operator_name.columns = [
-                    x.replace(' - ', '_').replace(' ', '_') for x in operator_name.columns]
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
+
+                operator_name = raw.copy()
+                operator_name.columns = [re.sub(r' - | ', '_', x) for x in operator_name.columns]
 
                 save_pickle(operator_name, path_to_pickle, verbose=verbose)
 
@@ -808,36 +836,38 @@ class DelayAttributionGlossary:
 
             >>> sgc = dag.get_service_group_code()
             >>> sgc
-                 Service_Group_Code_-_Affected  ...                         TSC_Description_-_Affected
-            0                             0300  ...                        DBC UK: Royal Mail Services
-            1                             0300  ...                          Post Office Parcels Train
-            2                             0301  ...  Do Not Use Post Office Parcels Trains Scottish...
-            3                             0302  ...                      DBC UK: Passenger Stock Moves
-            4                             0302  ...             DBC UK: Rolling Stock Trials (CL. 345)
-                                        ...  ...                                                ...
-            3634                          XXXX  ...                                            UNKNOWN
-            3635                          XXXX  ...         Wrong TSC European Reserved Paths TPS Only
-            3636                          XXXX  ...                                            UNKNOWN
-            3637                          XXXX  ...                                            UNKNOWN
-            3638                          XXXX  ...                                        Invalid TSC
-            [3639 rows x 4 columns]
+                 Service_Group_Code_Affected  ...                           TSC_Description_Affected
+            0                           0003  ...                   National Adjustment Freight TOCs
+            1                           0300  ...                        DBC UK: Royal Mail Services
+            2                           0300  ...                          Post Office Parcels Train
+            3                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
+            4                           0302  ...                      DBC UK: Passenger Stock Moves
+                                      ...  ...                                                ...
+            2805                        XXXX  ...       R.E.S Works Trains - Scottish Electric Power
+            2806                        XXXX  ...               Network Rail Use Only For Bus & Ship
+            2807                        XXXX  ...            Rs Deicing/Sandite MPV (Not To Be Used)
+            2808                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
+            2809                        XXXX  ...                                        Invalid TSC
+
+            [2810 rows x 4 columns]
 
             >>> sgc = dag.get_service_group_code(update=True, verbose=True)
             Updating "Service Group Code.pickle" at "data\\...\\glossary" ... Done.
             >>> sgc
-                 Service_Group_Code_-_Affected  ...                         TSC_Description_-_Affected
-            0                             0300  ...                        DBC UK: Royal Mail Services
-            1                             0300  ...                          Post Office Parcels Train
-            2                             0301  ...  Do Not Use Post Office Parcels Trains Scottish...
-            3                             0302  ...                      DBC UK: Passenger Stock Moves
-            4                             0302  ...             DBC UK: Rolling Stock Trials (CL. 345)
-                                        ...  ...                                                ...
-            3634                          XXXX  ...                                            UNKNOWN
-            3635                          XXXX  ...         Wrong TSC European Reserved Paths TPS Only
-            3636                          XXXX  ...                                            UNKNOWN
-            3637                          XXXX  ...                                            UNKNOWN
-            3638                          XXXX  ...                                        Invalid TSC
-            [3639 rows x 4 columns]
+                 Service_Group_Code_Affected  ...                           TSC_Description_Affected
+            0                           0003  ...                   National Adjustment Freight TOCs
+            1                           0300  ...                        DBC UK: Royal Mail Services
+            2                           0300  ...                          Post Office Parcels Train
+            3                           0301  ...  Do Not Use Post Office Parcels Trains Scottish...
+            4                           0302  ...                      DBC UK: Passenger Stock Moves
+                                      ...  ...                                                ...
+            2805                        XXXX  ...       R.E.S Works Trains - Scottish Electric Power
+            2806                        XXXX  ...               Network Rail Use Only For Bus & Ship
+            2807                        XXXX  ...            Rs Deicing/Sandite MPV (Not To Be Used)
+            2808                        XXXX  ...         Wrong TSC European Reserved Paths TPS Only
+            2809                        XXXX  ...                                        Invalid TSC
+
+            [2810 rows x 4 columns]
         """
 
         sheet_name = "Service Group Code"
@@ -851,10 +881,13 @@ class DelayAttributionGlossary:
                 self.download_dag(confirmation_required=False, verbose=False)
 
             try:
-                service_group_code = pd.read_excel(self.path_to_original_file(), sheet_name=sheet_name)
-                service_group_code.columns = [x.replace(' ', '_') for x in service_group_code.columns]
+                raw = pd.read_excel(io=self.path_to_original_file(), sheet_name=sheet_name, skipfooter=2)
 
-                save_pickle(service_group_code, path_to_pickle, verbose=verbose)
+                service_group_code = raw.copy()
+                service_group_code.columns = [
+                    re.sub(r' - | ', '_', x) for x in service_group_code.columns]
+
+                save_pickle(service_group_code, path_to_pickle=path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(sheet_name, e))
@@ -949,34 +982,37 @@ class DelayAttributionGlossary:
 class METExLite:
     """
     METEX database.
-
-    :param database_name: name of the database, defaults to ``'NR_METEx_20190203'``
-    :type database_name: str
-
-    :ivar str Name: name of the data resource
-    :ivar str Desc: brief description of the data resource
-    :ivar str DatabaseName: name of the database that stores the data
-    :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
-    :ivar preprocessor.DelayAttributionGlossary DAG: instance of the DAG class
-    :ivar pyrcs.LocationIdentifiers LocationID: instance of the LocationIdentifiers class
-    :ivar pyrcs.Stations StationCode: instance of the Stations class
-
-    **Test**::
-
-        >>> from preprocessor import METExLite
-
-        >>> metex = METExLite()
-
-        >>> print(metex.Name)
-        METEX
     """
 
-    def __init__(self, database_name='NR_METEx_20190203'):
-        self.Name = 'METExLite'
-        self.Desc = 'METExLite is a geographic information system (GIS) based decision support tool, ' \
-                    'used to assess asset and system vulnerability to weather.'
+    #: Name of the data
+    NAME = 'METExLite'
+    #: Brief description of the data
+    DESCRIPTION = \
+        'METExLite is a geographic information system (GIS) based decision support tool, ' \
+        'used to assess asset and system vulnerability to weather.'
 
-        self.DatabaseName = database_name
+    def __init__(self, database_name='NR_METEx_20190203'):
+        """
+        :param database_name: name of the database, defaults to ``'NR_METEx_20190203'``
+        :type database_name: str
+
+        :ivar str DatabaseName: name of the database that stores the data
+        :ivar sqlalchemy.engine.Connection DatabaseConn: connection to the database
+        :ivar preprocessor.DelayAttributionGlossary DAG: instance of the DAG class
+        :ivar pyrcs.LocationIdentifiers LocationID: instance of the LocationIdentifiers class
+        :ivar pyrcs.Stations StationCode: instance of the Stations class
+
+        **Test**::
+
+            >>> from preprocessor import METExLite
+
+            >>> metex = METExLite()
+
+            >>> metex.NAME
+            'METExLite'
+        """
+
+        self.DatabaseName = copy.copy(database_name)
         self.DatabaseConn = establish_mssql_connection(database_name=self.DatabaseName)
 
         self.DAG = DelayAttributionGlossary()
@@ -999,9 +1035,9 @@ class METExLite:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor import METExLite
-            
+            >>> import os
+
             >>> metex = METExLite()
 
             >>> os.path.relpath(metex.cdd())
@@ -1025,9 +1061,9 @@ class METExLite:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor import METExLite
-            
+            >>> import os
+
             >>> metex = METExLite()
 
             >>> os.path.relpath(metex.cdd_tables())
@@ -1051,9 +1087,9 @@ class METExLite:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor import METExLite
-            
+            >>> import os
+
             >>> metex = METExLite()
 
             >>> os.path.relpath(metex.cdd_views())
@@ -1077,9 +1113,9 @@ class METExLite:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor import METExLite
-            
+            >>> import os
+
             >>> metex = METExLite()
 
             >>> os.path.relpath(metex.cdd_figures())
@@ -1126,32 +1162,22 @@ class METExLite:
             >>> metex = METExLite()
 
             >>> imdm_tbl = metex.read_table(table_name='IMDM')
-
             >>> imdm_tbl.head()
-                         Name          Route
-            0    IMDM Ashford           KENT
-            1    IMDM Bedford  EAST MIDLANDS
-            2  IMDM Bletchley      LNW South
-            3   IMDM Brighton         SUSSEX
-            4    IMDM Bristol   WESTERN West
         """
 
         # Connect to the queried database
         conn_metex = establish_mssql_connection(database_name=self.DatabaseName)
 
-        sql_query_ = f'SELECT * FROM %s' % f'[{schema_name}].[{table_name}]'
+        sql_query = f'SELECT * FROM %s' % f'[{schema_name}].[{table_name}]'
         # Specify possible scenarios:
-        if not route_name and not weather_category:
-            sql_query = sql_query_  # Get all data of a given table
-        elif route_name and not weather_category:
-            sql_query = sql_query_ + f" WHERE [Route]='{route_name}'"  # given Route
+        if route_name and not weather_category:
+            sql_query += f" WHERE [Route]='{route_name}'"  # given Route
         elif route_name is None and weather_category is not None:
             # given Weather
-            sql_query = sql_query_ + f" WHERE [WeatherCategory]='{weather_category}'"
-        else:
+            sql_query += f" WHERE [WeatherCategory]='{weather_category}'"
+        elif route_name and weather_category:
             # Get data given Route and weather category e.g. wind-attributed incidents on Anglia Route
-            sql_query = \
-                sql_query_ + f" WHERE [Route]='{route_name}' AND [WeatherCategory]='{weather_category}'"
+            sql_query += f" WHERE [Route]='{route_name}' AND [WeatherCategory]='{weather_category}'"
 
         # Create a pd.DataFrame of the queried table
         table_data = pd.read_sql(sql_query, conn_metex, index_col=index_col, **kwargs)
@@ -1182,9 +1208,7 @@ class METExLite:
             >>> metex = METExLite()
 
             >>> primary_key = metex.get_primary_key(table_name='IMDM')
-            
             >>> primary_key
-            ['Name']
         """
 
         pri_key = get_table_primary_keys(self.DatabaseName, table_name=table_name)
@@ -1218,15 +1242,7 @@ class METExLite:
 
             >>> imdm_tbl = metex.get_imdm(update=True, verbose=True)
             Updating "IMDM.pickle" at "data\\metex\\database_lite\\tables" ... Done.
-            
             >>> imdm_tbl.head()
-                               RouteAlias                 Route                  Region
-            IMDM
-            IMDM Ashford             KENT            South East                Southern
-            IMDM Bedford    EAST MIDLANDS         East Midlands                 Eastern
-            IMDM Bletchley      LNW South  London North Western  North West and Central
-            IMDM Brighton          SUSSEX            South East                Southern
-            IMDM Bristol     WESTERN West               Western       Wales and Western
         """
 
         METExLite.IMDM = 'IMDM'
@@ -1243,7 +1259,7 @@ class METExLite:
                 imdm.index.rename(name='IMDM', inplace=True)  # Rename index
 
                 # Update route names
-                update_nr_route_names(imdm)
+                update_route_names(imdm)
 
                 # Add regions
                 regions_and_routes = load_json(cdd_network("regions", "routes.json"))
@@ -1291,22 +1307,13 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> imdm_alias_tbl = metex.get_imdm_alias(as_dict=False, update=True, verbose=True)
+            >>> imdm_alias_tbl = metex.get_imdm_alias(update=True, verbose=True)
             Updating "ImdmAlias.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> imdm_alias_tbl.head()
-                                 IMDM
-            ImdmAlias
-                         IMDM Clapham
-            AA           IMDM Ipswich
-            AB           IMDM Romford
-            AC         IMDM Tottenham
-            ASHFORD      IMDM Ashford
 
             >>> imdm_alias_tbl = metex.get_imdm_alias(as_dict=True, update=True, verbose=True)
             Updating "ImdmAlias.json" at "data\\metex\\database_lite\\tables" ... Done.
-
             >>> list(imdm_alias_tbl['IMDM'].keys())[:5]
-            ['', 'AA', 'AB', 'AC', 'ASHFORD']
         """
 
         METExLite.ImdmAlias = 'ImdmAlias'
@@ -1365,48 +1372,20 @@ class METExLite:
             >>> wcm_tbl = metex.get_imdm_weather_cell_map(update=True, verbose=True)
             Updating "IMDMWeatherCellMap_pc.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> wcm_tbl.head()
-                                          IMDM  WeatherCellId RouteAlias       Route
-            IMDMWeatherCellMapId
-            1674                  IMDM Ashford          14867   SOUTHERN  South East
-            1701                  IMDM Ashford          15122   SOUTHERN  South East
-            1698                  IMDM Ashford          15123   SOUTHERN  South East
-            1724                  IMDM Ashford          15377   SOUTHERN  South East
-            1722                  IMDM Ashford          15378   SOUTHERN  South East
 
             >>> wcm_tbl = metex.get_imdm_weather_cell_map(grouped=True, update=True, verbose=True)
             Updating "IMDMWeatherCellMap_pc-grouped.pickle" at "data\\...\tables" ... Done.
             >>> wcm_tbl.head()
-                                                                       IMDM  ...              RouteAlias
-            Route                                                            ...
-            Anglia                     [IMDM Tottenham, IMDM Ipswich, IM...  ...                  ANGLIA
-            East Midlands         [IMDM Bedford, IMDM Peterborough, IMDM...  ...               LNE South
-            London North Western  [IMDM Sandwell & Dudley, IMDM Euston, ...  ...  [LNW North, LNW South]
-            North and East        [IMDM Newcastle, IMDM Sheffield, IMDM ...  ...               LNE North
-            Scotland              [IMDM Perth, IMDM Edinburgh, IMDM Moth...  ...                SCOTLAND
-            [5 rows x 3 columns]
 
-            >>> wcm_tbl = metex.get_imdm_weather_cell_map(route_info=False, grouped=True,
-            ...                                           update=True, verbose=True)
+            >>> wcm_tbl = metex.get_imdm_weather_cell_map(
+            ...     route_info=False, grouped=True, update=True, verbose=True)
             Updating "IMDMWeatherCellMap-grouped.pickle" at "data\\...\\tables" ... Done.
             >>> wcm_tbl.head()
-                                   IMDM
-            WeatherCellId
-            2367           IMDM Glasgow
-            2368           IMDM Glasgow
-            2622           IMDM Glasgow
-            2623           IMDM Glasgow
-            2624           IMDM Glasgow
 
-            >>> wcm_tbl = metex.get_imdm_weather_cell_map(route_info=False, update=True, verbose=True)
+            >>> wcm_tbl = metex.get_imdm_weather_cell_map(
+            ...     route_info=False, update=True, verbose=True)
             Updating "IMDMWeatherCellMap.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> wcm_tbl.head()
-                                          IMDM  WeatherCellId
-            IMDMWeatherCellMapId
-            1674                  IMDM Ashford          14867
-            1701                  IMDM Ashford          15122
-            1698                  IMDM Ashford          15123
-            1724                  IMDM Ashford          15377
-            1722                  IMDM Ashford          15378
         """
 
         METExLite.IMDMWeatherCellMap = 'IMDMWeatherCellMap_pc' if route_info else 'IMDMWeatherCellMap'
@@ -1425,7 +1404,7 @@ class METExLite:
                     coerce_float=False, save_as=save_original_as, update=update)
 
                 if route_info:
-                    update_nr_route_names(weather_cell_map)
+                    update_route_names(weather_cell_map)
                     weather_cell_map[['Id', 'WeatherCell']] = weather_cell_map[
                         ['Id', 'WeatherCell']].applymap(int)
                     weather_cell_map.set_index('Id', inplace=True)
@@ -1474,26 +1453,10 @@ class METExLite:
             >>> iri_tbl = metex.get_incident_reason_info(update=True, verbose=True)
             Updating "IncidentReasonInfo-plus.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> iri_tbl.head()
-                                           IncidentReasonDescription  ... IncidentCategorySuperGroupCode
-            IncidentReasonCode                                        ...
-            I0                  Telecom equipment failures legacy...  ...                           NTAG
-            I1                                    Overhead line/t...  ...                           NTAG
-            I2                                            AC/DC trip  ...                           NTAG
-            I3                    Obstruction on OHL, cause of wh...  ...                           NTAG
-            I4                      OHL/third rail power supply f...  ...                           NTAG
-            [5 rows x 9 columns]
 
             >>> iri_tbl = metex.get_incident_reason_info(plus=False, update=True, verbose=True)
             Updating "IncidentReasonInfo.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> iri_tbl.head()
-                                              IncidentReasonDescription  ... IncidentCategoryDescription
-            IncidentReasonCode                                           ...
-            I0                  Telecom equipment failures legacy (i...  ...           Telecoms failures
-            I1                          Overhead line/third rail defect  ...       OLE/Third Rail faults
-            I2                                               AC/DC trip  ...       OLE/Third Rail faults
-            I3                    Obstruction on OHL, cause of which...  ...       OLE/Third Rail faults
-            I4                      OHL/third rail power supply fail...  ...       OLE/Third Rail faults
-            [5 rows x 3 columns]
         """
 
         METExLite.IncidentReasonInfo = 'IncidentReasonInfo'
@@ -1561,17 +1524,10 @@ class METExLite:
             >>> wc_tbl = metex.get_weather_codes(update=True, verbose=True)
             Updating "WeatherCodes.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> wc_tbl.head()
-              WeatherCategoryCode WeatherCategory
-            0                   A        Adhesion
-            1                   C            Cold
-            2                   E      Subsidence
-            3                   F           Flood
-            4                   G             Fog
 
             >>> wc_tbl = metex.get_weather_codes(as_dict=True, update=True, verbose=True)
             Updating "WeatherCodes.json" at "data\\metex\\database_lite\\tables" ... Done.
             >>> list(wc_tbl['WeatherCategory'].keys())[:5]
-            ['A', 'C', 'E', 'F', 'G']
         """
 
         METExLite.WeatherCodes = 'WeatherCodes'  # WeatherCodes
@@ -1632,29 +1588,14 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> ir_tbl = metex.get_incident_record(update=True, use_amendment_csv=False, verbose=True)
+            >>> ir_tbl = metex.get_incident_record(
+            ...     update=True, use_amendment_csv=False, verbose=True)
             Updating "IncidentRecord.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> ir_tbl.tail()
-                              TrustIncidentId  ... InflationFactor
-            IncidentRecordId                   ...
-            10292170                  8079767  ...             NaN
-            10292171                  8079768  ...             NaN
-            10292172                  8079769  ...             NaN
-            10292173                  8079770  ...             NaN
-            10292174                  8079771  ...             NaN
-            [5 rows x 5 columns]
 
             >>> ir_tbl = metex.get_incident_record(update=True, verbose=True)
-            Updating "IncidentRecord-amended.pickle" at "data\\metex\\database_lite\\tables" ... Done.
+            Updating "IncidentRecord-amended.pickle" at "data\\metex\\...\\tables" ... Done.
             >>> ir_tbl.tail()
-                              TrustIncidentId  ... InflationFactor
-            IncidentRecordId                   ...
-            11363242                  8992637  ...             NaN
-            11363284                  8992673  ...             NaN
-            11363297                  8992680  ...             NaN
-            11363304                  8992687  ...             NaN
-            11363352                  8931748  ...             NaN
-            [5 rows x 5 columns]
         """
 
         METExLite.IncidentRecord = 'IncidentRecord'
@@ -1726,14 +1667,6 @@ class METExLite:
             >>> location_tbl = metex.get_location(update=True, verbose=True)
             Updating "Location.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> location_tbl.head()
-                        StartLongitude  StartLatitude  ...  SMDCell            IMDM
-            LocationId                                 ...
-            389165           -0.615421      52.270899  ...      138    IMDM Bedford
-            389166           -2.782376      56.486248  ...       45      IMDM Perth
-            389167           -3.288604      51.758963  ...      146    IMDM Cardiff
-            389168           -1.128979      52.618701  ...      126      IMDM Derby
-            389169           -1.123010      53.311806  ...      107  IMDM Sheffield
-            [5 rows x 7 columns]
         """
 
         METExLite.Location = 'Location'
@@ -1792,14 +1725,6 @@ class METExLite:
             >>> pfpi_tbl = metex.get_pfpi(update=True, verbose=True)
             Updating "PfPI-plus-amended.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> pfpi_tbl.tail()
-                      IncidentRecordId  ... PerformanceEventName
-            PfPIId                      ...
-            11856290          10741422  ...            Automatic
-            11856297          10741429  ...               Manual
-            11856333          10741465  ...               Manual
-            11856340          10741472  ...               Manual
-            11856347          10741479  ...               Manual
-            [5 rows x 6 columns]
         """
 
         METExLite.PfPI = 'PfPI'
@@ -1872,21 +1797,10 @@ class METExLite:
             >>> route_tbl = metex.get_route(as_dict=True, update=True, verbose=True)
             Updating "Route.json" at "data\\metex\\database_lite\\tables" ... Done.
             >>> list(route_tbl.keys())[:5]
-            ['ANGLIA',
-             'EAST MIDLANDS',
-             'KENT',
-             'LNE',
-             'LNW North']
 
             >>> route_tbl = metex.get_route(update=True, verbose=True)
             Updating "Route.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> route_tbl.head()
-                  RouteAlias                 Route                  Region
-            0         ANGLIA                Anglia                 Eastern
-            1  EAST MIDLANDS         East Midlands                 Eastern
-            2           KENT            South East                Southern
-            3            LNE        North and East                 Eastern
-            4      LNW North  London North Western  North West and Central
         """
 
         table_name = "Route"
@@ -1900,7 +1814,7 @@ class METExLite:
                 route = self.read_table(table_name=table_name, save_as=save_original_as, update=update)
 
                 route.rename(columns={'Name': 'Route'}, inplace=True)
-                update_nr_route_names(route)
+                update_route_names(route)
 
                 # Add regions
                 regions_and_routes = load_json(cdd_network("regions", "routes.json"))
@@ -1948,28 +1862,14 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> stanox_location_tbl = metex.get_stanox_location(use_nr_mileage_format=False,
-            ...                                                 update=True, verbose=True)
+            >>> stanox_location_tbl = metex.get_stanox_location(
+            ...     use_nr_mileage_format=False, update=True, verbose=True)
             Updating "StanoxLocation.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> stanox_location_tbl.tail()
-                               Location LocationAlias  ELR   Yards LocationId
-            Stanox
-            89744     Sevington Sidings     SEVINGTON  XTD  102161     595843
-            89745        Sevington Loop     SEVGTONLP  XTD  101022     595844
-            89746   Smeeth Signal AD719     ASHFDS719  XTD  105763     595845
-            89747    Herringe Crossover     HERNGXOVR  XTD  108526     595846
-            89748    Dollands Moor CTRL
 
             >>> stanox_location_tbl = metex.get_stanox_location(update=True, verbose=True)
             Saving "StanoxLocation-mileage.pickle" to "data\\metex\\database_lite\\tables" ... Done.
             >>> stanox_location_tbl.tail()
-                               Location LocationAlias  ELR   Yards LocationId  Mileage
-            Stanox
-            89744     Sevington Sidings     SEVINGTON  XTD  102161     595843  58.0081
-            89745        Sevington Loop     SEVGTONLP  XTD  101022     595844  57.0702
-            89746   Smeeth Signal AD719     ASHFDS719  XTD  105763     595845  60.0163
-            89747    Herringe Crossover     HERNGXOVR  XTD  108526     595846  61.1166
-            89748    Dollands Moor CTRL
         """
 
         METExLite.StanoxLocation = 'StanoxLocation'
@@ -1982,36 +1882,33 @@ class METExLite:
         else:
             try:
                 # Read StanoxLocation table from the database
-                stanox_location = self.read_table(
+                raw = self.read_table(
                     table_name=METExLite.StanoxLocation, index_col=None, save_as=save_original_as,
                     update=update)
 
                 # Likely errors
-                stanox_location.loc[stanox_location.Stanox == '52053', 'ELR':'LocationId'] = (
-                    'BOK1', 6072, 534877)
-                stanox_location.loc[stanox_location.Stanox == '52074', 'ELR':'LocationId'] = (
-                    'ELL1', 440, 610096)
+                raw.loc[raw.Stanox == '52053', 'ELR':'LocationId'] = ('BOK1', 6072, 534877)
+                raw.loc[raw.Stanox == '52074', 'ELR':'LocationId'] = ('ELL1', 440, 610096)
 
-                def cleanse_stanox_location():
+                def _cleanse_stanox_location():
                     """
                     sta_loc = copy.deepcopy(stanox_location)
                     """
-                    dat = copy.deepcopy(stanox_location)
+                    dat = copy.copy(raw)
 
                     # Use external data - Railway Codes
                     errata = load_json(cdd_network("railway codes", "metex-errata.json"))
-                    err_stanox, err_tiploc, err_stanme = errata.values()
+                    errata_ = update_dict_keys(
+                        errata, replacements=dict(zip(errata.keys(), ['Stanox', 'Description', 'Name'])))
                     # Note that {'CLAPS47': 'CLPHS47'} in err_tiploc is dubious.
-                    dat.replace({'Stanox': err_stanox, 'Description': err_tiploc, 'Name': err_stanme},
-                                inplace=True)
+                    dat.replace(errata_, inplace=True)
 
                     duplicated_stanox = dat[dat.Stanox.duplicated(keep=False)].sort_values('Stanox')
-                    nan_idx = duplicated_stanox[['ELR', 'Yards', 'LocationId']].applymap(pd.isna).apply(
-                        any, axis=1)
+                    nan_idx = pd.isna(duplicated_stanox[['ELR', 'Yards', 'LocationId']]).any(axis=1)
                     dat.drop(duplicated_stanox[nan_idx].index, inplace=True)
-                    dat.drop_duplicates(subset=['Stanox'], keep='last', inplace=True)
+                    # dat.drop_duplicates(subset=['Stanox'], keep='last', inplace=True)
 
-                    location_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
+                    location_codes = self.LocationID.fetch_codes()[self.LocationID.KEY]
 
                     for i, x in dat[dat.Description.isnull()].Stanox.items():
                         idx = location_codes[location_codes.STANOX == x].index
@@ -2060,12 +1957,12 @@ class METExLite:
                     dat.replace(fetch_loc_names_repl_dict(k='Description', regex=True), inplace=True)
 
                     # Use STANOX dictionary
-                    stanox_dict = self.LocationID.make_loc_id_dict('STANOX')
+                    stanox_dict = self.LocationID.make_xref_dict('STANOX')
                     temp = dat.join(stanox_dict, on='Stanox')[['Description', 'Location']]
                     temp.loc[temp.Location.isnull(), 'Location'] = temp.loc[
                         temp.Location.isnull(), 'Description']
                     dat.Description = temp.apply(
-                        lambda y: find_similar_str(y.Description, y.Location)
+                        lambda y: find_similar_str(y.Description, y.Location, processor='fuzzywuzzy')
                         if isinstance(y.Location, tuple) else y.Location,
                         axis=1)
 
@@ -2083,7 +1980,7 @@ class METExLite:
                     return dat
 
                 # Cleanse raw stanox_location
-                stanox_location = cleanse_stanox_location()
+                stanox_location = _cleanse_stanox_location()
 
                 # For 'ELR', replace NaN with ''
                 stanox_location.ELR.fillna('', inplace=True)
@@ -2096,7 +1993,7 @@ class METExLite:
 
                 # To convert yards to miles (Note: Not the 'mileage' used by Network Rail)
                 if use_nr_mileage_format:
-                    stanox_location['Mileage'] = stanox_location.Yards.map(yards_to_nr_mileage)
+                    stanox_location['Mileage'] = stanox_location.Yards.map(yard_to_mileage)
 
                 # Set index
                 stanox_location.set_index('Stanox', inplace=True)
@@ -2133,14 +2030,6 @@ class METExLite:
             >>> stanox_section_tbl = metex.get_stanox_section(update=True, verbose=True)
             Updating "StanoxSection.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> stanox_section_tbl.tail()
-                            LocationId  ... ApproximateLocation
-            StanoxSectionId             ...
-            33456               590102  ...               False
-            33457              1482880  ...               False
-            33458              1482881  ...               False
-            33459               589991  ...               False
-            33460               590962  ...               False
-            [5 rows x 7 columns]
         """
 
         METExLite.StanoxSection = 'StanoxSection'
@@ -2161,7 +2050,7 @@ class METExLite:
                 stanox_section.LocationId = stanox_section.LocationId.apply(
                     lambda x: '' if np.isnan(x) else int(x))
 
-                stanox_dat = self.LocationID.make_loc_id_dict('STANOX')
+                stanox_dat = self.LocationID.make_xref_dict('STANOX')
 
                 # Firstly, create a stanox-to-location dictionary, and replace STANOX with location names
                 for stanox_col_name in ['StartStanox', 'EndStanox']:
@@ -2175,8 +2064,8 @@ class METExLite:
                     stanox_section[tmp_col] = stanox_section[tmp_col].map(
                         lambda x: x[0] if isinstance(x, list) else x)
 
-                stanme_dict = self.LocationID.make_loc_id_dict('STANME', as_dict=True)
-                tiploc_dict = self.LocationID.make_loc_id_dict('TIPLOC', as_dict=True)
+                stanme_dict = self.LocationID.make_xref_dict('STANME', as_dict=True)
+                tiploc_dict = self.LocationID.make_xref_dict('TIPLOC', as_dict=True)
 
                 # Secondly, process 'STANME' and 'TIPLOC'
                 loc_name_replacement_dict = fetch_loc_names_repl_dict()
@@ -2197,7 +2086,8 @@ class METExLite:
                 temp_.columns = ['StartStanox_', 'temp']
                 temp = temp.join(temp_.StartStanox_)
                 stanox_section.loc[temp.index, 'StartStanox_temp'] = temp.apply(
-                    lambda x: find_similar_str(x.StartStanox_, x.StartStanox_temp),
+                    lambda x: find_similar_str(
+                        x.StartStanox_, x.StartStanox_temp, processor='fuzzywuzzy'),
                     axis=1)  # Temporary!
 
                 temp = stanox_section[
@@ -2206,7 +2096,8 @@ class METExLite:
                 temp_.columns = ['temp', 'EndStanox_']
                 temp = temp.join(temp_.EndStanox_.fillna(temp.Description))
                 stanox_section.loc[temp.index, 'EndStanox_temp'] = temp.apply(
-                    lambda x: find_similar_str(x.EndStanox_, x.EndStanox_temp), axis=1)  # Temporary!
+                    lambda x: find_similar_str(x.EndStanox_, x.EndStanox_temp, processor='fuzzywuzzy'),
+                    axis=1)  # Temporary!
 
                 start_end = stanox_section.StartStanox_temp + ' - ' + stanox_section.EndStanox_temp
                 point_idx = stanox_section.StartStanox_temp == stanox_section.EndStanox_temp
@@ -2263,14 +2154,6 @@ class METExLite:
             >>> trust_incident_tbl = metex.get_trust_incident(update=True, verbose=True)
             Updating "TrustIncident-y2006-y2018-amended.pickle" at "data\\metex\\...\\tables" ... Done.
             >>> trust_incident_tbl.tail()
-                             IncidentNumber  StanoxSectionId  ... FinancialYear UserFilter
-            TrustIncidentId                                   ...
-            9070110                  891583            23730  ...          2018      False
-            9070111                  891584            30960  ...          2018      False
-            9070112                  891597            22863  ...          2018      False
-            9070113                  891606            22818  ...          2018      False
-            9070114                  891620            23406  ...          2018      False
-            [5 rows x 11 columns]
         """
 
         METExLite.TrustIncident = 'TrustIncident'
@@ -2341,14 +2224,6 @@ class METExLite:
 
             >>> weather_tbl = metex.get_weather()
             >>> weather_tbl.tail()
-                                             Temperature  ...  SMILevel4
-            WeatherCell DateTime                          ...
-            2367        2019-02-03 19:00:00            3  ...      0.864
-                        2019-02-03 20:00:00            4  ...      0.864
-                        2019-02-03 21:00:00            4  ...      0.864
-                        2019-02-03 22:00:00            2  ...      0.864
-                        2019-02-03 23:00:00            2  ...      0.864
-            [5 rows x 11 columns]
         """
 
         METExLite.Weather = 'Weather'
@@ -2357,10 +2232,11 @@ class METExLite:
             conn_db = establish_mssql_connection(database_name=self.DatabaseName)
             sql_query = "SELECT * FROM dbo.[Weather];"
 
-            chunks = pd.read_sql_query(sql=sql_query, con=conn_db,
-                                       index_col=self.get_primary_key(table_name=METExLite.Weather),
-                                       parse_dates=['DateTime'],
-                                       chunksize=chunk_size)
+            idx_col = self.get_primary_key(table_name=METExLite.Weather)
+
+            chunks = pd.read_sql_query(
+                sql=sql_query, con=conn_db, index_col=idx_col, parse_dates=['DateTime'],
+                chunksize=chunk_size)
 
             weather = pd.concat([pd.DataFrame(chunk) for chunk in chunks], sort=False)
 
@@ -2401,9 +2277,9 @@ class METExLite:
 
         **Test**::
 
-            >>> import datetime
             >>> from preprocessor import METExLite
-            
+            >>> import datetime
+
             >>> metex = METExLite()
 
             >>> cell_id = 2367
@@ -2412,17 +2288,10 @@ class METExLite:
             >>> edt = datetime.datetime(2018, 6, 1, 13)  # '2018-06-01 13:00:00'
             >>> w_dat = metex.query_weather_by_id_datetime(cell_id, sdt, edt, update=True, verbose=True)
             >>> w_dat
-               WeatherCell            DateTime  ...  SMILevel3  SMILevel4
-            0         2367 2018-06-01 12:00:00  ...      0.696      0.782
-            1         2367 2018-06-01 13:00:00  ...      0.696      0.782
-            [2 rows x 13 columns]
 
             >>> edt = datetime.datetime(2018, 6, 1, 12)  # '2018-06-01 12:00:00'
             >>> w_dat = metex.query_weather_by_id_datetime(cell_id, sdt, edt, update=True, verbose=True)
             >>> w_dat
-               WeatherCell            DateTime  ...  SMILevel3  SMILevel4
-            0         2367 2018-06-01 12:00:00  ...      0.696      0.782
-            [1 rows x 13 columns]
         """
 
         assert isinstance(weather_cell_id, (tuple, int, np.integer))
@@ -2519,26 +2388,10 @@ class METExLite:
             >>> weather_cell_tbl = metex.get_weather_cell(update=True, verbose=True)
             Updating "WeatherCell.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> weather_cell_tbl.head()
-                           IMDMWeatherCellMapId  ...              Region
-            WeatherCellId                        ...
-            2367                              2  ...  Scotland's Railway
-            2368                              1  ...  Scotland's Railway
-            2622                              7  ...  Scotland's Railway
-            2623                              6  ...  Scotland's Railway
-            2624                              5  ...  Scotland's Railway
-            [5 rows x 27 columns]
 
-            >>> weather_cell_tbl = metex.get_weather_cell(route_name='Anglia', update=True, verbose=True)
+            >>> weather_cell_tbl = metex.get_weather_cell('Anglia', update=True, verbose=True)
             Updating "WeatherCell-Anglia.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> weather_cell_tbl.head()
-                           IMDMWeatherCellMapId  ...   Region
-            WeatherCellId                        ...
-            13844                          1552  ...  Eastern
-            13852                          1529  ...  Eastern
-            13853                          1526  ...  Eastern
-            14100                          1595  ...  Eastern
-            14100                          1597  ...  Eastern
-            [5 rows x 27 columns]
 
             >>> _ = metex.get_weather_cell(show_map=True, save_map_as=".tif", verbose=True)
             Plotting weather cells ... Done.
@@ -2699,8 +2552,8 @@ class METExLite:
             >>> metex = METExLite()
 
             >>> boundary_poly = metex.get_weather_cell_map_boundary()
-            >>> print(boundary_poly)
-            POLYGON (( ... ))
+            >>> boundary_poly.wkt
+            'POLYGON ((...))'
         """
 
         weather_cell = self.get_weather_cell()  # Get Weather cell
@@ -2748,13 +2601,6 @@ class METExLite:
             >>> track_tbl = metex.get_track(update=True, verbose=True)
             Updating "Track.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> track_tbl.tail()
-                    ELR  TrackID  ... StartMileage_num EndMileage_num
-            16731  ZZF3     3909  ...           0.0148         0.0383
-            16732  ZZF3     3910  ...           0.0148         0.0415
-            16733  ZZF3     3908  ...           0.0148         0.0448
-            16734  ZZF3     3902  ...           0.0513         0.0723
-            16735  ZZF4     3900  ...           0.0000         0.1283
-            [5 rows x 23 columns]
         """
 
         METExLite.Track = 'Track'
@@ -2777,11 +2623,11 @@ class METExLite:
 
                 # Mileage and Yardage
                 mileage_cols, yardage_cols = ['StartMileage', 'EndMileage'], ['StartYard', 'EndYard']
-                track[mileage_cols] = track[mileage_cols].applymap(nr_mileage_num_to_str)
+                track[mileage_cols] = track[mileage_cols].applymap(mileage_num_to_str)
                 track[yardage_cols] = track[yardage_cols].applymap(int)
 
                 # Route
-                update_nr_route_names(track, route_col_name='Route')
+                update_route_names(track, route_col_name='Route')
 
                 # Delivery Unit and IMDM
                 track.IMDM = track.IMDM.map(lambda x: 'IMDM ' + x)
@@ -2793,7 +2639,7 @@ class METExLite:
                     track.EndEasting.values, track.EndNorthing.values)
 
                 track[['StartMileage_num', 'EndMileage_num']] = track[
-                    ['StartMileage', 'EndMileage']].applymap(nr_mileage_str_to_num)
+                    ['StartMileage', 'EndMileage']].applymap(mileage_str_to_num)
 
                 track.sort_values(['ELR', 'StartYard', 'EndYard'], inplace=True)
                 track.index = range(len(track))
@@ -2833,8 +2679,12 @@ class METExLite:
         g = nx.Graph()
 
         import matplotlib.pyplot as plt
+        from pyhelpers.settings import mpl_preferences
 
-        fig, ax = plt.subplots()
+        mpl_preferences()
+
+        fig = plt.figure(figsize=(7, 8))
+        ax = fig.add_subplot()
 
         max_node_id = 0
         for geom_obj in geom_objects:
@@ -2912,27 +2762,24 @@ class METExLite:
 
             max_node_id = number_of_nodes
 
-        ax.tick_params(left=True, bottom=True, labelleft=True, labelbottom=True, gridOn=True,
-                       grid_linestyle='--')
+        ax.tick_params(
+            left=True, bottom=True, labelleft=True, labelbottom=True, gridOn=True, grid_linestyle='--')
         ax.ticklabel_format(useOffset=False)
         ax.set_aspect('equal')
-        font_dict = {'fontsize': 13, 'fontname': 'Times New Roman'}
-        ax.set_xlabel('Easting', fontname=font_dict['fontname'], fontsize=14)
-        ax.set_xticklabels([int(x) for x in ax.get_xticks()], font_dict)
-        ax.set_ylabel('Northing', fontname=font_dict['fontname'], fontsize=14)
-        ax.set_yticklabels([int(y) for y in ax.get_yticks()], font_dict)
+        ax.set_xlabel('Easting', fontsize=14)
+        ax.set_ylabel('Northing', fontsize=14)
         if rotate_labels:
             for tick in ax.get_xticklabels():
                 tick.set_rotation(rotate_labels)
         plt.tight_layout()
 
     @staticmethod
-    def cleanse_track_summary(dat):
+    def _cleanse_track_summary(trk_smry_raw):
         """
         Preprocess data of the table 'TrackSummary'.
 
-        :param dat: data of the table 'TrackSummary'
-        :type dat: pandas.DataFrame
+        :param trk_smry_raw: data of the table 'TrackSummary'
+        :type trk_smry_raw: pandas.DataFrame
         :return: preprocessed data frame of ``dat``
         :rtype: pandas.DataFrame
 
@@ -2944,24 +2791,12 @@ class METExLite:
 
             >>> track_summary_tbl = metex.read_table(table_name='Track Summary')
             >>> track_summary_tbl.tail()
-                        ID  GEOGIS Switch ID  ... Adjacent S&C  IRJs
-            654838  131964             11807  ...         True  None
-            654839  131965             11807  ...         True  None
-            654840  131966                 0  ...         True  None
-            654841  131967                 0  ...         True  None
-            654842  131968                 0  ...         True  None
-            [5 rows x 64 columns]
 
-            >>> track_summary_dat = metex.cleanse_track_summary(track_summary_tbl)
+            >>> track_summary_dat = metex._cleanse_track_summary(track_summary_tbl)
             >>> track_summary_dat.tail()
-                        ID  GeoGISSwitchID  TrackPriority  ...     Route StartMileage EndMileage
-            654838  131964           11807  Running lines  ...  Scotland      34.1281    34.1283
-            654839  131965           11807  Running lines  ...  Scotland      34.1283    34.1310
-            654840  131966               0  Running lines  ...  Scotland      34.1310    34.1320
-            654841  131967               0  Running lines  ...  Scotland      34.1320    34.1363
-            654842  131968               0  Running lines  ...  Scotland      34.1363    34.1364
-            [5 rows x 67 columns]
         """
+
+        dat = trk_smry_raw.copy()
 
         # Change column names
         rename_cols = {'GEOGIS Switch ID': 'GeoGISSwitchID',
@@ -2990,7 +2825,9 @@ class METExLite:
         # noinspection PyTypeChecker
         temp1 = pd.DataFrame.from_dict(route_names_changes, orient='index', columns=['Route'])
         route_names_in_table = list(dat.SubRoute.unique())
-        route_alt = [find_similar_str(x, temp1.index.tolist()) for x in route_names_in_table]
+        route_alt = [
+            find_similar_str(x, temp1.index.tolist(), processor='fuzzywuzzy')
+            for x in route_names_in_table]
 
         temp2 = pd.DataFrame.from_dict(dict(zip(route_names_in_table, route_alt)), 'index',
                                        columns=['RouteAlias'])
@@ -3000,7 +2837,7 @@ class METExLite:
 
         # Mileages
         mileage_colnames, yard_colnames = ['StartMileage', 'EndMileage'], ['StartYards', 'EndYards']
-        dat[mileage_colnames] = dat[yard_colnames].applymap(yards_to_nr_mileage)
+        dat[mileage_colnames] = dat[yard_colnames].applymap(yard_to_mileage)
 
         return dat
 
@@ -3026,15 +2863,8 @@ class METExLite:
             >>> metex = METExLite()
 
             >>> track_summary_tbl = metex.get_track_summary(update=True, verbose=True)
-
+            Updating "TrackSummary.pickle" at "data\\metex\\database_lite\\tables" ... Done.
             >>> track_summary_tbl.tail()
-                        ID  GeoGISSwitchID  TrackPriority  ...     Route StartMileage EndMileage
-            654838  131964           11807  Running lines  ...  Scotland      34.1281    34.1283
-            654839  131965           11807  Running lines  ...  Scotland      34.1283    34.1310
-            654840  131966               0  Running lines  ...  Scotland      34.1310    34.1320
-            654841  131967               0  Running lines  ...  Scotland      34.1320    34.1363
-            654842  131968               0  Running lines  ...  Scotland      34.1363    34.1364
-            [5 rows x 67 columns]
         """
 
         METExLite.TrackSummary = 'Track Summary'
@@ -3048,7 +2878,7 @@ class METExLite:
                 track_summary_raw = self.read_table(
                     table_name=METExLite.TrackSummary, save_as=save_original_as, update=update)
 
-                track_summary = self.cleanse_track_summary(track_summary_raw)
+                track_summary = self._cleanse_track_summary(track_summary_raw)
 
                 save_pickle(track_summary, path_to_pickle, verbose=verbose)
 
@@ -3058,7 +2888,7 @@ class METExLite:
 
         return track_summary
 
-    def query_track_summary(self, elr, track_id, start_yard=None, end_yard=None, pickle_it=True,
+    def query_track_summary(self, elr, track_id, start_yard=None, end_yard=None, pickle_it=False,
                             dat_dir=None, update=False, verbose=False):
         """
         Get track summary data by ``'Track ID'`` and ``'Yard'`` (Query from the database).
@@ -3091,16 +2921,8 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> ts = metex.query_track_summary('AAV', track_id=1100, start_yard=51150, end_yard=66220)
-
+            >>> ts = metex.query_track_summary('AAV', 1100, start_yard=51150, end_yard=66220)
             >>> ts.tail()
-                  ID  GeoGISSwitchID  TrackPriority  ...   Route StartMileage EndMileage
-            183  184               0  Running lines  ...  Wessex      37.0660    37.0880
-            184  185               0  Running lines  ...  Wessex      37.0880    37.0990
-            185  186               0  Running lines  ...  Wessex      37.0990    37.1010
-            186  187               0  Running lines  ...  Wessex      37.1010    37.1099
-            187  188               0  Running lines  ...  Wessex      37.1099    37.1100
-            [5 rows x 67 columns]
         """
 
         elrs = "-".join(str(x) for x in list(elr)) if isinstance(elr, tuple) else elr
@@ -3129,7 +2951,7 @@ class METExLite:
 
                 track_summary_raw = pd.read_sql(sql_query, conn_metex)
 
-                track_summary = self.cleanse_track_summary(track_summary_raw)
+                track_summary = self._cleanse_track_summary(track_summary_raw)
 
                 if pickle_it:
                     save_pickle(track_summary, path_to_pickle, verbose=verbose)
@@ -3140,7 +2962,7 @@ class METExLite:
                 print("Failed to get \"{}\". {}.".format(
                     os.path.splitext(os.path.basename(path_to_pickle))[0], e))
 
-    def update_metex_table_pickles(self, update=True, verbose=True):
+    def _update_metex_table_pickles(self, update=True, verbose=True):
         """
         Update the local pickle files for all tables.
 
@@ -3157,7 +2979,7 @@ class METExLite:
 
             >>> metex = METExLite()
 
-            >>> metex.update_metex_table_pickles()
+            >>> metex._update_metex_table_pickles()
         """
 
         if confirmed("To update the local pickles of the Table data of the NR_METEX database?"):
@@ -3248,9 +3070,15 @@ class METExLite:
 
             >>> metex = METExLite()
 
-            data_set = selected_data.copy()
+            >>> # data_set = data = selected_data.copy()
+            >>> data = metex.view_schedule8_data('Anglia', 'Wind', rearrange_index=True)
+            >>> data.tail()
 
-            calculate_pfpi_stats(data_set, selected_features)
+            >>> selected_feats = [
+            ...     'PfPIId', 'WeatherCategory', 'Route', 'StanoxSection',
+            ...     'PfPIMinutes', 'PfPICosts']
+            >>> res = metex.calculate_pfpi_stats(data[selected_feats], selected_feats)
+            >>> res.tail()
         """
 
         pfpi_stats = data_set.groupby(selected_features[1:-2]).aggregate({
@@ -3301,41 +3129,22 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> s8data_view = metex.view_schedule8_data(rearrange_index=True,
-            ...                                         update=True, pickle_it=True, verbose=True)
+            >>> s8data_view = metex.view_schedule8_data(
+            ...     rearrange_index=True, update=True, pickle_it=True, verbose=True)
             Updating "s8data.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8data_view.tail()
-                       PfPIId  IncidentRecordId  ...   Route    Region
-            5185337  12504299          11309395  ...  Wessex  Southern
-            5185338  12506221          11311107  ...  Wessex  Southern
-            5185339  11844392          10731041  ...  Wessex  Southern
-            5185340  11844393          10731041  ...  Wessex  Southern
-            5185341  11844394          10731041  ...  Wessex  Southern
-            [5 rows x 58 columns]
 
-            >>> s8data_view = metex.view_schedule8_data(route_name='Anglia', rearrange_index=True,
-            ...                                         update=True, pickle_it=True, verbose=True)
+            >>> s8data_view = metex.view_schedule8_data(
+            ...     route_name='Anglia', rearrange_index=True, update=True, pickle_it=True,
+            ...     verbose=True)
             Updating "s8data-Anglia.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8data_view.tail()
-                     PfPIId  IncidentRecordId  ...   Route   Region
-            375613  9453839           8630528  ...  Anglia  Eastern
-            375614  9453840           8630528  ...  Anglia  Eastern
-            375615  9453841           8630528  ...  Anglia  Eastern
-            375616  9453842           8630528  ...  Anglia  Eastern
-            375617  9453843           8630528  ...  Anglia  Eastern
-            [5 rows x 58 columns]
 
-            >>> s8data_view = metex.view_schedule8_data(route_name='Anglia', rearrange_index=True,
-            ...                                         weather_attributed_only=True, update=True,
-            ...                                         pickle_it=True, verbose=True)
+            >>> s8data_view = metex.view_schedule8_data(
+            ...     route_name='Anglia', rearrange_index=True, weather_attributed_only=True,
+            ...     update=True, pickle_it=True, verbose=True)
+            Updating "s8data-weather-attributed-Anglia.pickle" at "data\\metex...\\views" ... Done.
             >>> s8data_view.tail()
-                    PfPIId  IncidentRecordId  ...   Route   Region
-            24917  9509379           8679895  ...  Anglia  Eastern
-            24918  9313448           8504457  ...  Anglia  Eastern
-            24919  8414994           7695986  ...  Anglia  Eastern
-            24920  7146273           6536089  ...  Anglia  Eastern
-            24921  6022757           5507668  ...  Anglia  Eastern
-            [5 rows x 58 columns]
         """
 
         filename = "s8data" + ("-weather-attributed" if weather_attributed_only else "")
@@ -3412,23 +3221,24 @@ class METExLite:
                                 schedule8_data.loc[i, 'StartLocation'] + ' - ' + schedule8_data.loc[
                                     i, 'EndLocation']
 
-                    schedule8_data.drop(['IMDM', 'Location_Start', 'Location_End'], axis=1,
-                                        inplace=True)  # (5024674, 57)
+                    # (5024674, 57)
+                    schedule8_data.drop(
+                        ['IMDM', 'Location_Start', 'Location_End'], axis=1, inplace=True)
 
                     # (260140, 50)  # (5155014, 57)
-                    schedule8_data.rename(columns={'LocationAlias_Start': 'StartLocationAlias',
-                                                   'LocationAlias_End': 'EndLocationAlias',
-                                                   'ELR_Start': 'StartELR', 'Yards_Start': 'StartYards',
-                                                   'ELR_End': 'EndELR', 'Yards_End': 'EndYards',
-                                                   'Mileage_Start': 'StartMileage',
-                                                   'Mileage_End': 'EndMileage',
-                                                   'LocationId_Start': 'StartLocationId',
-                                                   'LocationId_End': 'EndLocationId',
-                                                   'LocationId_Section': 'SectionLocationId',
-                                                   'IMDM_Location': 'IMDM',
-                                                   'StartDate': 'StartDateTime',
-                                                   'EndDate': 'EndDateTime'},
-                                          inplace=True)
+                    schedule8_data.rename(
+                        columns={'LocationAlias_Start': 'StartLocationAlias',
+                                 'LocationAlias_End': 'EndLocationAlias',
+                                 'ELR_Start': 'StartELR', 'Yards_Start': 'StartYards',
+                                 'ELR_End': 'EndELR', 'Yards_End': 'EndYards',
+                                 'Mileage_Start': 'StartMileage',
+                                 'Mileage_End': 'EndMileage',
+                                 'LocationId_Start': 'StartLocationId',
+                                 'LocationId_End': 'EndLocationId',
+                                 'LocationId_Section': 'SectionLocationId',
+                                 'IMDM_Location': 'IMDM',
+                                 'StartDate': 'StartDateTime',
+                                 'EndDate': 'EndDateTime'}, inplace=True)
 
                     # Use 'Station' data from Railway Codes website
                     station_locations = self.StationCode.fetch_station_data()[self.StationCode.StnKey]
@@ -3461,8 +3271,9 @@ class METExLite:
 
                 schedule8_data.reset_index(inplace=True)  # (5024674, 58)
 
-                schedule8_data = get_subset(schedule8_data, route_name, weather_category,
-                                            rearrange_index)
+                schedule8_data = get_subset(
+                    schedule8_data, route_name=route_name, weather_category=weather_category,
+                    rearrange_index=rearrange_index)
 
                 if pickle_it:
                     if not os.path.isfile(path_to_merged) or path_to_pickle != path_to_merged:
@@ -3500,42 +3311,21 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(update=True, pickle_it=True,
-            ...                                                   verbose=True)
+            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(
+            ...     update=True, pickle_it=True, verbose=True)
             Updating "s8data-pfpi.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8data_pfpi_view.tail()
-                       PfPIId  IncidentRecordId  ...  EndLatitude  ApproximateLocation
-            5185337  12504299          11309395  ...      50.6338                False
-            5185338  12506221          11311107  ...      50.6338                False
-            5185339  11844392          10731041  ...      50.6338                False
-            5185340  11844393          10731041  ...      50.6338                False
-            5185341  11844394          10731041  ...      50.6338                False
-            [5 rows x 40 columns]
 
-            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(route_name='Anglia', update=True,
-            ...                                                   pickle_it=True, verbose=True)
+            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(
+            ...     route_name='Anglia', update=True, pickle_it=True, verbose=True)
             Updating "s8data-pfpi-Anglia.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8data_pfpi_view.tail()
-                     PfPIId  IncidentRecordId  ...  EndLatitude  ApproximateLocation
-            375613  9453839           8630528  ...      51.5184                False
-            375614  9453840           8630528  ...      51.5184                False
-            375615  9453841           8630528  ...      51.5184                False
-            375616  9453842           8630528  ...      51.5184                False
-            375617  9453843           8630528  ...      51.5184                False
-            [5 rows x 40 columns]
 
-            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(route_name='Anglia',
-            ...                                                   weather_category='Wind', update=True,
-            ...                                                   pickle_it=True, verbose=True)
+            >>> s8data_pfpi_view = metex.view_schedule8_data_pfpi(
+            ...     route_name='Anglia', weather_category='Wind', update=True, pickle_it=True,
+            ...     verbose=True)
             Updating "s8data-pfpi-Anglia-Wind.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8data_pfpi_view.tail()
-                   PfPIId  IncidentRecordId  ...  EndLatitude  ApproximateLocation
-            3318  8858842           8098567  ...      51.5184                False
-            3319  8858843           8098567  ...      51.5184                False
-            3320  8858844           8098567  ...      51.5184                False
-            3321  8858845           8098567  ...      51.5184                False
-            3322  8859276           8098896  ...      51.5184                False
-            [5 rows x 40 columns]
         """
 
         filename = "s8data-pfpi"
@@ -3622,18 +3412,11 @@ class METExLite:
             ...                                                      verbose=True)
             Updating "s8costs-by-location.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> s8costs_loc.tail()
-                  WeatherCategory    Route  ... DelayMinutes  DelayCost
-            25103            Wind  Western  ...      8396.50  470413.88
-            25104            Wind  Western  ...       173.00   21265.16
-            25105            Wind  Western  ...       716.16   67377.18
-            25106            Wind  Western  ...      1073.00  134011.05
-            25107            Wind  Western  ...       326.00   40373.91
-            [5 rows x 20 columns]
 
             >>> s8costs_loc = metex.view_schedule8_costs_by_location(route_name='Anglia',
             ...                                                      update=True, pickle_it=True,
             ...                                                      verbose=True)
-            Updating "s8costs-by-location-Anglia.pickle" at "data\\metex\\database_lite\\views" ... Done.
+            Updating "s8costs-by-location-Anglia.pickle" at "data\\metex\\datab...\\views" ... Done.
             >>> s8costs_loc.tail()
                  WeatherCategory   Route  ... DelayMinutes DelayCost
             2492            Wind  Anglia  ...      1740.00  33284.44
@@ -3641,6 +3424,7 @@ class METExLite:
             2494            Wind  Anglia  ...       555.78   5149.76
             2495            Wind  Anglia  ...      1180.00  19712.10
             2496            Wind  Anglia  ...       555.24   8131.48
+
             [5 rows x 20 columns]
 
             >>> s8costs_loc = metex.view_schedule8_costs_by_location(route_name='Anglia',
@@ -3649,13 +3433,6 @@ class METExLite:
             ...                                                      verbose=True)
             Updating "s8costs-by-location-Anglia-Wind.pickle" at "data\\metex\\...\\views" ... Done.
             >>> s8costs_loc.tail()
-                WeatherCategory   Route  ... DelayMinutes DelayCost
-            253            Wind  Anglia  ...      1740.00  33284.44
-            254            Wind  Anglia  ...        32.00    590.70
-            255            Wind  Anglia  ...       555.78   5149.76
-            256            Wind  Anglia  ...      1180.00  19712.10
-            257            Wind  Anglia  ...       555.24   8131.48
-            [5 rows x 20 columns]
 
             >>> s8costs_loc = metex.view_schedule8_costs_by_location(route_name='Anglia',
             ...                                                      weather_category='Heat',
@@ -3663,13 +3440,6 @@ class METExLite:
             ...                                                      verbose=True)
             Updating "s8costs-by-location-Anglia-Heat.pickle" at "data\\metex\\...\\views" ... Done.
             >>> s8costs_loc.tail()
-                WeatherCategory   Route  ... DelayMinutes DelayCost
-            149            Heat  Anglia  ...         11.0    132.56
-            150            Heat  Anglia  ...       1801.0  62860.65
-            151            Heat  Anglia  ...         33.0   1199.88
-            152            Heat  Anglia  ...        277.0   3448.07
-            153            Heat  Anglia  ...        159.0   3009.80
-            [5 rows x 20 columns]
         """
 
         filename = "s8costs-by-location"
@@ -3687,8 +3457,8 @@ class METExLite:
                     extracted_data = get_subset(temp_data, route_name, weather_category)
 
                 else:
-                    schedule8_data = self.view_schedule8_data(route_name, weather_category,
-                                                              rearrange_index=True)
+                    schedule8_data = self.view_schedule8_data(
+                        route_name, weather_category, rearrange_index=True)
                     selected_features = [
                         'PfPIId',
                         # 'TrustIncidentId', 'IncidentRecordCreateDate',
@@ -3736,62 +3506,27 @@ class METExLite:
             
             >>> metex = METExLite()
 
-            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(update=True,
-            ...                                                                  pickle_it=True,
-            ...                                                                  verbose=True)
+            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(
+            ...     update=True, pickle_it=True, verbose=True)
             Updating "s8costs-by-datetime-location.pickle" at "data\\metex\\...\\views" ... Done.
             >>> s8costs_dt_loc.tail()
-                     FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            3912955           2019 2019-05-28 00:15:00  ...          3.0    173.22
-            3912956           2019 2019-05-28 00:16:00  ...         39.0   3086.31
-            3912957           2019 2019-05-28 00:23:00  ...          3.0     46.95
-            3912958           2019 2019-05-28 00:26:00  ...          5.0    163.05
-            3912959           2019 2019-05-28 23:00:00  ...          5.0    365.53
-            [5 rows x 24 columns]
 
-            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(route_name='Anglia',
-            ...                                                                  update=True,
-            ...                                                                  pickle_it=True,
-            ...                                                                  verbose=True)
+            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(
+            ...     route_name='Anglia', update=True, pickle_it=True, verbose=True)
             Updating "s8costs-by-datetime-location-Anglia.pickle" at "data\\metex\\...\\views" ... Done.
             >>> s8costs_dt_loc.tail()
-                    FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            262923           2019 2019-05-27 20:12:00  ...          6.0    305.64
-            262924           2019 2019-05-27 20:52:00  ...          5.0    299.94
-            262925           2019 2019-05-27 21:11:00  ...          5.0    344.38
-            262926           2019 2019-05-27 21:14:00  ...          4.0    300.44
-            262927           2019 2019-05-27 22:43:00  ...          0.0      0.00
-            [5 rows x 24 columns]
 
-            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(route_name='Anglia',
-            ...                                                                  weather_category='Wind',
-            ...                                                                  update=True,
-            ...                                                                  pickle_it=True,
-            ...                                                                  verbose=True)
-            Updating "s8costs-by-datetime-location-Anglia-Wind.pickle" at "data\\...\\views" ... Done.
+            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(
+            ...     route_name='Anglia', weather_category='Wind', update=True, pickle_it=True,
+            ...     verbose=True)
+            Updating "s8costs-by-datetime-location-Anglia-Wind.pickle" at "data\\...views" ... Done.
             >>> s8costs_dt_loc.tail()
-                  FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            1743           2019 2019-04-25 15:07:00  ...         15.0   1948.20
-            1744           2019 2019-04-26 15:54:00  ...         20.0   2292.74
-            1745           2019 2019-04-27 13:22:00  ...        164.0  17540.33
-            1746           2019 2019-05-04 11:20:00  ...         29.0   2364.08
-            1747           2019 2019-05-04 18:03:00  ...        300.0  12859.92
-            [5 rows x 24 columns]
 
-            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(route_name='Anglia',
-            ...                                                                  weather_category='Heat',
-            ...                                                                  update=True,
-            ...                                                                  pickle_it=True,
-            ...                                                                  verbose=True)
-            Updating "s8costs-by-datetime-location-Anglia-Heat.pickle" at "data\\...\\views" ... Done.
+            >>> s8costs_dt_loc = metex.view_schedule8_costs_by_datetime_location(
+            ...     route_name='Anglia', weather_category='Heat', update=True, pickle_it=True,
+            ...     verbose=True)
+            Updating "s8costs-by-datetime-location-Anglia-Heat.pickle" at "data\\...views" ... Done.
             >>> s8costs_dt_loc.tail()
-                 FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            909           2018 2018-09-02 21:17:00  ...        148.0   8000.06
-            910           2018 2018-10-11 02:45:00  ...          5.0    106.90
-            911           2018 2018-10-13 18:22:00  ...         82.0   7470.49
-            912           2019 2019-04-18 14:52:00  ...          3.0    244.56
-            913           2019 2019-04-20 15:20:00  ...        777.0  73289.58
-            [5 rows x 24 columns]
         """
 
         filename = "s8costs-by-datetime-location"
@@ -3868,51 +3603,23 @@ class METExLite:
             ...     update=True, pickle_it=True, verbose=True)
             Updating "s8costs-by-datetime-location-reason.pickle" at "data\\metex\\...\\views" ... Done.
             >>> s8costs_dt_loc_r.tail()
-                     FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            3968310           2019 2019-05-28 00:15:00  ...          3.0    173.22
-            3968311           2019 2019-05-28 00:16:00  ...         39.0   3086.31
-            3968312           2019 2019-05-28 00:23:00  ...          3.0     46.95
-            3968313           2019 2019-05-28 00:26:00  ...          5.0    163.05
-            3968314           2019 2019-05-28 23:00:00  ...          5.0    365.53
-            [5 rows x 32 columns]
 
             >>> s8costs_dt_loc_r = metex.view_schedule8_costs_by_datetime_location_reason(
             ...     route_name='Anglia', update=True, pickle_it=True, verbose=True)
             Updating "s8costs-by-datetime-location-reason-Anglia.pickle" at "data\\...\\views" ... Done.
             >>> s8costs_dt_loc_r.tail()
-                    FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            264048           2019 2019-05-27 20:12:00  ...          6.0    305.64
-            264049           2019 2019-05-27 20:52:00  ...          5.0    299.94
-            264050           2019 2019-05-27 21:11:00  ...          5.0    344.38
-            264051           2019 2019-05-27 21:14:00  ...          4.0    300.44
-            264052           2019 2019-05-27 22:43:00  ...          0.0      0.00
-            [5 rows x 32 columns]
 
             >>> s8costs_dt_loc_r = metex.view_schedule8_costs_by_datetime_location_reason(
             ...     route_name='Anglia', weather_category='Wind', update=True, pickle_it=True,
             ...     verbose=True)
             Updating "s8costs-by-datetime-location-reason-Anglia-Wind.pickle" at "...\\views" ... Done.
             >>> s8costs_dt_loc_r.tail()
-                  FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            1743           2019 2019-04-25 15:07:00  ...         15.0   1948.20
-            1744           2019 2019-04-26 15:54:00  ...         20.0   2292.74
-            1745           2019 2019-04-27 13:22:00  ...        164.0  17540.33
-            1746           2019 2019-05-04 11:20:00  ...         29.0   2364.08
-            1747           2019 2019-05-04 18:03:00  ...        300.0  12859.92
-            [5 rows x 32 columns]
 
             >>> s8costs_dt_loc_r = metex.view_schedule8_costs_by_datetime_location_reason(
             ...     route_name='Anglia', weather_category='Heat', update=True, pickle_it=True,
             ...     verbose=True)
-            Updating "s8costs-by-datetime-location-reason-Anglia-Heat.pickle" at "...\\views" ... Done.
+            Updating "s8costs-by-datetime-location-reason-Anglia-Heat.pickle" at "...views" ... Done.
             >>> s8costs_dt_loc_r.tail()
-                 FinancialYear       StartDateTime  ... DelayMinutes DelayCost
-            911           2018 2018-09-02 21:17:00  ...        148.0   8000.06
-            912           2018 2018-10-11 02:45:00  ...          5.0    106.90
-            913           2018 2018-10-13 18:22:00  ...         82.0   7470.49
-            914           2019 2019-04-18 14:52:00  ...          3.0    244.56
-            915           2019 2019-04-20 15:20:00  ...        777.0  73289.58
-            [5 rows x 32 columns]
         """
 
         filename = "s8costs-by-datetime-location-reason"
@@ -4131,8 +3838,8 @@ class METExLite:
                     extracted_data = get_subset(temp_data, route_name, weather_category)
 
                 else:
-                    schedule8_data = self.view_schedule8_data(route_name, weather_category,
-                                                              rearrange_index=True)
+                    schedule8_data = self.view_schedule8_data(
+                        route_name=route_name, weather_category=weather_category, rearrange_index=True)
                     selected_features = ['PfPIId',
                                          'FinancialYear',
                                          'WeatherCategory',
@@ -4154,8 +3861,8 @@ class METExLite:
                                          'IncidentJPIPCategory',
                                          'PfPIMinutes', 'PfPICosts']
                     selected_data = schedule8_data[selected_features]
-                    extracted_data = self.calculate_pfpi_stats(selected_data, selected_features,
-                                                               sort_by=None)
+                    extracted_data = self.calculate_pfpi_stats(
+                        selected_data, selected_features, sort_by=None)
 
                 if pickle_it:
                     save_pickle(extracted_data, path_to_pickle, verbose=verbose)
@@ -4248,48 +3955,52 @@ class METExLite:
             >>> incid_loc = metex.view_metex_schedule8_incident_locations(update=True, verbose=True)
             Updating "s8incident-locations.pickle" at "data\\metex\\database_lite\\views" ... Done.
             >>> incid_loc.tail()
-                                  Route                IMDM  ...     EndEasting    EndNorthing
-            23049  London North Western      IMDM Liverpool  ...  336629.866882  397855.661479
-            23573        North and East      IMDM Newcastle  ...  439692.388509  556916.772400
-            23636        North and East      IMDM Newcastle  ...  486727.350400  508124.050506
-            24335            South East  IMDM London Bridge  ...  561597.278674  174451.539721
-            24744                Wessex      IMDM Eastleigh  ...  401141.953041   89970.873072
+                            Route                IMDM  ...     EndEasting    EndNorthing
+            23584  North and East      IMDM Newcastle  ...  439806.355306  556943.953192
+            23647  North and East      IMDM Newcastle  ...  486883.443012  508107.556972
+            24346      South East  IMDM London Bridge  ...  561719.798669  174386.219188
+            24501           Wales        IMDM Cardiff  ...  286580.499048  204449.612520
+            24755          Wessex      IMDM Eastleigh  ...  401141.953041   89970.873072
+
             [5 rows x 22 columns]
 
-            >>> incid_loc = metex.view_metex_schedule8_incident_locations(start_and_end_elr='same',
-            ...                                                           update=True, verbose=True)
+            >>> incid_loc = metex.view_metex_schedule8_incident_locations(
+            ...     start_and_end_elr='same', update=True, verbose=True)
             Updating "s8incident-locations-sameELR.pickle" at "data\\metex\\...\\views" ... Done.
             >>> incid_loc.tail()
-                                  Route                IMDM  ...     EndEasting    EndNorthing
-            23049  London North Western      IMDM Liverpool  ...  336629.866882  397855.661479
-            23573        North and East      IMDM Newcastle  ...  439692.388509  556916.772400
-            23636        North and East      IMDM Newcastle  ...  486727.350400  508124.050506
-            24335            South East  IMDM London Bridge  ...  561597.278674  174451.539721
-            24744                Wessex      IMDM Eastleigh  ...  401141.953041   89970.873072
+                            Route                IMDM  ...     EndEasting    EndNorthing
+            23584  North and East      IMDM Newcastle  ...  439806.355306  556943.953192
+            23647  North and East      IMDM Newcastle  ...  486883.443012  508107.556972
+            24346      South East  IMDM London Bridge  ...  561719.798669  174386.219188
+            24501           Wales        IMDM Cardiff  ...  286580.499048  204449.612520
+            24755          Wessex      IMDM Eastleigh  ...  401141.953041   89970.873072
+
             [5 rows x 22 columns]
 
-            >>> incid_loc = metex.view_metex_schedule8_incident_locations(start_and_end_elr='diff',
-            ...                                                           update=True, verbose=True)
+            >>> incid_loc = metex.view_metex_schedule8_incident_locations(
+            ...     start_and_end_elr='diff', update=True, verbose=True)
             Updating "s8incident-locations-diffELR.pickle" at "data\\metex\\...\\views" ... Done.
             >>> incid_loc.tail()
                                   Route  ...    EndNorthing
-            13007               Western  ...  148640.802469
-            14973  London North Western  ...  420439.873529
-            20571        North and East  ...  329827.328279
-            21068            South East  ...  145319.793063
-            21788               Western  ...  191610.009471
+            14978  London North Western  ...  420439.873529
+            15648              Scotland  ...  805829.397554
+            20581        North and East  ...  329827.328279
+            21078            South East  ...  145221.750575
+            21798               Western  ...  191610.009471
+
             [5 rows x 22 columns]
 
-            >>> incid_loc = metex.view_metex_schedule8_incident_locations(route_name='Anglia',
-            ...                                                           update=True, verbose=True)
+            >>> incid_loc = metex.view_metex_schedule8_incident_locations(
+            ...     route_name='Anglia', update=True, verbose=True)
             Updating "s8incident-locations-Anglia.pickle" at "data\\metex\\...\\views" ... Done.
             >>> incid_loc.tail()
                    Route            IMDM  ...     EndEasting    EndNorthing
             1156  Anglia    IMDM Ipswich  ...  623193.328787  232121.661769
-            1198  Anglia    IMDM Romford  ...  553977.740587  187871.983599
+            1198  Anglia    IMDM Romford  ...  554085.492596  187812.105692
             1240  Anglia    IMDM Romford  ...  561234.911886  193972.676880
-            1290  Anglia  IMDM Tottenham  ...  549155.700342  220884.037074
-            1462  Anglia  IMDM Tottenham  ...  532351.434863  185046.982941
+            1290  Anglia  IMDM Tottenham  ...  549317.204323  220825.113895
+            1462  Anglia  IMDM Tottenham  ...  532432.407281  184945.970447
+
             [5 rows x 22 columns]
         """
 
@@ -4307,15 +4018,15 @@ class METExLite:
 
             else:
                 # All incident locations
-                s8costs_by_location = self.view_schedule8_costs_by_location(route_name, weather_category,
-                                                                            update=update)
-                s8costs_by_location = s8costs_by_location.loc[:, 'Route':'EndLatitude']
-                incident_locations = s8costs_by_location.drop_duplicates()
+                s8costs_by_location = self.view_schedule8_costs_by_location(
+                    route_name=route_name, weather_category=weather_category, update=update)
 
-                # Remove records for which ELR information was missing
-                incident_locations = incident_locations[
-                    ~(incident_locations.StartELR.str.contains('^$')) & ~(
-                        incident_locations.EndELR.str.contains('^$'))]
+                incident_locations = s8costs_by_location.loc[:, 'Route':'EndLatitude'].drop_duplicates()
+
+                # # Remove records where information of either 'StartELR' or 'EndELR' was missing
+                # incident_locations = incident_locations[
+                #     ~(incident_locations.StartELR.str.contains('^$')) & ~(
+                #         incident_locations.EndELR.str.contains('^$'))]
 
                 # 'FJH'
                 idx = (incident_locations.StartLocation == 'Halton Junction') & (
@@ -4335,11 +4046,11 @@ class METExLite:
                 idx = (incident_locations.StartLocation == 'Grangetown (Cleveland)') & \
                       (incident_locations.StartELR == 'WCI')
                 incident_locations.loc[
-                    idx, ('StartELR', 'StartMileage')] = 'DSN2', mile_chain_to_nr_mileage('1.38')
+                    idx, ('StartELR', 'StartMileage')] = 'DSN2', mile_chain_to_mileage('1.38')
                 idx = (incident_locations.EndLocation == 'Grangetown (Cleveland)') & (
                         incident_locations.EndELR == 'WCI')
                 incident_locations.loc[
-                    idx, ('EndELR', 'EndMileage')] = 'DSN2', mile_chain_to_nr_mileage('1.38')
+                    idx, ('EndELR', 'EndMileage')] = 'DSN2', mile_chain_to_mileage('1.38')
                 # 'SJD'
                 idx = (incident_locations.EndLocation == 'Skelton Junction [Manchester]') & \
                       (incident_locations.EndELR == 'SJD')
@@ -4351,7 +4062,7 @@ class METExLite:
 
                 # Create two additional columns about data of mileages (convert str to num)
                 incident_locations[['StartMileage_num', 'EndMileage_num']] = \
-                    incident_locations[['StartMileage', 'EndMileage']].applymap(nr_mileage_str_to_num)
+                    incident_locations[['StartMileage', 'EndMileage']].applymap(mileage_str_to_num)
 
                 incident_locations['StartEasting'], incident_locations['StartNorthing'] = \
                     wgs84_to_osgb36(incident_locations.StartLongitude.values,
@@ -4377,7 +4088,7 @@ class METExLite:
         except Exception as e:
             print("Failed to fetch \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
 
-    def update_view_pickles(self, update=True, pickle_it=True, verbose=True):
+    def _update_view_pickles(self, update=True, pickle_it=True, verbose=True):
         """
         Update the local pickle files for all essential views.
 
@@ -4396,7 +4107,7 @@ class METExLite:
 
             >>> metex = METExLite()
 
-            >>> metex.update_view_pickles(update=True, pickle_it=True, verbose=True)
+            >>> metex._update_view_pickles(update=True, pickle_it=True, verbose=True)
         """
 
         if confirmed("To update the View pickles of the NR_METEX data?"):
@@ -4439,7 +4150,7 @@ class METExLite:
             if verbose:
                 print("\nUpdate finished.")
 
-    # (Unfinished)
+    # (TBC)
     def view_schedule8_incident_location_tracks(self, shift_yards=220):
         incident_locations = self.view_metex_schedule8_incident_locations()
 
@@ -4478,8 +4189,8 @@ class METExLite:
         if start_mileage_num <= end_mileage_num:
 
             if start_mileage_num == end_mileage_num:
-                start_mileage_num = shift_num_nr_mileage(start_mileage_num, -shift_yards)
-                end_mileage_num = shift_num_nr_mileage(end_mileage_num, shift_yards)
+                start_mileage_num = shift_mileage_by_yard(start_mileage_num, -shift_yards)
+                end_mileage_num = shift_mileage_by_yard(end_mileage_num, shift_yards)
 
             # Get adjusted mileages of start and end locations
             incident_track = track_elr_mileages[
@@ -4494,300 +4205,20 @@ class METExLite:
         return incident_track
 
 
-class WeatherThresholds:
-    """
-    Weather-Thresholds_9306121.html
-
-    Description:
-
-      - "The following table defines Weather thresholds used to determine the classification
-        of Weather as Normal, Alert, Adverse or Extreme. Note that the 'Alert' interval is
-        inside the 'Normal' range."
-
-      - "These are national thresholds. Route-specific thresholds may also be defined at
-        some point."
-
-    **Test**::
-
-        >>> from preprocessor import WeatherThresholds
-
-        >>> thr = WeatherThresholds()
-
-        >>> print(thr.Name)
-        WeatherThresholds
-    """
-
-    def __init__(self):
-        self.Name = 'WeatherThresholds'
-
-        self.DataDir = os.path.relpath(cdd_metex("thresholds"))
-        self.Filename = "Weather-Thresholds_9306121.html"
-
-        self.ReportsDataDir = os.path.relpath(cdd_metex("reports"))
-        self.S8WeatherIncidentsFilename = "Schedule8WeatherIncidents-02062006-31032014"
-
-    def get_metex_weather_thresholds(self, update=False, verbose=False):
-        """
-        Get threshold data available in ``html_filename``.
-
-        :param update: whether to check on update and proceed to update the package data,
-            defaults to ``False``
-        :type update: bool
-        :param verbose: whether to print relevant information in console as the function runs,
-            defaults to ``False``
-        :type verbose: bool or int
-        :return: data of weather thresholds
-        :rtype: pandas.DataFrame or None
-
-        **Test**::
-
-            >>> from preprocessor import WeatherThresholds
-
-            >>> thr = WeatherThresholds()
-
-            >>> thresholds = thr.get_metex_weather_thresholds()
-            >>> thresholds.tail()
-                                         Classification  ... ExtremeThreshold
-            Temperature                            Cold  ...               -7
-            Temperature                            Heat  ...               30
-            Snow             3-Hourly (Wet or Dry Snow)  ...               15
-            Rain         Hourly (normal and wet ground)  ...               40
-            Rain                               3-Hourly  ...               60
-            [5 rows x 13 columns]
-
-            >>> thresholds = thr.get_metex_weather_thresholds(update=True, verbose=True)
-            Updating "metex-weather-thresholds.pickle" at "\\data\\..." ... Done.
-            >>> thresholds.head()
-                                                     Classification  ... ExtremeThreshold
-            Rain                                              Daily  ...              100
-            Rain                                Daily on wet ground  ...               25
-            Rain                                             15 day  ...              150
-            Wind                                          Sustained  ...               60
-            Wind  Gust (Maximum gust speed experienced over the ...  ...               80
-            [5 rows x 13 columns]
-        """
-
-        path_to_pickle = cd(self.DataDir, self.Filename.replace(".html", ".pickle"))
-
-        if os.path.isfile(path_to_pickle) and not update:
-            metex_weather_thresholds = load_pickle(path_to_pickle)
-
-        else:
-            path_to_html = cd(self.DataDir, self.Filename)
-
-            try:
-                metex_weather_thresholds = pd.read_html(path_to_html)[0]
-
-                # Specify column names
-                metex_weather_thresholds.columns = metex_weather_thresholds.loc[0].tolist()
-                # Drop the first row, which has been used as the column names
-                metex_weather_thresholds.drop(0, axis=0, inplace=True)
-
-                # cls: classification
-                cls = metex_weather_thresholds.Classification[
-                    metex_weather_thresholds.eq(
-                        metex_weather_thresholds.iloc[:, 0], axis=0).all(1)].tolist()
-
-                cls_idx = []
-                for i in range(len(cls)):
-                    x = metex_weather_thresholds.index[
-                        metex_weather_thresholds.Classification == cls[i]][0]
-                    metex_weather_thresholds.drop(x, inplace=True)
-                    if i + 1 < len(cls):
-                        y = metex_weather_thresholds.index[
-                            metex_weather_thresholds.Classification == cls[i + 1]][0]
-                        to_rpt = y - x - 1
-                    else:
-                        to_rpt = metex_weather_thresholds.index[-1] - x
-                    cls_idx += [cls[i]] * to_rpt
-                metex_weather_thresholds.index = cls_idx
-
-                # Add 'VariableName' and 'Unit'
-                variables = ['T', 'x', 'r', 'w']
-                units = ['degrees Celsius', 'cm', 'mm', 'mph']
-                var_list, units_list = [], []
-                for i in range(len(cls)):
-                    var_temp = [variables[i]] * list(metex_weather_thresholds.index).count(cls[i])
-                    units_temp = [units[i]] * list(metex_weather_thresholds.index).count(cls[i])
-                    var_list += var_temp
-                    units_list += units_temp
-                metex_weather_thresholds.insert(1, 'VariableName', var_list)
-                metex_weather_thresholds.insert(2, 'Unit', units_list)
-
-                # Retain main description
-                metex_weather_thresholds.Classification = \
-                    metex_weather_thresholds.Classification.str.replace(
-                        r'( \( oC \))|(,[(\xa0) ][xrw] \(((cm)|(mm)|(mph))\))', '')
-                metex_weather_thresholds.Classification = \
-                    metex_weather_thresholds.Classification.str.replace(
-                        ' (mph)', ' ', regex=False)
-
-                # Upper and lower boundaries
-                def boundary(df, col, sep1=None, sep2=None):
-                    if sep1:
-                        lst_lb = [metex_weather_thresholds[col].iloc[0].split(sep1)[0]]
-                        lst_lb += [v.split(sep2)[0] for v in metex_weather_thresholds[col].iloc[1:]]
-                        df.insert(df.columns.get_loc(col) + 1, col + 'LowerBound', lst_lb)
-                    if sep2:
-                        lst_ub = [metex_weather_thresholds[col].iloc[0].split(sep2)[1]]
-                        lst_ub += [v.split(sep1)[-1] for v in metex_weather_thresholds[col].iloc[1:]]
-                        if sep1:
-                            df.insert(df.columns.get_loc(col) + 2, col + 'UpperBound', lst_ub)
-                        else:
-                            df.insert(df.columns.get_loc(col) + 1, col + 'Threshold', lst_ub)
-
-                # Normal
-                boundary(metex_weather_thresholds, 'Normal', sep1=None, sep2='up to ')
-                # Alert
-                boundary(metex_weather_thresholds, 'Alert', sep1=' \u003C ', sep2=' \u2264 ')
-                # Adverse
-                boundary(metex_weather_thresholds, 'Adverse', sep1=' \u003C ', sep2=' \u2264 ')
-                # Extreme
-                extreme = [metex_weather_thresholds['Extreme'].iloc[0].split(' \u2264 ')[1]]
-                extreme += [v.split(' \u2265 ')[1] for v in metex_weather_thresholds['Extreme'].iloc[1:]]
-                metex_weather_thresholds['ExtremeThreshold'] = extreme
-
-                save_pickle(metex_weather_thresholds, path_to_pickle, verbose=verbose)
-
-            except Exception as e:
-                print("Failed to get \"weather thresholds\" from the HTML file. {}.".format(e))
-                metex_weather_thresholds = None
-
-        return metex_weather_thresholds
-
-    def get_schedule8_weather_thresholds(self, update=False, verbose=False):
-        # noinspection GrazieInspection
-        """
-        Get threshold data available in ``workbook_filename``.
-
-        :param update: whether to check on update and proceed to update the package data,
-            defaults to ``False``
-        :type update: bool
-        :param verbose: whether to print relevant information in console as the function runs,
-            defaults to ``False``
-        :type verbose: bool or int
-        :return: data of weather thresholds
-        :rtype: pandas.DataFrame or None
-
-        **Test**::
-
-            >>> from preprocessor import WeatherThresholds
-
-            >>> thr = WeatherThresholds()
-
-            >>> thresholds = thr.get_schedule8_weather_thresholds()
-            >>> thresholds.head()
-                     Description WeatherHazard  WeatherType     Period Condition  Threshold
-            0   Wind Gust Normal        NORMAL    WIND_GUST  1 DAY MAX         <       60.0
-            1    Wind Gust Alert         ALERT    WIND_GUST  1 DAY MAX        >=       50.0
-            2  Wind Gust Adverse       ADVERSE    WIND_GUST  1 DAY MAX        >=       60.0
-            3  Wind Gust Extreme       EXTREME    WIND_GUST  1 DAY MAX        >=       80.0
-            4        Cold Normal        NORMAL  TEMPERATURE  1 DAY MIN         >       -4.0
-
-            >>> thresholds = thr.get_schedule8_weather_thresholds(update=True, verbose=True)
-            Updating "Schedule8WeatherIncidents-02062006-31032014-thresholds.pickle" at "..." ... Done.
-            >>> thresholds.tail()
-                        Description WeatherHazard  ... Condition Threshold
-            24  15-Day Rain Extreme       EXTREME  ...        >=     150.0
-            25    Daily Snow Normal        NORMAL  ...         <       5.0
-            26     Daily Snow Alert         ALERT  ...        >=       2.0
-            27   Daily Snow Adverse       ADVERSE  ...        >=       5.0
-            28   Daily Snow Extreme       EXTREME  ...        >=      15.0
-            [5 rows x 6 columns]
-        """
-
-        pickle_filename = self.S8WeatherIncidentsFilename + "-thresholds.pickle"
-
-        path_to_pickle = cd(self.DataDir, pickle_filename)
-        if os.path.isfile(path_to_pickle) and not update:
-            schedule8_weather_thresholds = load_pickle(path_to_pickle)
-
-        else:
-            path_to_spreadsheet = cd(self.ReportsDataDir, self.S8WeatherIncidentsFilename + ".xlsm")
-
-            try:
-                schedule8_weather_thresholds = pd.read_excel(
-                    path_to_spreadsheet, sheet_name="Thresholds", usecols="A:F")
-
-                schedule8_weather_thresholds.dropna(inplace=True)
-                schedule8_weather_thresholds.columns = [
-                    col.replace(' ', '') for col in schedule8_weather_thresholds.columns]
-                schedule8_weather_thresholds.WeatherHazard = \
-                    schedule8_weather_thresholds.WeatherHazard.str.strip().str.upper()
-                schedule8_weather_thresholds.index = range(len(schedule8_weather_thresholds))
-
-                save_pickle(schedule8_weather_thresholds, path_to_pickle, verbose=verbose)
-
-            except Exception as e:
-                print("Failed to get \"weather thresholds\" from the .xlsm file. {}.".format(e))
-                schedule8_weather_thresholds = None
-
-        return schedule8_weather_thresholds
-
-    def get_weather_thresholds(self, update=False, verbose=False):
-        """
-        Get data of weather thresholds.
-
-        :param update: whether to check on update and proceed to update the package data,
-            defaults to ``False``
-        :type update: bool
-        :param verbose: whether to print relevant information in console as the function runs,
-            defaults to ``False``
-        :type verbose: bool or int
-        :return: data of weather thresholds
-        :rtype: pandas.DataFrame or None
-
-        **Test**::
-
-            >>> from preprocessor import WeatherThresholds
-
-            >>> thr = WeatherThresholds()
-
-            >>> thresholds = thr.get_weather_thresholds()
-            >>> type(thresholds)
-            dict
-
-            >>> list(thresholds.keys())
-            ['METExLite', 'Schedule8WeatherIncidents']
-        """
-
-        pickle_filename = self.Name + ".pickle"
-        path_to_pickle = cd(self.DataDir, pickle_filename)
-
-        if os.path.isfile(path_to_pickle) and not update:
-            weather_thresholds = load_pickle(path_to_pickle)
-
-        else:
-
-            try:
-                metex_weather_thresholds = self.get_metex_weather_thresholds(update)
-
-                schedule8_weather_thresholds = self.get_schedule8_weather_thresholds(update)
-
-                weather_thresholds = {'METExLite': metex_weather_thresholds,
-                                      'Schedule8WeatherIncidents': schedule8_weather_thresholds}
-
-                save_pickle(weather_thresholds, path_to_pickle, verbose=verbose)
-
-            except Exception as e:
-                print("Failed to get \"weather thresholds\". {}.".format(e))
-                weather_thresholds = None
-
-        return weather_thresholds
-
-
 class Schedule8IncidentReports:
     """
     Reports of Schedule 8 incidents.
     """
 
+    #: Name of the data
+    NAME = 'Schedule 8 Incidents'
+
+    FILENAME_1 = "Schedule8WeatherIncidents"
+    FILENAME_2 = "Schedule8WeatherIncidents-02062006-31032014"
+
     def __init__(self):
-        self.Name = 'Schedule 8 Incidents'
 
         self.DataDir = os.path.relpath(cdd_metex("reports"))
-
-        self.DataFilename1 = "Schedule8WeatherIncidents"
-        self.DataFilename2 = "Schedule8WeatherIncidents-02062006-31032014"
 
         self.METExLite = METExLite()
         self.DAG = DelayAttributionGlossary()
@@ -4807,12 +4238,12 @@ class Schedule8IncidentReports:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor.metex import Schedule8IncidentReports
+            >>> import os
 
-            >>> s8ir = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> dat_dir = s8ir.cdd()
+            >>> dat_dir = sir.cdd()
 
             >>> os.path.relpath(dat_dir)
             'data\\metex\\reports'
@@ -4822,7 +4253,7 @@ class Schedule8IncidentReports:
 
         return path
 
-    # == Location metadata ============================================================================
+    # == Location metadata =======================================================================
 
     @staticmethod
     def _pre_cleanse_location_metadata(metadata):
@@ -4884,15 +4315,17 @@ class Schedule8IncidentReports:
 
         # Fill in missing location names
         na_name = dat[dat.LOOKUP_NAME.isnull()]
-        ref_dict = self.LocationID.make_loc_id_dict(ref_cols, update=update_dict)
+        ref_dict = self.LocationID.make_xref_dict(ref_cols, update=update_dict)
         temp = na_name.join(ref_dict, on=ref_cols)
         temp = temp[['TIPLOC', 'Location']]
         dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.apply(
-            lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], list) else x[1], axis=1)
+            lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+            if isinstance(x[1], list) else x[1],
+            axis=1)
 
         # Rectify 'LOOKUP_NAME' according to 'TIPLOC'
         na_name = dat[dat.LOOKUP_NAME.isnull()]
-        ref_dict = self.LocationID.make_loc_id_dict('TIPLOC', update=update_dict)
+        ref_dict = self.LocationID.make_xref_dict('TIPLOC', update=update_dict)
         temp = na_name.join(ref_dict, on='TIPLOC')
         dat.loc[na_name.index, 'LOOKUP_NAME'] = temp.Location.values
 
@@ -4901,18 +4334,18 @@ class Schedule8IncidentReports:
 
         def extract_one(lookup_name, ref_loc):
             if isinstance(ref_loc, list):
-                n = find_similar_str(lookup_name.replace(' ', ''), ref_loc)
+                n = find_similar_str(lookup_name.replace(' ', ''), ref_loc, processor='fuzzywuzzy')
             elif pd.isnull(ref_loc):
                 n = lookup_name
             else:
                 n = ref_loc
             return n
 
-        dat.loc[not_na_name.index, 'LOOKUP_NAME'] = temp.apply(lambda x: extract_one(x[3], x[7]),
-                                                               axis=1)
+        dat.loc[not_na_name.index, 'LOOKUP_NAME'] = temp.apply(
+            lambda x: extract_one(x[3], x[7]), axis=1)
 
         # Rectify 'STANOX'+'STANME'
-        location_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
+        location_codes = self.LocationID.fetch_codes()[self.LocationID.KEY]
         location_codes = location_codes.drop_duplicates(['TIPLOC', 'Location']).set_index(
             ['TIPLOC', 'Location'])
         temp = dat.join(location_codes, on=['TIPLOC', 'LOOKUP_NAME'], rsuffix='_Ref').fillna('')
@@ -4953,11 +4386,11 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> # loc_metadata = sis.get_location_metadata(update=True, verbose=True)
+            >>> # loc_metadata = sir.get_location_metadata(update=True, verbose=True)
             >>> # Updating "stanox-locations-data.pickle" at "data\\network\\railway codes" ... Done.
-            >>> loc_metadata = sis.get_location_metadata()
+            >>> loc_metadata = sir.get_location_metadata()
 
             >>> type(loc_metadata)
             dict
@@ -4965,22 +4398,8 @@ class Schedule8IncidentReports:
             ['TIPLOC_LocationsLyr', 'STANOX']
 
             >>> loc_metadata['TIPLOC_LocationsLyr'].tail()
-                  OBJECTID STANOX     STANME  ...  MEASURE OFFSET      LOOKUP_NAME_Raw
-            8874      3238  42241     YORTON  ...  25.0322  0.078               Yorton
-            8875      5771  78362  YSTRADMCH  ...  13.1329 -4.256        Ystrad Mynach
-            8876      7591  78362             ...  13.1587  3.204  Ystrad Mynach North
-            8877      8397  78363  YSTRADMCS  ...  13.0874  0.107  Ystrad Mynach South
-            8878      5728  78008  Y RHONDDA  ...  20.0103  1.166       Ystrad Rhondda
-            [5 rows x 23 columns]
 
             >>> loc_metadata['STANOX'].tail()
-                 STANOX     STANME  ...  DEG_LONG            LOOKUP_NAME_Raw
-            7770  42126  CREWE NJN  ... -2.433316             Crewe North Jn
-            7771  82311  YEOVILPML  ... -2.613300     Yeovil Pen Mill (Main)
-            7772  87224  CLAPJ 147  ... -0.164861  CLAPHAM JUNCTION SIG T147
-            7773  66416  BORDSLYYD  ... -1.863200              Bordsley T.C.
-            7774  03237  THORNTNSJ  ... -3.142083       Glenrothes Sig ET558
-            [5 rows x 11 columns]
         """
 
         pickle_filename = "stanox-locations-data.pickle"
@@ -4991,18 +4410,19 @@ class Schedule8IncidentReports:
 
         else:
             try:
-                workbook = pd.ExcelFile(path_to_pickle.replace(".pickle", ".xlsx"))
+                path_to_xlsx = path_to_pickle.replace(".pickle", ".xlsx")
+
+                workbook = pd.ExcelFile(path_to_xlsx)
 
                 # 'TIPLOC_LocationsLyr' -----------------------------------------
-                tiploc_loc_lyr = workbook.parse(sheet_name='TIPLOC_LocationsLyr',
-                                                parse_dates=['LASTEDITED', 'LAST_UPD_1'], dayfirst=True,
-                                                converters={'STANOX': str})
+                raw = workbook.parse(
+                    sheet_name='TIPLOC_LocationsLyr', parse_dates=['LASTEDITED', 'LAST_UPD_1'],
+                    converters={'STANOX': str})
 
                 cols_with_na = ['STATUS', 'LINE_DESCRIPTION', 'QC_STATUS', 'DESCRIPTIO', 'BusinessRef']
-                tiploc_loc_lyr.fillna({x: '' for x in cols_with_na}, inplace=True)
+                raw.fillna({x: '' for x in cols_with_na}, inplace=True)
 
-                tiploc_loc_lyr = self._cleanse_location_metadata_tiploc_sheet(
-                    tiploc_loc_lyr, update_dict=update)
+                tiploc_loc_lyr = self._cleanse_location_metadata_tiploc_sheet(raw, update_dict=update)
 
                 # 'STANOX' -----------------------------------------------------------------------------
                 stanox = workbook.parse(sheet_name='STANOX', converters={'STANOX': str, 'gridref': str})
@@ -5032,7 +4452,7 @@ class Schedule8IncidentReports:
 
         return location_metadata
 
-    # == Location metadata from NR_METEX database =====================================================
+    # == Location metadata from NR_METEX database ================================================
 
     def get_metex_location(self, update=False, verbose=False):
         """
@@ -5051,21 +4471,12 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> # metex_loc_dat = sis.get_metex_location(update=True, verbose=True)
-            >>> # Updating "metex-location.pickle" at "data\\network\\railway codes" ... Done.
-            >>> metex_loc_dat = sis.get_metex_location()
-
+            >>> metex_loc_dat = sir.get_metex_location(update=True, verbose=True)
+            Updating "metex-location.pickle" at "data\\network\\railway codes" ... Done.
+            >>> metex_loc_dat = sir.get_metex_location()
             >>> metex_loc_dat.tail()
-                        StartLongitude  StartLatitude  ...  SMDCell             IMDM
-            LocationId                                 ...
-            1484151          -2.601217      53.382784  ...      105  IMDM Warrington
-            1484152          -2.214276      53.495025  ...      106  IMDM Manchester
-            1484153          -0.874715      51.470740  ...      160     IMDM Reading
-            1484154          -1.978694      50.716384  ...      181   IMDM Eastleigh
-            1484155          -0.333836      51.293612  ...      172     IMDM Clapham
-            [5 rows x 7 columns]
         """
 
         pickle_filename = "metex-location.pickle"
@@ -5111,20 +4522,12 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> # metex_stanox_loc_dat = sis.get_metex_stanox_location(update=True, verbose=True)
-            >>> # Updating "metex-stanox-location.pickle" at "data\\network\\railway codes" ... Done.
-            >>> metex_stanox_loc_dat = sis.get_metex_stanox_location()
-
+            >>> metex_stanox_loc_dat = sir.get_metex_stanox_location(update=True, verbose=True)
+            Updating "metex-stanox-location.pickle" at "data\\network\\railway codes" ... Done.
+            >>> metex_stanox_loc_dat = sir.get_metex_stanox_location()
             >>> metex_stanox_loc_dat.tail()
-                 Stanox  ... LocationId
-            7543  89744  ...     595843
-            7544  89745  ...     595844
-            7545  89746  ...     595845
-            7546  89747  ...     595846
-            7547  89748  ...
-            [5 rows x 6 columns]
         """
 
         pickle_filename = "metex-stanox-location.pickle"
@@ -5147,7 +4550,7 @@ class Schedule8IncidentReports:
                 metex_stanox_location = metex_stanox_location.replace({'Name': errata_stanme})
 
                 # Get reference data from the Railway Codes website
-                rc_codes = self.LocationID.fetch_location_codes()[self.LocationID.KEY]
+                rc_codes = self.LocationID.fetch_codes()[self.LocationID.KEY]
                 rc_codes = rc_codes[['Location', 'TIPLOC', 'STANME', 'STANOX']].drop_duplicates()
 
                 # Fill in NA 'Description's (i.e. Location names)
@@ -5159,7 +4562,7 @@ class Schedule8IncidentReports:
                 # Fill in NA 'Name's (i.e. STANME)
                 na_name = metex_stanox_location[metex_stanox_location.Name.isnull()]
                 # Some records of the 'Description' are recorded by 'TIPLOC' instead
-                rc_tiploc_dict = self.LocationID.make_loc_id_dict('TIPLOC')
+                rc_tiploc_dict = self.LocationID.make_xref_dict('TIPLOC')
                 temp = na_name.join(rc_tiploc_dict, on='Description')
                 temp = temp.join(rc_codes.set_index(['STANOX', 'TIPLOC', 'Location']),
                                  on=['Stanox', 'Description', 'Location'])
@@ -5181,40 +4584,44 @@ class Schedule8IncidentReports:
 
                 # Check if 'Description' has STANOX code
                 # instead of location name using STANOX-dictionary
-                rc_stanox_dict = self.LocationID.make_loc_id_dict('STANOX')
+                rc_stanox_dict = self.LocationID.make_xref_dict('STANOX')
                 temp = metex_stanox_location.join(rc_stanox_dict, on='Description')
                 valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
                 if not valid_loc.empty:
                     metex_stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[1], x[2]) if isinstance(x[2], list) else x[2],
+                        lambda x: find_similar_str(x[1], x[2], processor='fuzzywuzzy')
+                        if isinstance(x[2], list) else x[2],
                         axis=1)
 
                 # Check if 'Description' has TIPLOC code
                 # instead of location name using STANOX-TIPLOC-dictionary
-                rc_stanox_tiploc_dict = self.LocationID.make_loc_id_dict(['STANOX', 'TIPLOC'])
+                rc_stanox_tiploc_dict = self.LocationID.make_xref_dict(['STANOX', 'TIPLOC'])
                 temp = metex_stanox_location.join(rc_stanox_tiploc_dict, on=['Stanox', 'Description'])
                 valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
                 if not valid_loc.empty:
                     metex_stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[1], x[2]) if isinstance(x[2], list) else x[2],
+                        lambda x: find_similar_str(x[1], x[2], processor='fuzzywuzzy')
+                        if isinstance(x[2], list) else x[2],
                         axis=1)
 
                 # Check if 'Description' has STANME code instead of location name
                 # using STANOX-STANME-dictionary
 
-                rc_stanox_stanme_dict = self.LocationID.make_loc_id_dict(['STANOX', 'STANME'])
+                rc_stanox_stanme_dict = self.LocationID.make_xref_dict(['STANOX', 'STANME'])
                 temp = metex_stanox_location.join(rc_stanox_stanme_dict, on=['Stanox', 'Description'])
                 valid_loc = temp[temp.Location.notnull()][['Description', 'Name', 'Location']]
                 if not valid_loc.empty:
                     metex_stanox_location.loc[valid_loc.index, 'Description'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[1], x[2]) if isinstance(x[2], list) else x[2],
+                        lambda x: find_similar_str(x[1], x[2], processor='fuzzywuzzy')
+                        if isinstance(x[2], list) else x[2],
                         axis=1)
 
                 # Finalize cleansing 'Description' (i.e. location names)
                 temp = metex_stanox_location.join(rc_stanox_dict, on='Stanox')
                 temp = temp[['Description', 'Name', 'Location']]
                 metex_stanox_location.Description = temp.apply(
-                    lambda x: find_similar_str(x[0], x[2]) if isinstance(x[2], list) else x[2], axis=1)
+                    lambda x: find_similar_str(x[0], x[2], processor='fuzzywuzzy')
+                    if isinstance(x[2], list) else x[2], axis=1)
 
                 # Cleanse 'Name' (i.e. STANME)
                 metex_stanox_location.Name = metex_stanox_location.Name.str.upper()
@@ -5225,11 +4632,12 @@ class Schedule8IncidentReports:
                 temp = metex_stanox_location.join(loc_stanme_dict, on=['Stanox', 'Description'])
                 # noinspection PyTypeChecker
                 metex_stanox_location.Name = temp.apply(
-                    lambda x: find_similar_str(x[2], x[6]) if isinstance(x[6], list) else x[6], axis=1)
+                    lambda x: find_similar_str(x[2], x[6], processor='fuzzywuzzy')
+                    if isinstance(x[6], list) else x[6], axis=1)
 
                 # Below is not available in any reference data
-                metex_stanox_location.loc[298, 'Stanox':'Name'] = ['03330', 'Inverkeithing PPM Point',
-                                                                   '']
+                metex_stanox_location.loc[298, 'Stanox':'Name'] = [
+                    '03330', 'Inverkeithing PPM Point', '']
 
                 # Cleanse remaining NA values in 'ELR', 'Yards' and 'LocationId'
                 metex_stanox_location.ELR.fillna('', inplace=True)
@@ -5273,20 +4681,12 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> # metex_stanox_sec = sis.get_metex_stanox_section(update=True, verbose=True)
-            >>> # Updating "metex-stanox-section.pickle" at "data\\network\\railway codes" ... Done.
-            >>> metex_stanox_sec = sis.get_metex_stanox_section()
-
+            >>> metex_stanox_sec = sir.get_metex_stanox_section(update=True, verbose=True)
+            Updating "metex-stanox-section.pickle" at "data\\network\\railway codes" ... Done.
+            >>> metex_stanox_sec = sir.get_metex_stanox_section()
             >>> metex_stanox_sec.tail()
-                   StanoxSectionId  ... EndLocation_Raw
-            10596            33456  ...             NaN
-            10597            33457  ...    Tilbury Town
-            10598            33458  ...        Leuchars
-            10599            33459  ...             NaN
-            10600            33460  ...             NaN
-            [5 rows x 11 columns]
         """
 
         pickle_filename = "metex-stanox-section.pickle"
@@ -5332,7 +4732,7 @@ class Schedule8IncidentReports:
 
                 # Check if 'Start' and 'End' have STANOX codes
                 # instead of location names using STANOX-dictionary
-                rc_stanox_dict = self.LocationID.make_loc_id_dict('STANOX')
+                rc_stanox_dict = self.LocationID.make_xref_dict('STANOX')
                 temp = stanox_sec.join(rc_stanox_dict, on='Start')
                 valid_loc = temp[temp.Location.notnull()]
                 if not valid_loc.empty:
@@ -5343,34 +4743,38 @@ class Schedule8IncidentReports:
                     stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.Location
 
                 # Check if 'Start' and 'End' have STANOX/TIPLOC codes using STANOX-TIPLOC-dictionary
-                rc_stanox_tiploc_dict = self.LocationID.make_loc_id_dict(['STANOX', 'TIPLOC'])
+                rc_stanox_tiploc_dict = self.LocationID.make_xref_dict(['STANOX', 'TIPLOC'])
                 temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['StartStanox', 'Start'])
                 valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
                 if not valid_loc.empty:
                     stanox_sec.loc[valid_loc.index, 'Start'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else
+                        lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                        if isinstance(x[1], (list, tuple)) else
                         x[1], axis=1)
                 temp = stanox_sec.join(rc_stanox_tiploc_dict, on=['EndStanox', 'End'])
                 valid_loc = temp[temp.Location.notnull()][['End', 'Location']]
                 if not valid_loc.empty:
                     stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else
-                        x[1], axis=1)
+                        lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                        if isinstance(x[1], (list, tuple)) else x[1],
+                        axis=1)
 
                 # Check if 'Start' and 'End' have STANOX/STANME codes using STANOX-STANME-dictionary
-                rc_stanox_stanme_dict = self.LocationID.make_loc_id_dict(['STANOX', 'STANME'])
+                rc_stanox_stanme_dict = self.LocationID.make_xref_dict(['STANOX', 'STANME'])
                 temp = stanox_sec.join(rc_stanox_stanme_dict, on=['StartStanox', 'Start'])
                 valid_loc = temp[temp.Location.notnull()][['Start', 'Location']]
                 if not valid_loc.empty:
                     stanox_sec.loc[valid_loc.index, 'Start'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else
-                        x[1], axis=1)
+                        lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                        if isinstance(x[1], (list, tuple)) else x[1],
+                        axis=1)
                 temp = stanox_sec.join(rc_stanox_stanme_dict, on=['EndStanox', 'End'])
                 valid_loc = temp[temp.Location.notnull()][['End', 'Location']]
                 if not valid_loc.empty:
                     stanox_sec.loc[valid_loc.index, 'End'] = valid_loc.apply(
-                        lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else
-                        x[1], axis=1)
+                        lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                        if isinstance(x[1], (list, tuple)) else x[1],
+                        axis=1)
 
                 # Apply manually-created dictionaries
                 loc_name_replacement_dict = fetch_loc_names_repl_dict('Start')
@@ -5387,12 +4791,14 @@ class Schedule8IncidentReports:
                 temp = stanox_sec.join(rc_stanox_dict, on='StartStanox')
                 temp = temp[temp.Location.notnull()][['Start', 'Location']]
                 stanox_sec.loc[temp.index, 'Start'] = temp.apply(
-                    lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else x[1],
+                    lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                    if isinstance(x[1], (list, tuple)) else x[1],
                     axis=1)
                 temp = stanox_sec.join(rc_stanox_dict, on='EndStanox')
                 temp = temp[temp.Location.notnull()][['End', 'Location']]
                 stanox_sec.loc[temp.index, 'End'] = temp.apply(
-                    lambda x: find_similar_str(x[0], x[1]) if isinstance(x[1], (list, tuple)) else x[1],
+                    lambda x: find_similar_str(x[0], x[1], processor='fuzzywuzzy')
+                    if isinstance(x[1], (list, tuple)) else x[1],
                     axis=1)
 
                 #
@@ -5434,23 +4840,16 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> loc_meta_dat_plus = sis.get_location_metadata_plus(update=True, verbose=True)
-            Updating "metex-location.pickle" at "data\\network\\railway codes" ... Done.
-            Updating "metex-stanox-location.pickle" at "data\\network\\railway codes" ... Done.
-            Updating "metex-stanox-section.pickle" at "data\\network\\railway codes" ... Done.
-            Updating "stanox-locations-data.pickle" at "data\\network\\railway codes" ... Done.
-            Updating "metex-location-metadata.pickle" at "data\\network\\railway codes" ... Done.
-
+            >>> loc_meta_dat_plus = sir.get_location_metadata_plus(update=True, verbose=True)
+            Updating "metex-location.pickle" at "data\\network\\railway codes\\" ... Done.
+            Updating "metex-stanox-location.pickle" at "data\\network\\railway codes\\" ... Done.
+            Updating "metex-stanox-section.pickle" at "data\\network\railway codes\\" ... Done.
+            Updating "stanox-locations-data.pickle" at "data\\network\railway codes\\" ... Done.
+            Updating "metex-location-metadata.pickle" at "data\\network\\railway codes\\" ... Done.
+            >>> loc_meta_dat_plus = sir.get_location_metadata_plus()
             >>> loc_meta_plus.tail()
-                   StanoxSectionId  ... EndYards
-            10596            33456  ...     2398
-            10597            33457  ...    38076
-            10598            33458  ...    89531
-            10599            33459  ...   105710
-            10600            33460  ...   283648
-            [5 rows x 26 columns]
         """
 
         pickle_filename = "metex-location-metadata.pickle"
@@ -5542,10 +4941,10 @@ class Schedule8IncidentReports:
 
         return loc_meta_plus
 
-    # == Incidents data ===============================================================================
+    # == Incidents data ==========================================================================
 
-    @staticmethod
-    def _cleanse_stanox_section_column(data, col_name='StanoxSection', sep=' : ', update_dict=False):
+    def _cleanse_stanox_section_column(self, data, col_name='StanoxSection', sep=' : ',
+                                       update_dict=False):
         """
         Cleanse the column that contains location information in the data of incident records.
 
@@ -5559,17 +4958,9 @@ class Schedule8IncidentReports:
         :type update_dict: bool
         :return: cleansed data frame
         :rtype: pandas.DataFrame
-
-        **Test**::
-
-            col_name = 'StanoxSection'
-            sep = ' : '
-            update_dict = False
-
-            data = s8weather_incidents.copy()
         """
 
-        dat = data.copy(deep=True)
+        dat = data.copy()
         old_column_name = col_name + '_Raw'
         dat.rename(columns={col_name: old_column_name}, inplace=True)
         if sep is not None and isinstance(sep, str):
@@ -5589,7 +4980,7 @@ class Schedule8IncidentReports:
         start_end = start_end.replace(errata_stanme)
 
         # Get rid of duplicated records
-        def tidy_alt_codes(code_dict_df, raw_loc):
+        def _tidy_alt_codes(code_dict_df, raw_loc):
             raw_loc.columns = [x.replace('_Raw', '') for x in raw_loc.columns]
             tmp = raw_loc.join(code_dict_df, on='StartLocation')
             tmp = tmp[tmp.Location.notnull()]
@@ -5599,16 +4990,15 @@ class Schedule8IncidentReports:
             raw_loc.loc[tmp.index, 'EndLocation'] = tmp.Location.values
             return raw_loc
 
-        lid = LocationIdentifiers()
         #
-        stanox_dict = lid.make_loc_id_dict('STANOX', update=update_dict)
-        start_end = tidy_alt_codes(stanox_dict, start_end)
+        stanox_dict = self.LocationID.make_xref_dict('STANOX', update=update_dict)
+        start_end = _tidy_alt_codes(stanox_dict, start_end)
         #
-        stanme_dict = lid.make_loc_id_dict('STANME', update=update_dict)
-        start_end = tidy_alt_codes(stanme_dict, start_end)
+        stanme_dict = self.LocationID.make_xref_dict('STANME', update=update_dict)
+        start_end = _tidy_alt_codes(stanme_dict, start_end)
         #
-        tiploc_dict = lid.make_loc_id_dict('TIPLOC', update=update_dict)
-        start_end = tidy_alt_codes(tiploc_dict, start_end)
+        tiploc_dict = self.LocationID.make_xref_dict('TIPLOC', update=update_dict)
+        start_end = _tidy_alt_codes(tiploc_dict, start_end)
 
         #
         start_end = start_end.replace(fetch_loc_names_repl_dict('Description', regex=True))
@@ -5628,12 +5018,13 @@ class Schedule8IncidentReports:
 
         # Create new StanoxSection column
         dat[col_name] = start_end.StartLocation + sep + start_end.EndLocation
-        mask_single = start_end.StartLocation == start_end.EndLocation
-        dat[col_name][mask_single] = start_end.StartLocation[mask_single]
+        single_loc_idx = start_end.StartLocation[start_end.StartLocation == start_end.EndLocation].index
+        dat.loc[single_loc_idx, col_name] = start_end.loc[single_loc_idx, 'StartLocation']
 
         # Resort column order
-        col_names = [list(v) for k, v in
-                     itertools.groupby(list(dat.columns), lambda x: x == old_column_name) if not k]
+        col_names = [
+            list(v)
+            for k, v in itertools.groupby(list(dat.columns), lambda x: x == old_column_name) if not k]
         add_names = [old_column_name] + col_names[1][-3:] + ['StartLocation', 'EndLocation']
         col_names = col_names[0] + add_names + col_names[1][:-3]
 
@@ -5641,7 +5032,6 @@ class Schedule8IncidentReports:
 
         return cleansed_data
 
-    # noinspection PyTypeChecker
     def _cleanse_geographical_coordinates(self, data, update_metadata=False):
         """
         Look up geographical coordinates for each incident location.
@@ -5652,19 +5042,9 @@ class Schedule8IncidentReports:
         :type update_metadata: bool
         :return: cleansed data frame
         :rtype: pandas.DataFrame
-
-        **Test**::
-
-            update_metadata = False
-            data = s8weather_incidents.copy()
-
-            >>> from preprocessor.metex import Schedule8IncidentReports
-
-            >>> sis = Schedule8IncidentReports()
-
         """
 
-        dat = data.copy(deep=True)
+        dat = data.copy()
 
         # Find geographical coordinates for each incident location
         ref_loc_dat_1, _ = self.get_location_metadata(update=update_metadata).values()
@@ -5686,11 +5066,13 @@ class Schedule8IncidentReports:
         ref_loc_dat_1.set_index('LOOKUP_NAME', inplace=True)
 
         dat = dat.join(ref_loc_dat_1[coordinates_cols_alt], on='StartLocation')
-        dat.rename(columns=dict(zip(coordinates_cols_alt, ['Start' + c for c in coordinates_cols_alt])),
-                   inplace=True)
+        dat.rename(
+            columns=dict(zip(coordinates_cols_alt, ['Start' + c for c in coordinates_cols_alt])),
+            inplace=True)
         dat = dat.join(ref_loc_dat_1[coordinates_cols_alt], on='EndLocation')
-        dat.rename(columns=dict(zip(coordinates_cols_alt, ['End' + c for c in coordinates_cols_alt])),
-                   inplace=True)
+        dat.rename(
+            columns=dict(zip(coordinates_cols_alt, ['End' + c for c in coordinates_cols_alt])),
+            inplace=True)
 
         # Get location metadata for reference --------------------------------
         location_metadata = self.get_location_metadata_plus(update=update_metadata)
@@ -5753,13 +5135,16 @@ class Schedule8IncidentReports:
             osgb36_to_wgs84(dat.EndEasting.values, dat.EndNorthing.values)).T
 
         # Convert coordinates to shapely.geometry.Point
-        dat['StartXY'] = dat.apply(lambda x: shapely.geometry.Point(x.StartEasting, x.StartNorthing),
-                                   axis=1)
-        dat['EndXY'] = dat.apply(lambda x: shapely.geometry.Point(x.EndEasting, x.EndNorthing), axis=1)
-        dat['StartLongLat'] = dat.apply(
-            lambda x: shapely.geometry.Point(x.StartLongitude, x.StartLatitude), axis=1)
-        dat['EndLongLat'] = dat.apply(lambda x: shapely.geometry.Point(x.EndLongitude, x.EndLatitude),
-                                      axis=1)
+        dat.loc[:, 'StartXY'] = [
+            shapely.geometry.Point(x, y).wkt for x, y in dat[['StartEasting', 'StartNorthing']].values]
+        dat.loc[:, 'EndXY'] = [
+            shapely.geometry.Point(x, y).wkt for x, y in dat[['EndEasting', 'EndNorthing']].values]
+        dat.loc[:, 'StartLongLat'] = [
+            shapely.geometry.Point(lon, lat).wkt
+            for lon, lat in dat[['StartLongitude', 'StartLatitude']].values]
+        dat.loc[:, 'EndLongLat'] = [
+            shapely.geometry.Point(lon, lat).wkt
+            for lon, lat in dat[['EndLongitude', 'EndLatitude']].values]
 
         return dat
 
@@ -5785,21 +5170,15 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> s8w_incid = sis.get_schedule8_weather_incidents(update=True, verbose=True)
-
+            >>> s8w_incid = sir.get_schedule8_weather_incidents(update=True, verbose=True)
+            Updating "Schedule8WeatherIncidents.pickle" at "data\\metex\\reports\\" ... Done.
+            >>> s8w_incid = sir.get_schedule8_weather_incidents()
             >>> s8w_incid.tail()
-                    IncidentNumber  ...                                     EndLongLat
-            178950          999886  ...  POINT (-0.3082627830639871 53.60734880545596)
-            178951          999915  ...   POINT (-3.439602237631872 56.39177998271683)
-            178952          999935  ...    POINT (-1.864330034395989 54.9660439613909)
-            178953          999954  ...   POINT (-3.456308871585869 55.88306083219585)
-            178954          999976  ...   POINT (-3.246928548252459 55.93908791812914)
-            [5 rows x 37 columns]
         """
 
-        pickle_filename = make_filename(self.DataFilename1, route_name, weather_category)
+        pickle_filename = make_filename(self.FILENAME_1, route_name, weather_category)
         path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
@@ -5808,11 +5187,11 @@ class Schedule8IncidentReports:
         else:
             try:
                 # Load data from the raw file
-                s8weather_incidents = pd.read_excel(path_to_pickle.replace(".pickle", ".xlsx"),
-                                                    parse_dates=['StartDate', 'EndDate'],
-                                                    day_first=True,
-                                                    converters={'stanoxSection': str})
-                s8weather_incidents.rename(
+                raw_data = pd.read_excel(
+                    path_to_pickle.replace(".pickle", ".xlsx"), parse_dates=['StartDate', 'EndDate'],
+                    converters={'stanoxSection': str})
+
+                s8weather_incidents = raw_data.rename(
                     columns={'StartDate': 'StartDateTime',
                              'EndDate': 'EndDateTime',
                              'stanoxSection': 'StanoxSection',
@@ -5823,8 +5202,7 @@ class Schedule8IncidentReports:
                              # 'Minutes': 'DelayMinutes',
                              'Description': 'IncidentReasonDescription',
                              'Category': 'IncidentCategory',
-                             'CategoryDescription': 'IncidentCategoryDescription'},
-                    inplace=True)
+                             'CategoryDescription': 'IncidentCategoryDescription'})
 
                 # Add information about incident reason
                 incident_reason_metadata = self.DAG.get_incident_reason()
@@ -5856,7 +5234,6 @@ class Schedule8IncidentReports:
 
     def get_schedule8_weather_incidents_02062006_31032014(self, route_name=None, weather_category=None,
                                                           update=False, verbose=False):
-        # noinspection GrazieInspection
         """
         Get data of Schedule 8 weather incident from Schedule8WeatherIncidents-02062006-31032014.xlsm.
 
@@ -5877,45 +5254,26 @@ class Schedule8IncidentReports:
 
             >>> from preprocessor.metex import Schedule8IncidentReports
 
-            >>> sis = Schedule8IncidentReports()
+            >>> sir = Schedule8IncidentReports()
 
-            >>> s8wi = sis.get_schedule8_weather_incidents_02062006_31032014(update=True, verbose=True)
-            Updating "Schedule8WeatherIncidents-02062006-31032014.pickle" at "data\\...reports" ... Done.
+            >>> s8wi_workbook = sir.get_schedule8_weather_incidents_02062006_31032014(
+            ...     update=True, verbose=True)
+            Updating "Schedule8WeatherIncidents-02062006-31032014.pickle" at ... ... Done.
 
-            >>> type(s8wi)
+            >>> type(s8wi_workbook)
             dict
-            >>> list(s8wi.keys())
+            >>> list(s8wi_workbook.keys())
             ['Thresholds', 'Data', 'CategoryLookup']
 
-            >>> s8wi['Thresholds'].tail()
-                        Description WeatherHazard  ... Condition Threshold
-            24  15-Day Rain Extreme       EXTREME  ...        >=     150.0
-            25    Daily Snow Normal        NORMAL  ...         <       5.0
-            26     Daily Snow Alert         ALERT  ...        >=       2.0
-            27   Daily Snow Adverse       ADVERSE  ...        >=       5.0
-            28   Daily Snow Extreme       EXTREME  ...        >=      15.0
-            [5 rows x 6 columns]
+            >>> s8wi_workbook['Thresholds'].tail()
 
-            >>> s8wi['Data'].tail()
-                    IncidentNumber  ...                                     EndLongLat
-            178955          439651  ...     POINT (-3.8288423126512 57.18854720000457)
-            178956          440286  ...  POINT (-0.2508878003737187 52.57548972408046)
-            178957          440808  ...    POINT (1.168230058259288 51.08282396365441)
-            178958          440514  ...   POINT (0.2760319909023558 51.19070388121721)
-            178959          441095  ...  POINT (0.02236061222649204 51.43047020812813)
-            [5 rows x 52 columns]
+            >>> s8wi_workbook['Data'].tail()
 
-            >>> s8wi['CategoryLookup'].tail()
-              WeatherCategoryCode    WeatherCategory
-            4                   H  Heat Speed/Buckle
-            5                   L          Lightning
-            6                   S               Snow
-            7                   W               Wind
-            8                   G                Fog
+            >>> s8wi_workbook['CategoryLookup'].tail()
         """
 
         # Path to the file
-        pickle_filename = make_filename(self.DataFilename2, route_name, weather_category)
+        pickle_filename = make_filename(self.FILENAME_2, route_name, weather_category)
         path_to_pickle = self.cdd(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
@@ -5934,19 +5292,21 @@ class Schedule8IncidentReports:
                 thresholds.index = range(len(thresholds))
 
                 # 'Data' -----------------------------------------------------------------------------
-                incident_records = workbook.parse(sheet_name='Data',
-                                                  parse_dates=['StartDate', 'EndDate'], dayfirst=True,
-                                                  converters={'stanoxSection': str})
-                incident_records.rename(columns={'StartDate': 'StartDateTime',
-                                                 'EndDate': 'EndDateTime',
-                                                 'Year': 'FinancialYear',
-                                                 'stanoxSection': 'StanoxSection',
-                                                 'imdm': 'IMDM',
-                                                 'Reason': 'IncidentReason',
-                                                 # 'Minutes': 'DelayMinutes',
-                                                 # 'Cost': 'DelayCost',
-                                                 'CategoryDescription': 'IncidentCategoryDescription'},
-                                        inplace=True)
+                raw_data = workbook.parse(
+                    sheet_name='Data', parse_dates=['StartDate', 'EndDate'],
+                    converters={'stanoxSection': str})
+
+                incident_records = raw_data.rename(
+                    columns={'StartDate': 'StartDateTime',
+                             'EndDate': 'EndDateTime',
+                             'Year': 'FinancialYear',
+                             'stanoxSection': 'StanoxSection',
+                             'imdm': 'IMDM',
+                             'Reason': 'IncidentReason',
+                             # 'Minutes': 'DelayMinutes',
+                             # 'Cost': 'DelayCost',
+                             'CategoryDescription': 'IncidentCategoryDescription'})
+
                 hazard_cols = [
                     x for x in enumerate(incident_records.columns) if 'Weather Hazard' in x[1]]
                 obs_cols = [
@@ -5989,8 +5349,261 @@ class Schedule8IncidentReports:
                 save_pickle(s8weather_incidents, path_to_pickle, verbose=verbose)
 
             except Exception as e:
-                print("Failed to get/parse \"Schedule8WeatherIncidents-02062006-31032014.xlsm\". "
-                      "{}.".format(e))
+                print("Failed to get/parse \"{}.xlsm\". {}".format(self.FILENAME_2, e))
                 s8weather_incidents = None
 
         return s8weather_incidents
+
+
+class WeatherThresholds:
+    """
+    Weather-Thresholds_9306121.html
+
+    Description:
+
+      - "The following table defines Weather thresholds used to determine the classification
+        of Weather as Normal, Alert, Adverse or Extreme. Note that the 'Alert' interval is
+        inside the 'Normal' range."
+
+      - "These are national thresholds. Route-specific thresholds may also be defined at
+        some point."
+
+    **Test**::
+
+        >>> from preprocessor import WeatherThresholds
+
+        >>> thr = WeatherThresholds()
+
+        >>> print(thr.NAME)
+        WeatherThresholds
+    """
+
+    #: Name of the data
+    NAME = 'WeatherThresholds'
+
+    FILENAME = "Weather-Thresholds_9306121.html"
+
+    def __init__(self):
+
+        self.DataDir = os.path.relpath(cdd_metex("thresholds"))
+
+        self.ReportsDataDir = os.path.relpath(cdd_metex("reports"))
+        self.S8WeatherIncidentsFilename = "Schedule8WeatherIncidents-02062006-31032014"
+
+    def get_metex_weather_thresholds(self, update=False, verbose=False):
+        """
+        Get threshold data available in ``html_filename``.
+
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
+        :return: data of weather thresholds
+        :rtype: pandas.DataFrame or None
+
+        **Test**::
+
+            >>> from preprocessor import WeatherThresholds
+
+            >>> thr = WeatherThresholds()
+
+            >>> thresholds = thr.get_metex_weather_thresholds(update=True, verbose=True)
+            Updating "Weather-Thresholds_9306121.pickle" at "data\\metex\\thresholds\\" ... Done.
+            >>> thresholds = thr.get_metex_weather_thresholds()
+            >>> thresholds.tail()
+        """
+
+        path_to_pickle = cd(self.DataDir, self.FILENAME.replace(".html", ".pickle"))
+
+        if os.path.isfile(path_to_pickle) and not update:
+            metex_weather_thresholds = load_pickle(path_to_pickle)
+
+        else:
+            path_to_html = cd(self.DataDir, self.FILENAME)
+
+            try:
+                metex_weather_thresholds = pd.read_html(path_to_html)[0]
+
+                # Specify column names
+                metex_weather_thresholds.columns = metex_weather_thresholds.loc[0].tolist()
+                # Drop the first row, which has been used as the column names
+                metex_weather_thresholds.drop(0, axis=0, inplace=True)
+
+                # cls: classification
+                cls = metex_weather_thresholds.Classification[
+                    metex_weather_thresholds.eq(
+                        metex_weather_thresholds.iloc[:, 0], axis=0).all(1)].tolist()
+
+                cls_idx = []
+                for i in range(len(cls)):
+                    x = metex_weather_thresholds.index[
+                        metex_weather_thresholds.Classification == cls[i]][0]
+                    metex_weather_thresholds.drop(x, inplace=True)
+                    if i + 1 < len(cls):
+                        y = metex_weather_thresholds.index[
+                            metex_weather_thresholds.Classification == cls[i + 1]][0]
+                        to_rpt = y - x - 1
+                    else:
+                        to_rpt = metex_weather_thresholds.index[-1] - x
+                    cls_idx += [cls[i]] * to_rpt
+                metex_weather_thresholds.index = cls_idx
+
+                # Add 'VariableName' and 'Unit'
+                variables = ['T', 'x', 'r', 'w']
+                units = ['degrees Celsius', 'cm', 'mm', 'mph']
+                var_list, units_list = [], []
+                for i in range(len(cls)):
+                    var_temp = [variables[i]] * list(metex_weather_thresholds.index).count(cls[i])
+                    units_temp = [units[i]] * list(metex_weather_thresholds.index).count(cls[i])
+                    var_list += var_temp
+                    units_list += units_temp
+                metex_weather_thresholds.insert(1, 'VariableName', var_list)
+                metex_weather_thresholds.insert(2, 'Unit', units_list)
+
+                # Retain main description
+                metex_weather_thresholds.loc[:, 'Classification'] = \
+                    metex_weather_thresholds.Classification.str.replace(
+                        r'( \( oC \))|(,[(\xa0) ][xrw] \(((cm)|(mm)|(mph))\))', '', regex=True)
+                metex_weather_thresholds.loc[:, 'Classification'] = \
+                    metex_weather_thresholds.Classification.str.replace(
+                        r' (mph)|(\xa0)', ' ', regex=True)
+
+                # Upper and lower boundaries
+                def _boundary(df, col, sep1=None, sep2=None):
+                    if sep1:
+                        lst_lb = [metex_weather_thresholds[col].iloc[0].split(sep1)[0]]
+                        lst_lb += [v.split(sep2)[0] for v in metex_weather_thresholds[col].iloc[1:]]
+                        df.insert(df.columns.get_loc(col) + 1, col + 'LowerBound', lst_lb)
+                    if sep2:
+                        lst_ub = [metex_weather_thresholds[col].iloc[0].split(sep2)[1]]
+                        lst_ub += [v.split(sep1)[-1] for v in metex_weather_thresholds[col].iloc[1:]]
+                        if sep1:
+                            df.insert(df.columns.get_loc(col) + 2, col + 'UpperBound', lst_ub)
+                        else:
+                            df.insert(df.columns.get_loc(col) + 1, col + 'Threshold', lst_ub)
+
+                # Normal
+                _boundary(metex_weather_thresholds, 'Normal', sep1=None, sep2='up to ')
+                # Alert
+                _boundary(metex_weather_thresholds, 'Alert', sep1=' \u003C ', sep2=' \u2264 ')
+                # Adverse
+                _boundary(metex_weather_thresholds, 'Adverse', sep1=' \u003C ', sep2=' \u2264 ')
+                # Extreme
+                extreme = [metex_weather_thresholds['Extreme'].iloc[0].split(' \u2264 ')[1]]
+                extreme += [v.split(' \u2265 ')[1] for v in metex_weather_thresholds['Extreme'].iloc[1:]]
+                metex_weather_thresholds['ExtremeThreshold'] = extreme
+
+                save_pickle(metex_weather_thresholds, path_to_pickle, verbose=verbose)
+
+            except Exception as e:
+                print("Failed to get \"weather thresholds\" from the HTML file. {}.".format(e))
+                metex_weather_thresholds = None
+
+        return metex_weather_thresholds
+
+    def get_schedule8_weather_thresholds(self, update=False, verbose=False):
+        """
+        Get threshold data available in ``workbook_filename``.
+
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
+        :return: data of weather thresholds
+        :rtype: pandas.DataFrame or None
+
+        **Test**::
+
+            >>> from preprocessor import WeatherThresholds
+
+            >>> thr = WeatherThresholds()
+
+            >>> thresholds = thr.get_schedule8_weather_thresholds(update=True, verbose=True)
+            pdating "Schedule8WeatherIncidents-02062006-31032014-thresholds.pickle" ... ... Done.
+            >>> thresholds = thr.get_schedule8_weather_thresholds()
+            >>> thresholds.tail()
+        """
+
+        pickle_filename = self.S8WeatherIncidentsFilename + "-thresholds.pickle"
+        path_to_pickle = cd(self.DataDir, pickle_filename)
+
+        if os.path.isfile(path_to_pickle) and not update:
+            schedule8_weather_thresholds = load_pickle(path_to_pickle)
+
+        else:
+            path_to_spreadsheet = cd(self.ReportsDataDir, self.S8WeatherIncidentsFilename + ".xlsm")
+
+            try:
+                schedule8_weather_thresholds = pd.read_excel(
+                    path_to_spreadsheet, sheet_name="Thresholds", usecols="A:F")
+
+                schedule8_weather_thresholds.dropna(inplace=True)
+                schedule8_weather_thresholds.columns = [
+                    col.replace(' ', '') for col in schedule8_weather_thresholds.columns]
+                schedule8_weather_thresholds.WeatherHazard = \
+                    schedule8_weather_thresholds.WeatherHazard.str.strip().str.upper()
+                schedule8_weather_thresholds.index = range(len(schedule8_weather_thresholds))
+
+                save_pickle(schedule8_weather_thresholds, path_to_pickle, verbose=verbose)
+
+            except Exception as e:
+                print("Failed to get \"weather thresholds\" from the .xlsm file. {}.".format(e))
+                schedule8_weather_thresholds = None
+
+        return schedule8_weather_thresholds
+
+    def get_weather_thresholds(self, update=False, verbose=False):
+        """
+        Get data of weather thresholds.
+
+        :param update: whether to check on update and proceed to update the package data,
+            defaults to ``False``
+        :type update: bool
+        :param verbose: whether to print relevant information in console as the function runs,
+            defaults to ``False``
+        :type verbose: bool or int
+        :return: data of weather thresholds
+        :rtype: pandas.DataFrame or None
+
+        **Test**::
+
+            >>> from preprocessor import WeatherThresholds
+
+            >>> thr = WeatherThresholds()
+
+            >>> thresholds = thr.get_weather_thresholds(update=True, verbose=True)
+            Updating "WeatherThresholds.pickle" at "data\\metex\\thresholds\\" ... Done.
+            >>> thresholds = thr.get_weather_thresholds()
+            >>> type(thresholds)
+            dict
+            >>> list(thresholds.keys())
+            ['METExLite', 'Schedule8WeatherIncidents']
+        """
+
+        pickle_filename = self.NAME + ".pickle"
+        path_to_pickle = cd(self.DataDir, pickle_filename)
+
+        if os.path.isfile(path_to_pickle) and not update:
+            weather_thresholds = load_pickle(path_to_pickle)
+
+        else:
+
+            try:
+                metex_weather_thresholds = self.get_metex_weather_thresholds(update)
+
+                schedule8_weather_thresholds = self.get_schedule8_weather_thresholds(update)
+
+                weather_thresholds = {'METExLite': metex_weather_thresholds,
+                                      'Schedule8WeatherIncidents': schedule8_weather_thresholds}
+
+                save_pickle(weather_thresholds, path_to_pickle, verbose=verbose)
+
+            except Exception as e:
+                print("Failed to get \"weather thresholds\". {}.".format(e))
+                weather_thresholds = None
+
+        return weather_thresholds
