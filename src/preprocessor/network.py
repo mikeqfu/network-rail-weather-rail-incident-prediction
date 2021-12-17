@@ -4,35 +4,39 @@ Network nodes and links.
 
 from collections import OrderedDict
 
-import pandas as pd
+from pyhelpers.ops import merge_dicts
 
-from utils import cdd_network, merge_dicts, remove_list_duplicated_lists, remove_list_duplicates
+from utils import *
 
 
 class Anglia:
     """
     Anglia Route.
-
-    :ivar str Name: name of the data resource
-    :ivar str Filename: name of spreadsheet
-    :ivar list SRS_D: list of IDs for the Strategic Route Section 'D'
-    :ivar list SRS_E: list of IDs for the Strategic Route Section 'E'
-    :ivar list SRS_F: list of IDs for the Strategic Route Section 'F'
-
-    *Test*::
-
-        >>> from preprocessor import Anglia
-
-        >>> anglia = Anglia()
-
-        >>> anglia.Name
-        'Anglia'
     """
 
-    def __init__(self):
-        self.Name = 'Anglia'
+    NAME = 'Anglia'
 
-        self.Filename = "Anglia.xlsx"
+    FILENAME = "Anglia.xlsx"
+
+    SRS = ['D', 'E', 'F']
+
+    def __init__(self):
+        """
+        :ivar str Name: name of the data resource
+        :ivar str Filename: name of spreadsheet
+        :ivar list SRS_D: list of IDs for the Strategic Route Section 'D'
+        :ivar list SRS_E: list of IDs for the Strategic Route Section 'E'
+        :ivar list SRS_F: list of IDs for the Strategic Route Section 'F'
+
+        *Test*::
+
+            >>> from preprocessor.network import Anglia
+
+            >>> anglia = Anglia()
+
+            >>> anglia.NAME
+            'Anglia'
+        """
 
         self.SRS_D = ['D.01', 'D.02', 'D.03', 'D.04', 'D.05', 'D.06', 'D.07',
                       'D.08', 'D.09', 'D.10', 'D.11', 'D.12', 'D.13', 'D.14',
@@ -53,16 +57,16 @@ class Anglia:
 
         **Test**::
 
-            >>> import os
             >>> from preprocessor.network import Anglia
+            >>> import os
 
             >>> anglia = Anglia()
 
-            >>> print(os.path.relpath(anglia.cdd()))
-            data\\network\\routes\\Anglia
+            >>> os.path.relpath(anglia.cdd())
+            'data\\network\\routes\\Anglia'
         """
 
-        path = cdd_network("routes", self.Name, *sub_dir, mkdir=mkdir)
+        path = cdd_network("routes", self.NAME, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -82,7 +86,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> anglia_srs_ = anglia.get_anglia_route_srs_id()
-            >>> print(anglia_srs_[-1])
+            >>> anglia_srs_[-1]
             ['F.01', 'F.02', 'F.99']
         """
 
@@ -109,7 +113,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> srs_nodes_ = anglia.get_nodes_of_srs(srs_id='D.01')
-            >>> print(srs_nodes_[:5])
+            >>> srs_nodes_[:5]
             ['Bethnal Green East Junction',
              'Bethnal Green',
              'Bethnal Green North Junction',
@@ -118,7 +122,7 @@ class Anglia:
         """
 
         # Read excel data into a data frame named srs_df
-        srs_df = pd.read_excel(self.cdd(self.Filename), sheet_name=srs_id)
+        srs_df = pd.read_excel(self.cdd(self.FILENAME), sheet_name=srs_id)
         # Convert a 'Node' Series to a list named srs_nodes
         srs_nodes = [each_node for each_node in srs_df.Node]
 
@@ -140,7 +144,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> nodes_of_srs = anglia.get_nodes_of_srs_seq(srs_id_seq='D.01')
-            >>> print(nodes_of_srs[:5])
+            >>> nodes_of_srs[:5]
             ['Bethnal Green East Junction',
              'Bethnal Green',
              'Bethnal Green North Junction',
@@ -148,7 +152,7 @@ class Anglia:
              'London Fields']
 
             >>> nodes_of_srs = anglia.get_nodes_of_srs_seq(srs_id_seq=['D.01', 'D.02'])
-            >>> print(nodes_of_srs[-5:])
+            >>> nodes_of_srs[-5:]
             ['Southbury',
              'Turkey Street',
              'Theobalds Grove',
@@ -183,7 +187,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> rp_nodes = anglia.get_nodes_of_route_plans(rp_id_seq='D')
-            >>> print(rp_nodes[-5:])
+            >>> rp_nodes[-5:]
             ['Sizewell',
              'Middleton Towers',
              'Griffin Wharf West Bank Terminal',
@@ -191,7 +195,7 @@ class Anglia:
              'Whitemoor Local Distribution Centre']
 
             >>> rp_nodes = anglia.get_nodes_of_route_plans(rp_id_seq=['E', 'F'])
-            >>> print(rp_nodes[-5:])
+            >>> rp_nodes[-5:]
             ['Primrose Hill Junction',
              'Camden Junction',
              'Camden Road Central Junction',
@@ -249,7 +253,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> anglia_nodes_dat = anglia.get_nodes_on_anglia_route()
-            >>> print(anglia_nodes_dat)
+            >>> anglia_nodes_dat
                                                         Node  ...          Connecting Line
             0                    Bethnal Green East Junction  ...  Great Eastern Main Line
             1                                  Bethnal Green  ...
@@ -262,13 +266,14 @@ class Anglia:
             426                                 Bow Junction  ...  Great Eastern Main Line
             427                        Tilbury West Junction  ...
             428  Tilbury International Rail Freight Terminal  ...
+
             [429 rows x 6 columns]
         """
 
         anglia_srs = self.get_anglia_route_srs_id(whole=True)
 
         df_list = []
-        f = pd.ExcelFile(self.cdd(self.Filename))
+        f = pd.ExcelFile(self.cdd(self.FILENAME))
         for i in range(len(anglia_srs)):
             df_list.append(f.parse(anglia_srs[i]).fillna(''))
         f.close()
@@ -298,7 +303,7 @@ class Anglia:
         """
 
         # Read excel data into a data frame named srs_df
-        srs_df = pd.read_excel(self.cdd(self.Filename), sheet_name=srs_id)
+        srs_df = pd.read_excel(self.cdd(self.FILENAME), sheet_name=srs_id)
         # Get the names of all the columns
         attr_name = srs_df.columns.values.tolist()
         attr_name.insert(3, 'SRS')
@@ -498,18 +503,16 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> edges_undirected = anglia.get_edges_of_anglia_route()
-            >>> print(edges_undirected[:2])
-            [['Bethnal Green East Junction', 2],
-             ['Bethnal Green East Junction', 106]]
+            >>> edges_undirected[:2]
+            [['Bethnal Green East Junction', 2], ['Bethnal Green East Junction', 106]]
 
             >>> edges_direct = anglia.get_edges_of_anglia_route(direct=True)
-            >>> print(edges_direct[:2])
-            [['Bethnal Green East Junction', 2],
-             ['Bethnal Green East Junction', 106]]
+            >>> edges_direct[:2]
+            [['Bethnal Green East Junction', 2], ['Bethnal Green East Junction', 106]]
         """
 
         # Adjacency 'matrix' (DataFrame)
-        adj_mat = pd.read_excel(self.cdd(self.Filename), sheet_name='AdjacencyMatrix')
+        adj_mat = pd.read_excel(self.cdd(self.FILENAME), sheet_name='AdjacencyMatrix')
         # row names of the adjacency 'matrix'
         # row = adj_mat.index.tolist()
         # column names in a list
@@ -553,7 +556,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> edges_ = anglia.get_edges_of_srs('D.01')
-            >>> print(edges_[-5:])
+            >>> edges_[-5:]
             [['Stansted South Junction', 33],
              ['Stansted South Junction', 59],
              ['Stansted East Junction', 32],
@@ -561,7 +564,7 @@ class Anglia:
              ['Stansted Airport', 33]]
 
             >>> edges_ = anglia.get_edges_of_srs('D.01', 'D.02', direct=True)
-            >>> print(edges_[-5:])
+            >>> edges_[-5:]
             [['Theobalds Grove', 21],
              ['Theobalds Grove', 46],
              ['Bush Hill Park', 44],
@@ -610,7 +613,7 @@ class Anglia:
             >>> anglia = Anglia()
 
             >>> edges_ = anglia.get_edges_of_route_plan('D')
-            >>> print(edges_[-5:])
+            >>> edges_[-5:]
             [['Felixstowe Beach Junction', 234],
              ['Felixstowe Beach Junction', 236],
              ['Felixstowe', 235],
@@ -618,7 +621,7 @@ class Anglia:
              ['Whitemoor Local Distribution Centre', 240]]
 
             >>> edges_ = anglia.get_edges_of_route_plan('E', 'F', direct=True)
-            >>> print(edges_[-5:])
+            >>> edges_[-5:]
             [['Ockendon', 351],
              ['Chafford Hundred', 340],
              ['Chafford Hundred', 350],
