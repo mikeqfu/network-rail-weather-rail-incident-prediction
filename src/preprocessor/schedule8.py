@@ -985,14 +985,14 @@ class Schedule8IncidentReports(Handler):
             >>> s8wir.read_schedule8_weather_incidents_02062006_31032014(update=True, verbose=True)
             >>> dat_ = s8wir.schedule8_weather_incidents_02062006_31032014
             >>> list(dat_.keys())
-            ['WeatherThresholds',
-             'Schedule8WeatherIncidents_02062006_31032014',
-             'WeatherCategoryLookup']
-            >>> dat_['WeatherThresholds'].shape
+            ['weather_thresholds',
+             'schedule8_weather_incidents_02062006_31032014',
+             'weather_category_lookup']
+            >>> dat_['weather_thresholds'].shape
             (29, 4)
-            >>> dat_['Schedule8WeatherIncidents_02062006_31032014'].shape
+            >>> dat_['schedule8_weather_incidents_02062006_31032014'].shape
             (178960, 51)
-            >>> dat_['WeatherCategoryLookup'].shape
+            >>> dat_['weather_category_lookup'].shape
             (9, 1)
         """
 
@@ -1023,7 +1023,7 @@ class Schedule8IncidentReports(Handler):
 
                 if table_name == self.FILENAME_2:
                     geom_cols = ['StartXY', 'EndXY', 'StartLongLat', 'EndLongLat']
-                    dat.loc[:, geom_cols] = dat[geom_cols].applymap(shapely.wkt.loads)
+                    dat.loc[:, geom_cols] = dat[geom_cols].map(shapely.wkt.loads)
 
                     dat = get_subset(dat, route_name=route_name, weather_category=weather_category)
 
