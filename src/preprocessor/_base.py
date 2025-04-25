@@ -1520,7 +1520,8 @@ class BaseVegetation:
             {'Lanc&Cumbria MDU - HR1': 'Lancashire & Cumbria MDU - HR1',
              'S/wel& Dud MDU - HS7': 'Sandwell & Dudley MDU - HS7'})
         # Replace values in column 'DUNameGIS'
-        routes.DUNameGIS.replace({'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'}, inplace=True)
+        routes['DUNameGIS'] = routes['DUNameGIS'].replace(
+            {'IMDM  Lanc&Cumbria': 'IMDM Lancashire & Cumbria'})
         # Update route names
         routes = update_route_names(routes, route_col_name='Route')
 
@@ -1804,7 +1805,7 @@ class BaseVegetation:
             'TEF307608': 'TreeDensityScore'}
         furlong_data.rename(columns=renamed_cols_dict, inplace=True)
         # Edit the 'TEF' columns
-        furlong_data.OtherVegScore.replace({-1: 0}, inplace=True)
+        furlong_data['OtherVegScore'] = furlong_data['OtherVegScore'].replace({-1: 0})
         renamed_cols = list(renamed_cols_dict.values())
         furlong_data[renamed_cols] = furlong_data[renamed_cols].map(
             lambda x: 0 if np.isnan(x) else x + 1)
@@ -1836,6 +1837,8 @@ class BaseVegetation:
 
                 for i in idx:
                     features = nonzero_cols[i].copy()
+                    furlong_data[features] = furlong_data[features].astype(float)
+
                     if len(features) == 1:
                         feature = features[0]
                         if feature == cpo_col:
@@ -1905,12 +1908,12 @@ class BaseVegetation:
             **kwargs)
 
         # Re-format mileage data
-        furlong_location.loc[:, ['StartMileage', 'EndMileage']] = \
-            furlong_location[['StartMileage', 'EndMileage']].map(mileage_num_to_str)
+        furlong_location[['StartMileage', 'EndMileage']] = \
+            furlong_location[['StartMileage', 'EndMileage']].map(mileage_num_to_str).astype(str)
 
         # Replace boolean values with binary values
-        furlong_location.loc[:, ['Electrified', 'HazardOnly']] = \
-            furlong_location[['Electrified', 'HazardOnly']].map(int)
+        furlong_location[['Electrified', 'HazardOnly']] = \
+            furlong_location[['Electrified', 'HazardOnly']].astype(int)
         # Replace Route names
         furlong_location = update_route_names(furlong_location, route_col_name='Route')
 
@@ -1951,7 +1954,8 @@ class BaseVegetation:
         # Edit the original data
         hazard_tree.drop(['Treesurvey', 'Treetunnel'], axis=1, inplace=True)
         hazard_tree.dropna(subset=['Northing', 'Easting'], inplace=True)
-        hazard_tree.Treespecies.replace({'': 'No data'}, inplace=True)
+        # noinspection SpellCheckingInspection
+        hazard_tree['Treespecies'] = hazard_tree['Treespecies'].replace({'': 'No data'})
 
         # Update route data
         hazard_tree = update_route_names(hazard_tree, route_col_name='Route')
@@ -1968,19 +1972,25 @@ class BaseVegetation:
             :return: integrated data
             :rtype: pandas.DataFrame
             """
-            data.replace({True: 1, False: 0}, inplace=True)
+            # noinspection SpellCheckingInspection
+            pd.set_option('future.no_silent_downcasting', True)
+            data = data.replace({True: 1, False: 0})
             data[new_feature] = data[selected_features].fillna(0).apply(sum, axis=1)
-            data.drop(selected_features, axis=1, inplace=True)
+            data = data.drop(selected_features, axis=1)
+            return data
 
         # Integrate TEF: Failure scores
         failure_scores = ['TEF30770' + str(i) for i in range(1, 6)]
-        sum_up_selected_features(hazard_tree, failure_scores, new_feature='Failure_Score')
+        hazard_tree = sum_up_selected_features(
+            hazard_tree, failure_scores, new_feature='Failure_Score')
         # Integrate TEF: Target scores
         target_scores = ['TEF3077%02d' % i for i in range(6, 12)]
-        sum_up_selected_features(hazard_tree, target_scores, new_feature='Target_Score')
+        hazard_tree = sum_up_selected_features(
+            hazard_tree, target_scores, new_feature='Target_Score')
         # Integrate TEF: Impact scores
         impact_scores = ['TEF3077' + str(i) for i in range(12, 16)]
-        sum_up_selected_features(hazard_tree, impact_scores, new_feature='Impact_Score')
+        hazard_tree = sum_up_selected_features(
+            hazard_tree, impact_scores, new_feature='Impact_Score')
         # Rename the rest of TEF
         work_req = ['TEF3077' + str(i) for i in range(17, 27)]
         work_req_desc = [
