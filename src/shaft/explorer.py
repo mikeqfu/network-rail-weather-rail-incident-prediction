@@ -36,8 +36,8 @@ class BasicStats:
 
             >>> sir = Schedule8IncidentReports()
             >>> sir.read_schedule8_weather_incidents_02062006_31032014()
-            >>> dat_ = sir.incidents_02062006_31032014.copy()
-            >>> dat = dat_['Schedule8WeatherIncidents_02062006_31032014']
+            >>> dat_ = sir.schedule8_weather_incidents_02062006_31032014.copy()
+            >>> dat = dat_['schedule8_weather_incidents_02062006_31032014']
 
             >>> bs = BasicStats()
             >>> stats_dat = bs.calculate_statistics(dat)
@@ -56,7 +56,7 @@ class BasicStats:
         data = s8_weather_incidents.rename(columns={'Minutes': 'DelayMinutes', 'Cost': 'DelayCost'})
 
         stats = data.groupby('WeatherCategory').aggregate(
-            {'WeatherCategory': 'count', 'DelayMinutes': np.sum, 'DelayCost': np.sum})
+            {'WeatherCategory': 'count', 'DelayMinutes': 'sum', 'DelayCost': 'sum'})
         stats.rename(columns={'WeatherCategory': 'Count'}, inplace=True)
         stats['percentage'] = stats.Count / len(data) * 100
         # Sort stats in the ascending order of 'percentage'
@@ -82,11 +82,11 @@ class BasicStats:
 
             >>> sir = Schedule8IncidentReports()
             >>> sir.read_schedule8_weather_incidents_02062006_31032014()
-            >>> dat_ = sir.incidents_02062006_31032014.copy()
-            >>> dat = dat_['Schedule8WeatherIncidents_02062006_31032014']
+            >>> dat_ = sir.schedule8_weather_incidents_02062006_31032014.copy()
+            >>> dat = dat_['schedule8_weather_incidents_02062006_31032014']
 
             >>> bs = BasicStats()
-            >>> bs.pie_chart_for_incident_proportions(dat)
+            >>> bs.pie_chart_for_incident_proportions(dat, save_as=".svg")
         """
 
         stats = self.calculate_statistics(s8_weather_incidents).reset_index()
@@ -129,17 +129,18 @@ class BasicStats:
 
         plt.show()
 
-        if save_as:
-            plt.savefig(cdd("../../data/Exploration", "proportions" + save_as), dpi=600)
+        if save_as and isinstance(save_as, str):
+            plt.savefig(
+                cdd("exploration", f"weather_related_incidents_proportions{save_as}"), dpi=600)
 
-    def bar_chart_for_delay_cost(self, s8_weather_incidents, save_as=".png"):
+    def bar_chart_for_delay_cost(self, s8_weather_incidents, save_as=None):
         """
         Plot total monetary cost incurred by Weather-related Incidents.
 
         :param s8_weather_incidents: data of Schedule 8 Incidents
         :type s8_weather_incidents: pandas.DataFrame
         :param save_as: whether to save the pie chart / what format the pie chart is saved as,
-            defaults to ``".png"``
+            defaults to ``".svg"``
         :type save_as: str or None
 
         **Example**::
@@ -149,11 +150,11 @@ class BasicStats:
 
             >>> sir = Schedule8IncidentReports()
             >>> sir.read_schedule8_weather_incidents_02062006_31032014()
-            >>> dat_ = sir.incidents_02062006_31032014.copy()
-            >>> dat = dat_['Schedule8WeatherIncidents_02062006_31032014']
+            >>> dat_ = sir.schedule8_weather_incidents_02062006_31032014.copy()
+            >>> dat = dat_['schedule8_weather_incidents_02062006_31032014']
 
             >>> bs = BasicStats()
-            >>> bs.bar_chart_for_delay_cost(dat)
+            >>> bs.bar_chart_for_delay_cost(dat, save_as=".svg")
         """
 
         stats = self.calculate_statistics(s8_weather_incidents).reset_index()
@@ -190,12 +191,14 @@ class BasicStats:
         # plt.subplots_adjust(left=0.16, bottom=0.10, right=0.96, top=0.92, wspace=0.16)
         plt.tight_layout()
 
-        if save_as:
-            plt.savefig(cdd("../../data/Exploration", "delays-and-cost" + save_as), dpi=600)
+        if save_as and isinstance(save_as, str):
+            plt.savefig(cdd("exploration", f"weather_related_delays_and_cost{save_as}"), dpi=600)
 
 
 class ExtraDataPrep:
-    """Preprocess data for the paper co-authored by Y. Zhang et al."""
+    """
+    Preprocess data for analysis.
+    """
 
     DATA_DIRNAME = "extra_prep_data"
 
@@ -219,14 +222,12 @@ class ExtraDataPrep:
 
             >>> from src.shaft.explorer import ExtraDataPrep
             >>> import os
-
             >>> edp = ExtraDataPrep()
-
             >>> os.path.relpath(edp.cdd())
-            'data\\Exploration\\extra_prep_data'
+            'data\\exploration\\extra_prep_data'
         """
 
-        path = cdd("../../data/Exploration", self.DATA_DIRNAME, *sub_dir, mkdir=mkdir)
+        path = cdd("exploration", self.DATA_DIRNAME, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -246,13 +247,11 @@ class ExtraDataPrep:
             >>> from src.shaft.explorer import ExtraDataPrep
             >>> from src.preprocessor import METEX
 
-            >>> mt = METEX()
-
-            >>> mt.view_schedule8_cost_by_day_location()
-            >>> dat = mt.schedule8_cost_by_day_location
+            >>> mtx = METEX()
+            >>> mtx.view_schedule8_cost_by_day_location()
+            >>> dat = mtx.schedule8_cost_by_day_location
 
             >>> edp = ExtraDataPrep()
-
             >>> incident_location_midpoints = edp.find_midpoint_of_each_incident_location(dat)
             >>> incident_location_midpoints
         """
@@ -265,11 +264,12 @@ class ExtraDataPrep:
 
         # Find a pseudo-midpoint location for each incident location
         pseudo_midpoints = get_midpoint(
-            data['StartLongitude'], data['StartLatitude'], data['EndLongitude'], data['EndLatitude'])
+            data['StartLongitude'], data['StartLatitude'],
+            data['EndLongitude'], data['EndLatitude'])
 
         # Find the "midpoint" of each incident location
         railway_coordinates = get_shp_coordinates(
-            osm_subregion='Great Britain', osm_layer='railways', osm_feature='rail')
+            osm_subregion='United Kingdom', osm_layer='railways', osm_feature='rail')
 
         midpoints = find_closest_points(pts=pseudo_midpoints, ref_pts=railway_coordinates, k=1)
 
@@ -295,9 +295,7 @@ class ExtraDataPrep:
         **Example**::
 
             >>> from src.shaft.explorer import ExtraDataPrep
-
             >>> edp = ExtraDataPrep()
-
             >>> edp.prepare_stats_data(verbose=True)
         """
 
@@ -309,13 +307,15 @@ class ExtraDataPrep:
         # Find the "midpoint" of each incident location
         incident_locations = self.find_midpoint_of_each_incident_location(incident_locations_)
 
+        incident_locations['Region'] = incident_locations['Region'].replace({'': 'None'})
+
         # Split the data by "region"
         for region_name, region_data in incident_locations.groupby('Region'):
             # Sort data by (frequency of incident occurrences, delay minutes, delay cost)
             region_data.sort_values(
                 ['WeatherCategory', 'IncidentCount', 'DelayMinutes', 'DelayCost'], ascending=False,
                 ignore_index=True, inplace=True)
-            export_path = self.cdd(str(region_name).replace(" ", "-").lower() + ".csv")
+            export_path = self.cdd(str(region_name).replace(" ", "_").lower() + ".csv")
             save_data(region_data, export_path, verbose=verbose)
 
         print("\nCompleted.")
@@ -335,9 +335,7 @@ class ExtraDataPrep:
         **Example**::
 
             >>> from src.shaft.explorer import ExtraDataPrep
-
             >>> edp = ExtraDataPrep()
-
             >>> edp.prepare_monthly_stats_data()
         """
 
@@ -352,7 +350,7 @@ class ExtraDataPrep:
         dat.insert(dat.columns.get_loc('EndDateTime') + 1, 'StartYear', dat.StartDateTime.dt.year)
         dat.insert(dat.columns.get_loc('StartYear') + 1, 'StartMonth', dat.StartDateTime.dt.month)
 
-        stats_calc = {'IncidentCount': np.count_nonzero, 'DelayMinutes': np.sum, 'DelayCost': np.sum}
+        stats_calc = {'IncidentCount': np.count_nonzero, 'DelayMinutes': 'sum', 'DelayCost': 'sum'}
         stats = dat.groupby(list(dat.columns[3:-3])).aggregate(stats_calc)
         stats.reset_index(inplace=True)
 
@@ -365,11 +363,12 @@ class ExtraDataPrep:
         print("Processing monthly statistics ... ")
         for m, dat1 in data.groupby('StartMonth'):
             m_ = str(m).zfill(2)
-            print(f"\t\"{m_}\"", end=" ... ")
+            print(f'\t"{m_}"', end=" ... ")
             if not dat1.empty:
                 dat1.sort_values(
-                    sort_by_cols, ascending=False, na_position='last', ignore_index=True, inplace=True)
-                export_path = self.cdd("GB", "Month", f"{m_}.csv")
+                    sort_by_cols, ascending=False, na_position='last', ignore_index=True,
+                    inplace=True)
+                export_path = self.cdd("gb/month", f"{m_}.csv")
                 save_data(dat1, export_path, verbose=False)
             print("Done.")
         print("Completed.\n")
@@ -377,27 +376,28 @@ class ExtraDataPrep:
         print("Processing monthly statistics of GB ... ")
         for (y, m), dat2 in data.groupby(['StartYear', 'StartMonth']):
             period = f"{y}_{str(m).zfill(2)}"
-            print(f"\t\"{period}\"", end=" ... ")
+            print(f'\t"{period}"', end=" ... ")
             if not dat2.empty:
                 dat2.sort_values(
-                    sort_by_cols, ascending=False, na_position='last', ignore_index=True, inplace=True)
-                export_path = self.cdd("GB", "Year_Month", f"{period}.csv")
+                    sort_by_cols, ascending=False, na_position='last', ignore_index=True,
+                    inplace=True)
+                export_path = self.cdd("gb/year_month", f"{period}.csv")
                 save_data(dat2, export_path, verbose=False)
             print("Done.")
         print("Completed.\n")
 
         # Split the data by "region"
         print("Processing monthly statistics for each region ... ")
+        data['Region'] = data['Region'].replace({'': 'None'})
         for region_name, region_data in data.groupby('Region'):
-            print(f"\t\"{region_name}\"", end=" ... ")
+            print(f'\t"{region_name}"', end=" ... ")
             for (y, m), dat3 in region_data.groupby(['StartYear', 'StartMonth']):
                 if not dat3.empty:
                     dat3.sort_values(
                         sort_by_cols, ascending=False, na_position='last', ignore_index=True,
                         inplace=True)
-                    subdir_name = str(region_name).replace(" ", "-").lower()
-                    filename = f"{y}_{str(m).zfill(2)}.csv"
-                    export_path = self.cdd("Region", subdir_name, filename)
+                    subdir_name = str(region_name).replace(" ", "_").lower()
+                    export_path = self.cdd("region", subdir_name, f"{y}_{str(m).zfill(2)}.csv")
                     save_data(dat3, export_path, verbose=False)
             print("Done.")
         print("Completed.\n")
