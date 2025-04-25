@@ -2,11 +2,12 @@
 Network nodes and links.
 """
 
-from collections import OrderedDict
+import collections
 
+import pandas as pd
 from pyhelpers.ops import merge_dicts
 
-from utils import *
+from src.utils import cdd, remove_list_duplicated_lists, remove_list_duplicates
 
 
 class Anglia:
@@ -14,7 +15,7 @@ class Anglia:
     Anglia Route.
     """
 
-    NAME = 'Anglia'
+    DATA_NAME = 'Anglia'
 
     FILENAME = "Anglia.xlsx"
 
@@ -30,11 +31,9 @@ class Anglia:
 
         *Test*::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
-            >>> anglia.NAME
+            >>> anglia.DATA_NAME
             'Anglia'
         """
 
@@ -46,27 +45,25 @@ class Anglia:
 
     def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "data\\network\\routes\\Anglia" and subdirectories / a file.
+        Change directory to "data/Network/Routes/Anglia" and subdirectories / a file.
 
         :param sub_dir: name of directory or names of directories (and/or a file)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: full path to ``"data\\network\\routes\\Anglia"`` and subdirectories / a file
+        :return: full path to ``"data/Network/Routes/Anglia"`` and subdirectories / a file
         :rtype: str
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
+            >>> from src.preprocessor.network import Anglia
             >>> import os
-
             >>> anglia = Anglia()
-
             >>> os.path.relpath(anglia.cdd())
             'data\\network\\routes\\Anglia'
         """
 
-        path = cdd_network("routes", self.NAME, *sub_dir, mkdir=mkdir)
+        path = cdd("network/routes", self.DATA_NAME, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -79,12 +76,10 @@ class Anglia:
         :return: a list of SRS ID for the Anglia Route
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> anglia_srs_ = anglia.get_anglia_route_srs_id()
             >>> anglia_srs_[-1]
             ['F.01', 'F.02', 'F.99']
@@ -106,12 +101,10 @@ class Anglia:
         :return: a list of nodes for the given ``srs_id``
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> srs_nodes_ = anglia.get_nodes_of_srs(srs_id='D.01')
             >>> srs_nodes_[:5]
             ['Bethnal Green East Junction',
@@ -137,12 +130,10 @@ class Anglia:
         :return: a list of nodes for the given ``srs_id_seq``
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> nodes_of_srs = anglia.get_nodes_of_srs_seq(srs_id_seq='D.01')
             >>> nodes_of_srs[:5]
             ['Bethnal Green East Junction',
@@ -150,7 +141,6 @@ class Anglia:
              'Bethnal Green North Junction',
              'Cambridge Heath',
              'London Fields']
-
             >>> nodes_of_srs = anglia.get_nodes_of_srs_seq(srs_id_seq=['D.01', 'D.02'])
             >>> nodes_of_srs[-5:]
             ['Southbury',
@@ -180,12 +170,10 @@ class Anglia:
         :return: a list of nodes for the Route Plan
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> rp_nodes = anglia.get_nodes_of_route_plans(rp_id_seq='D')
             >>> rp_nodes[-5:]
             ['Sizewell',
@@ -193,7 +181,6 @@ class Anglia:
              'Griffin Wharf West Bank Terminal',
              'Whitemoor Yard',
              'Whitemoor Local Distribution Centre']
-
             >>> rp_nodes = anglia.get_nodes_of_route_plans(rp_id_seq=['E', 'F'])
             >>> rp_nodes[-5:]
             ['Primrose Hill Junction',
@@ -246,28 +233,13 @@ class Anglia:
         :return: data of all nodes on the Anglia Rout
         :rtype: pandas.DataFrame
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> anglia_nodes_dat = anglia.get_nodes_on_anglia_route()
-            >>> anglia_nodes_dat
-                                                        Node  ...          Connecting Line
-            0                    Bethnal Green East Junction  ...  Great Eastern Main Line
-            1                                  Bethnal Green  ...
-            2                   Bethnal Green North Junction  ...
-            3                                Cambridge Heath  ...
-            4                                  London Fields  ...
-            ..                                           ...  ...                      ...
-            424                                 Thames Haven  ...
-            425                         Gas Factory Junction  ...          Essex Thameside
-            426                                 Bow Junction  ...  Great Eastern Main Line
-            427                        Tilbury West Junction  ...
-            428  Tilbury International Rail Freight Terminal  ...
-
-            [429 rows x 6 columns]
+            >>> anglia_nodes_dat.shape
+            (429, 6)
         """
 
         anglia_srs = self.get_anglia_route_srs_id(whole=True)
@@ -291,12 +263,10 @@ class Anglia:
         :return: a list of ordered dictionaries
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> srs_nodes_dict_ = anglia.get_list_of_node_dicts(srs_id='D.01')
             >>> list(srs_nodes_dict_[0].keys())
             ['Node', 'Type', 'SRS', 'Connecting SRS', 'Line', 'Connecting Line']
@@ -312,7 +282,7 @@ class Anglia:
         for i in range(srs_df.index[0], srs_df.shape[0]):
             node_info = list(srs_df.loc[i, :])
             node_info.insert(3, srs_id)
-            srs_nodes_dict.append(OrderedDict(zip(attr_name, node_info)))
+            srs_nodes_dict.append(collections.OrderedDict(zip(attr_name, node_info)))
 
         return srs_nodes_dict
 
@@ -329,12 +299,10 @@ class Anglia:
         :return: a dictionary for nodes
         :rtype: dict
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> list_of_dicts_ = anglia.get_list_of_node_dicts('D.01')
             >>> new_dict_ = anglia.construct_nodes_dict(list_of_dicts_, key='Node')
             >>> list(new_dict_.keys())[:5]
@@ -347,7 +315,7 @@ class Anglia:
 
         # enumerate() returns a tuple containing a count (from start which defaults
         # to 0) and the values obtained from iterating over iterable.
-        new_dict = dict((d[key], OrderedDict(d)) for (i, d) in enumerate(list_of_dicts))
+        new_dict = dict((d[key], collections.OrderedDict(d)) for (i, d) in enumerate(list_of_dicts))
         # enumerate(list of dictionaries)
         # i: index of a dictionary in a list
         # d: dictionary itself
@@ -372,12 +340,10 @@ class Anglia:
         :return: a dictionary for nodes of the given (sequence of) SRS('s)
         :rtype: dict
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> nodes_dict1 = anglia.get_nodes_dict('D.01')
             >>> list(nodes_dict1.keys())[-5:]
             ['Bishops Stortford',
@@ -385,7 +351,6 @@ class Anglia:
              'Stansted South Junction',
              'Stansted East Junction',
              'Stansted Airport']
-
             >>> nodes_dict2 = anglia.get_nodes_dict('D.01', 'D.02')
             >>> list(nodes_dict2.keys())[-5:]
             ['Southbury',
@@ -435,12 +400,10 @@ class Anglia:
         :return: a dictionary for nodes for the given route plans
         :rtype: dict
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> rp_nodes_dict1 = anglia.get_nodes_dict_for_route_plans('D')
             >>> list(rp_nodes_dict1.keys())[-5:]
             ['Sizewell',
@@ -448,7 +411,6 @@ class Anglia:
              'Griffin Wharf West Bank Terminal',
              'Whitemoor Yard',
              'Whitemoor Local Distribution Centre']
-
             >>> rp_nodes_dict2 = anglia.get_nodes_dict_for_route_plans('D', 'E')
             >>> list(rp_nodes_dict2.keys())[-5:]
             ['Primrose Hill Junction',
@@ -496,16 +458,13 @@ class Anglia:
         :return: all the edges of the Anglia Route
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> edges_undirected = anglia.get_edges_of_anglia_route()
             >>> edges_undirected[:2]
             [['Bethnal Green East Junction', 2], ['Bethnal Green East Junction', 106]]
-
             >>> edges_direct = anglia.get_edges_of_anglia_route(direct=True)
             >>> edges_direct[:2]
             [['Bethnal Green East Junction', 2], ['Bethnal Green East Junction', 106]]
@@ -549,12 +508,10 @@ class Anglia:
         :return: all the edges for the given SRS's on an undirected or directed Anglia Network
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> edges_ = anglia.get_edges_of_srs('D.01')
             >>> edges_[-5:]
             [['Stansted South Junction', 33],
@@ -562,7 +519,6 @@ class Anglia:
              ['Stansted East Junction', 32],
              ['Stansted East Junction', 34],
              ['Stansted Airport', 33]]
-
             >>> edges_ = anglia.get_edges_of_srs('D.01', 'D.02', direct=True)
             >>> edges_[-5:]
             [['Theobalds Grove', 21],
@@ -606,12 +562,10 @@ class Anglia:
         :return: all the edges for the given route plan of an undirected or directed Anglia Network
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from preprocessor.network import Anglia
-
+            >>> from src.preprocessor.network import Anglia
             >>> anglia = Anglia()
-
             >>> edges_ = anglia.get_edges_of_route_plan('D')
             >>> edges_[-5:]
             [['Felixstowe Beach Junction', 234],
@@ -619,7 +573,6 @@ class Anglia:
              ['Felixstowe', 235],
              ['Middleton Towers', 78],
              ['Whitemoor Local Distribution Centre', 240]]
-
             >>> edges_ = anglia.get_edges_of_route_plan('E', 'F', direct=True)
             >>> edges_[-5:]
             [['Ockendon', 351],
