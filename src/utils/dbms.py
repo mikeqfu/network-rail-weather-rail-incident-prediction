@@ -6,13 +6,12 @@ import copy
 import gc
 import json
 import os
-import pkgutil
 import re
 import sys
 
 import numpy as np
 import pandas as pd
-from pyhelpers._cache import _print_failure_msg
+from pyhelpers._cache import _print_failure_message
 from pyhelpers.dbms import MSSQL, PostgreSQL
 from pyhelpers.dirs import cd, cdd
 from pyhelpers.ops import confirmed
@@ -21,27 +20,27 @@ from sqlalchemy.dialects.postgresql import BYTEA
 
 class WxRailIncidentsPred(PostgreSQL):
     """
-    A class for communicating with the `PostgreSQL`_ Database of the project.
+    A class for communicating with the project's database in a `PostgreSQL`_ server.
 
     .. _`PostgreSQL`: https://www.postgresql.org/
     """
 
-    def __init__(self, host='localhost', port=5432, username='postgres', password=None,
-                 database_name='postgres', **kwargs):
+    def __init__(self, host=None, port=None, username=None, password=None,
+                 database_name='NR_WxRailIncidentsPred', **kwargs):
         """
         Constructor method, which creates proxy object allowing us to access methods of
         the base class `pyhelpers.dbms.PostgreSQL
         <https://pyhelpers.readthedocs.io/en/latest/_generated/pyhelpers.dbms.PostgreSQL.html>`_
 
-        :param host: Host address; defaults to ``'localhost'``.
+        :param host: The database host; defaults to ``None``.
         :type host: str | None
-        :param port: Port; defaults to ``5432``.
+        :param port: The database port; defaults to ``None``.
         :type port: int | None
-        :param username: Database username; defaults to ``postgres``.
+        :param username: The database username; defaults to ``None``.
         :type username: str | None
-        :param password: Database password; defaults to ``None``.
+        :param password: The database password; defaults to ``None``.
         :type password: str | int | None
-        :param database_name: Database name; defaults to ``postgres``.
+        :param database_name: The name of the database; defaults to ``NR_WxRailIncidentsPred``.
         :type database_name: str
         :param kwargs: [Optional] parameters of the class `pyhelpers.dbms.PostgreSQL`_.
 
@@ -58,19 +57,26 @@ class WxRailIncidentsPred(PostgreSQL):
             'NR_WxRailIncidentsPred'
         """
 
-        try:
-            credentials = json.loads(pkgutil.get_data(__name__, "../data/.credentials").decode())
-        except FileNotFoundError:
-            credentials = {
-                'host': host,
-                'port': port,
-                'username': username,
-                'password': password,
-                'database_name': database_name,
-            }
+        if host not in {'localhost', '127.0.0.1'}:
+            try:  # Load credentials from the .credentials file
+                with open(os.path.join(".credentials"), "r") as f:
+                    credentials = json.load(f)
 
-        kwargs.update(credentials)
-        super().__init__(**kwargs)
+                kwargs.update(credentials)
+                super().__init__(**kwargs)
+
+            except FileNotFoundError:
+                print("The credential file does not exist.")
+
+                credentials = {
+                    'host': host,
+                    'port': port,
+                    'username': username,
+                    'password': password,
+                    'database_name': database_name,
+                }
+                kwargs.update(credentials)
+                super().__init__(**kwargs)
 
 
 class Handler:
@@ -80,6 +86,8 @@ class Handler:
 
     #: Name of the data.
     DATA_NAME: str = 'Data'
+    #: Pathname of the data directory for this specific class.
+    DATA_DIR: str = cdd()
     #: Name of the Database in Microsoft SQL Server.
     MSSQL_DATABASE_NAME: str = ''
     #: Schema name for the original data in the PostgreSQL Database.
@@ -93,7 +101,6 @@ class Handler:
             connecting to the project database in a PostgreSQL server; defaults to ``None``.
         :type db_instance: WxRailIncidentsPred | None
 
-        :ivar str | pathlib.Path data_dir: Pathname of the data directory for this specific class.
         :ivar MSSQL | None mssql: An instance of the class `pyhelpers.dbms.MSSQL`_,
             connecting to a Microsoft SQL Server database.
         :ivar PostgreSQL | None db_instance: An instance of the class `pyhelpers.dbms.PostgreSQL`_,
@@ -104,8 +111,6 @@ class Handler:
         .. _`pyhelpers.dbms.MSSQL`:
             https://pyhelpers.readthedocs.io/en/latest/_generated/pyhelpers.dbms.MSSQL.html
         """
-
-        self.data_dir = cdd()
 
         self.mssql = None
 
@@ -123,7 +128,7 @@ class Handler:
         :rtype: str
         """
 
-        path = cd(self.data_dir, *sub_dir, mkdir=mkdir)
+        path = cd(self.DATA_DIR, *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -223,7 +228,7 @@ class Handler:
                 print("Done.")
 
         except Exception as e:
-            _print_failure_msg(e)
+            _print_failure_message(e)
 
     def read_data(self, table_name, ivar_name=None, index_col=None, update=False, verbose=False,
                   ret_data=False, **kwargs):
@@ -289,7 +294,7 @@ def mssql_to_postgresql(mssql_db_name, postgres_db_name, chunk_size=None, exclud
     :type update: bool
     :param confirmation_required: whether asking for confirmation to proceed; defaults to ``True``.
     :type confirmation_required: bool
-    :param verbose: whether to print relevant information; defaults to ``True``.
+    :param verbose: Whether to print relevant information; defaults to ``True``.
     :type verbose: bool | int
 
     **Examples**::

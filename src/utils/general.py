@@ -14,7 +14,7 @@ from pyhelpers.store import load_data
 from pyhelpers.text import find_similar_str, get_acronym
 
 
-def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="_", save_as=".pkl"):
+def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="-", save_as=".pkl"):
     # noinspection PyShadowingNames
     """
     Make a filename.
@@ -28,7 +28,7 @@ def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="
     :type weather_category: str | list | None
     :param suffixes: Suffixes to the filename.
     :type suffixes: int | str
-    :param sep: A separator in the filename; defaults to ``"_"``.
+    :param sep: A separator in the filename; defaults to ``"-"``.
     :type sep: str | None
     :param save_as: File extension; defaults to ``".pkl"``.
     :type save_as: str
@@ -46,13 +46,13 @@ def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="
         >>> route_name = None
         >>> weather_category = 'Heat'
         >>> make_filename(None, route_name, weather_category, "test1")
-        'Heat_test1.pkl'
+        'Heat-test1.pkl'
         >>> make_filename(name, route_name, weather_category, "test1", "test2")
-        'filename_Heat_test1_test2.pkl'
+        'filename-Heat-test1-test2.pkl'
         >>> make_filename(name, 'Anglia', weather_category, "test2")
-        'filename_Anglia_Heat_test2.pkl'
+        'filename-Anglia-Heat-test2.pkl'
         >>> make_filename(name, 'North and East', 'Heat', "test1", "test2")
-        'filename_N&E_Heat_test1_test2.pkl'
+        'filename-N&E-Heat-test1-test2.pkl'
     """
 
     base_name = "" if name is None else name
@@ -60,7 +60,7 @@ def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="
     if route_name is None:
         route_name_ = ""
     else:
-        rts = list(set(load_data(cdd("..\\data\\Network\\Routes", "Name-changes.json")).values()))
+        rts = list(set(load_data(cdd("network/routes/name_changes.json")).values()))
         route_name_ = sep.join(
             [get_acronym(find_similar_str(x, rts).replace(' and ', '&'), keep_punctuation=True)
              if ' ' in x else x
@@ -71,7 +71,7 @@ def make_filename(name, route_name=None, weather_category=None, *suffixes, sep="
     if weather_category is None:
         weather_category_ = ""
     else:
-        wcs = load_data(cdd("..\\data\\Weather", "Weather-categories.json"))['WeatherCategory']
+        wcs = load_data(cdd("weather/weather_categories.json"))['WeatherCategory']
         weather_category_ = sep.join(
             [find_similar_str(x, wcs).replace(" ", "") for x in
              ([weather_category] if isinstance(weather_category, str) else list(weather_category))])
@@ -319,7 +319,7 @@ def update_route_names(data, route_col_name='Route'):
 
     data_ = data.copy()
 
-    route_names_changes = load_data(cdd("../data/Network", "Routes", "Name-changes.json"))
+    route_names_changes = load_data(cdd("network/routes/name_changes.json"))
 
     new_route_col_name = route_col_name + 'Alias'
     data_.rename(columns={route_col_name: new_route_col_name}, inplace=True)
@@ -340,13 +340,14 @@ def get_coefficients(model, feature_names=None):
     :rtype: pandas.DataFrame
     """
 
+    intercept_ = model.__getattribute__('intercept_')
+    coef_ = model.__getattribute__('coef_')
+
     if feature_names is None:
-        feature_names = ['feature_%d' % i for i in range(len(model.coef_))]
+        feature_names = ['feature_%d' % i for i in range(len(coef_))]
     feature_names = ['(intercept)'] + feature_names
 
-    intercept = model.intercept_
-    coefficients = model.coef_
-    coefficients = [intercept] + list(coefficients)
+    coefficients = [intercept_] + list(coef_)
 
     coef_dat = pd.DataFrame({'coefficients': coefficients}, index=feature_names)
 
