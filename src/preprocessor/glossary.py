@@ -7,10 +7,10 @@ import re
 
 import numpy as np
 import pandas as pd
-from pyhelpers._cache import _print_failure_msg
+from pyhelpers._cache import _print_failure_message
 from pyhelpers.dirs import cd, cdd
 from pyhelpers.ops import confirmed, download_file_from_url
-from pyhelpers.store import _check_saving_path
+from pyhelpers.store import _check_saving_path, load_data, save_data
 from pyrcs.converter import fix_stanox
 from pyrcs.line_data import LocationIdentifiers
 
@@ -28,11 +28,11 @@ class DelayAttributionGlossary:
     #: Name of the data.
     DATA_NAME: str = 'Historic delay attribution glossary'
     #: Pathname of the local data directory.
-    DATA_DIR: str = os.path.relpath(cdd("METEX\\Incidents\\Delay attribution\\Glossary"))
+    DATA_DIR: str = os.path.relpath(cdd("metex/incidents/delay_attribution/glossary"))
     #: Filename of the data (online).
     DEFAULT_FILENAME: str = "Transparency page Attribution Glossary.xlsx"
     #: Filename of the data (saved locally).
-    FILENAME: str = f"{DATA_NAME}.xlsx"
+    FILENAME: str = f"{DATA_NAME.lower().replace(' ', '_')}.xlsx"
     #: Name of the schema for storing the data in the project database.
     SCHEMA_NAME: str = 'NR_DelayAttributionGlossary'
     #: Download link.
@@ -58,7 +58,7 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> dag = DelayAttributionGlossary()
             >>> dag.DATA_NAME
             'Historic delay attribution glossary'
@@ -83,7 +83,7 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> import os
             >>> dag = DelayAttributionGlossary()
             >>> dag.DATA_DIR == os.path.relpath(dag._cdd())
@@ -103,11 +103,11 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> import os
             >>> dag = DelayAttributionGlossary()
             >>> os.path.basename(dag.path_to_original_file())
-            'Historic delay attribution glossary.xlsx'
+            'historic_delay_attribution_glossary.xlsx'
             >>> os.path.isfile(dag.path_to_original_file())
             True
         """
@@ -130,7 +130,7 @@ class DelayAttributionGlossary:
                 print("Done.")
 
         except Exception as e:
-            _print_failure_msg(e)
+            _print_failure_message(e)
 
     def download_dag(self, confirmation_required=True, verbose=False):
         """
@@ -144,7 +144,7 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> dag = DelayAttributionGlossary()
             >>> dag.download_dag(confirmation_required=True, verbose=True)
             Replace the current version
@@ -320,8 +320,8 @@ class DelayAttributionGlossary:
 
         return service_group_code
 
-    def read_worksheet_data(self, sheet_name, update=False, hard_update=False, verbose=False,
-                            **kwargs):
+    def _read_dag_data_from_db(self, sheet_name, update=False, hard_update=False, verbose=False,
+                               **kwargs):
         """
         Get data of a worksheet.
 
@@ -340,12 +340,12 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> dag = DelayAttributionGlossary()
-            >>> stanox_codes = dag.read_worksheet_data(sheet_name='Stanox Codes')
+            >>> stanox_codes = dag._read_dag_data_from_db(sheet_name='Stanox Codes')
             >>> stanox_codes.shape
             (11231, 4)
-            >>> period_dates = dag.read_worksheet_data(sheet_name="Period Dates")
+            >>> period_dates = dag._read_dag_data_from_db(sheet_name="Period Dates")
             >>> period_dates.shape
             (247, 7)
         """
@@ -356,7 +356,7 @@ class DelayAttributionGlossary:
             self.db_instance = WxRailIncidentsPred(verbose=verbose)
 
         if self.db_instance.table_exists(table_name, schema_name=self.SCHEMA_NAME) and not update:
-            data = self.db_instance.read_table(table_name, schema_name=self.SCHEMA_NAME, **kwargs)
+            return self.db_instance.read_table(table_name, schema_name=self.SCHEMA_NAME, **kwargs)
 
         else:
             if not os.path.isfile(self.path_to_original_file()) or hard_update:
@@ -383,13 +383,55 @@ class DelayAttributionGlossary:
                 if verbose:
                     print("Done.")
 
+                return data
+
             except Exception as e:
-                _print_failure_msg(e, msg=f'Failed at "{sheet_name}".')
-                data = None
+                _print_failure_message(e, prefix=f'Failed at "{sheet_name}".')
 
-        return data
+    def _read_dag_data(self, sheet_name, update=False, hard_update=False, verbose=False):
+        """
 
-    def read_delay_attr_glossary(self, update=False, hard_update=False, verbose=False, **kwargs):
+        :param sheet_name:
+        :param update:
+        :param hard_update:
+        :param verbose:
+        :return:
+
+        **Examples**::
+
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
+            >>> dag = DelayAttributionGlossary()
+            >>> stanox_codes = dag._read_dag_data(sheet_name='Stanox Codes')
+
+        """
+
+        pkl_filename = f"{self._make_table_name(sheet_name)}.pkl"
+        path_to_pkl = cd(self.DATA_DIR, pkl_filename)
+
+        if os.path.isfile(path_to_pkl) and not update:
+            return load_data(path_to_pkl, verbose=verbose)
+
+        else:
+            if not os.path.isfile(self.path_to_original_file()) or hard_update:
+                self.download_dag(confirmation_required=False, verbose=False)
+
+            if verbose:
+                print(f"Reading {sheet_name}", end=" ... ")
+
+            try:
+                data = getattr(self, f'_{self._make_table_name(sheet_name)}')()
+
+                if verbose:
+                    print("Done.")
+
+                save_data(data, path_to_pkl, verbose=verbose)
+
+                return data
+
+            except Exception as e:
+                _print_failure_message(e)
+
+    def read_data(self, update=False, hard_update=False, verbose=False, **kwargs):
         # noinspection PyShadowingNames
         """
         Get historic delay attribution glossary.
@@ -406,9 +448,9 @@ class DelayAttributionGlossary:
 
         **Examples**::
 
-            >>> from src.preprocessor.metex import DelayAttributionGlossary
+            >>> from src.preprocessor.glossary import DelayAttributionGlossary
             >>> dag = DelayAttributionGlossary()
-            >>> delay_attr_glossary = dag.read_delay_attr_glossary()
+            >>> delay_attr_glossary = dag.read_data()
             >>> list(delay_attr_glossary.keys())
             ['Stanox Codes',
              'Period Dates',
@@ -437,7 +479,12 @@ class DelayAttributionGlossary:
                         'verbose': verbose,
                     }
                     kwargs.update(read_worksheet_data_params)
-                    sheet_data = self.read_worksheet_data(**kwargs)
+
+                    try:
+                        sheet_data = self._read_dag_data(**kwargs)
+                    except Exception as e:
+                        _print_failure_message(e, verbose=verbose)
+                        sheet_data = self._read_dag_data_from_db(**kwargs)
 
                     glossary.append(sheet_data)
 
@@ -446,8 +493,46 @@ class DelayAttributionGlossary:
             if verbose:
                 print("Process finished.")
 
-        except Exception as e:
-            _print_failure_msg(e)
-            delay_attr_glossary = None
+            return delay_attr_glossary
 
-        return delay_attr_glossary
+        except Exception as e:
+            _print_failure_message(e)
+
+
+def main():
+    import argparse
+
+    # Set up argument parsing
+    parser = argparse.ArgumentParser(
+        description="Get historic delay attribution glossary.")
+
+    # Add arguments
+    parser.add_argument(
+        '--update', required=False, default=False,
+        help="Whether update the data stored in the project database; defaults to ``False``.")
+    parser.add_argument(
+        '--hard_update', required=False, default=False,
+        help="Whether to redownload the original data file; defaults to ``False``.")
+    parser.add_argument(
+        '--verbose', required=False, default=False,
+        help="Whether to print relevant information to the console; defaults to ``False``.")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    dag = DelayAttributionGlossary()
+
+    delay_attr_glossary = dag.read_data(
+        update=args.update,
+        hard_update=args.hard_update,
+        verbose=args.verbose
+    )
+    print(delay_attr_glossary)
+
+
+if __name__ == '__main__':
+    main()
+
+    # To Run in CMD:
+    #
+    # python src/preprocessor/glossary.py --update False --hard_update False --verbose False
