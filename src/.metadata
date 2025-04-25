@@ -1,0 +1,23 @@
+{
+    "Project": "Understanding and predicting weather-related incidents on GB's rail network",
+    "Funder": "Network Rail",
+    "Description": "Establishing the value of existing data sources as supporting datasets for improved decision-making",
+    "Authors": "Qian Fu & John M. Easton",
+    "Affiliation": "School of Engineering, University of Birmingham",
+    "Team Members": {
+        "1": {
+            "Name": "Qian Fu",
+            "Role": "Researcher Co-I",
+            "Email": "q.fu@bham.ac.uk"
+        },
+        "2": {
+            "Name": "John M. Easton",
+            "Role": "Co-I",
+            "Email": "j.m.easton@bham.ac.uk"
+        }
+    },
+    "Version": "0.0.1",
+    "License": "AGPL-3.0",
+    "Project Start": "May 2015",
+    "Project End": "August 2026"
+}
