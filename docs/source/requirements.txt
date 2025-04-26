@@ -1,0 +1,13 @@
+descartes==1.1.0
+execnet==2.1.1
+geopy==2.4.1
+mapclassify==2.8.1
+matplotlib==3.8.4
+matplotlib-inline==0.1.6
+natsort==8.4.0
+networkx==3.4.2
+pydriosm @ git+https://github.com/mikeqfu/pydriosm.git@b55a0e44eee6c0a7ec0bbf70a02626c0ed4e985f
+pyhelpers==2.2.0
+pyrcs==1.0.1
+Sphinx==8.2.3
+sphinx-copybutton==0.5.2
