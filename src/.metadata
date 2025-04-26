@@ -7,12 +7,12 @@
     "Team Members": {
         "1": {
             "Name": "Qian Fu",
-            "Role": "Researcher Co-I",
+            "Role": "Co-I",
             "Email": "q.fu@bham.ac.uk"
         },
         "2": {
             "Name": "John M. Easton",
-            "Role": "Co-I",
+            "Role": "PI",
             "Email": "j.m.easton@bham.ac.uk"
         }
     },
