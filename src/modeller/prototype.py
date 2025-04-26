@@ -1,10 +1,12 @@
 """
-A prototype model for predictions of weather-attributed incidents.
+A prototype model for predictions of Weather-attributed Incidents.
 
-*(Currently this includes only wind- and heat-related incidents.)
+*(Currently this includes only wind- and heat-related Incidents.)
 """
 
+import functools
 import itertools
+import multiprocessing
 import os
 import re
 import time
@@ -15,99 +17,118 @@ import numpy as np
 import pandas as pd
 import shapely.geometry
 import statsmodels.discrete.discrete_model as sm_dcm
+from pyhelpers.dirs import cd
 from pyhelpers.settings import mpl_preferences, pd_preferences
-from pyhelpers.store import load_pickle, save_fig, save_pickle, save_svg_as_emf
+from pyhelpers.store import load_pickle, save_data, save_fig, save_svg_as_emf
 from sklearn import metrics
 from sklearn.utils import extmath
 
-from coordinator.feature import categorise_track_orientations, get_data_by_meteorological_seasons
-from coordinator.furlong import get_furlongs_data, get_incident_location_furlongs
-from preprocessor import METExLite
-from utils import cd_models, make_filename
+from src.preprocessor import METEX
+from src.shaft.feature import categorise_track_orientations, get_data_by_meteorological_seasons
+from src.shaft.furlong import FurlongHandler
+from src.utils import WxRailIncidentsPred, make_filename
 
 
-class WindAttributedIncidents:
-    """
+def specify_vegetation_calc(furlong_data):
+    """Specify the statistics that need to be computed."""
 
-    :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
-        given that StartELR == EndELR, defaults to ``220``
-    :type shift_yards_same_elr: int or float
-    :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
-        given that StartELR != EndELR, defaults to ``220``
-    :param hazard_pctl:
-    :type hazard_pctl: defaults to ``50``
-    """
+    # furlong_data = self.furlongs
+    features = furlong_data.columns
 
-    def __init__(self, trial_id,
+    # "CoverPercent..."
+    cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
+    vegetation_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
+
+    # def count_hazard_tree_number(x):
+    #     if np.isnan(x).all():
+    #         return np.nan
+    #     else:
+    #         return np.nansum(x)
+
+    veg_calc = {
+        'AssetNumber': np.count_nonzero,
+        'TreeNumber': np.nansum,
+        'TreeNumberUp': np.nansum,
+        'TreeNumberDown': np.nansum,
+        'Electrified': np.any,
+        'DateOfMeasure': tuple,
+        # 'AssetDesc1': np.all,
+        # 'IncidentReported': np.any
+        'HazardTreeNumber': np.nansum,
+    }
+    vegetation_calc.update(veg_calc)
+
+    # variables for hazardous trees
+    hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
+    hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
+    hazard_others = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
+    # Computations for hazardous trees variables
+    hazard_calc = [
+        dict(zip(hazard_others, [tuple] * len(hazard_others))),
+        dict(zip(hazard_min, [np.min] * len(hazard_min))),
+        dict(zip(hazard_max, [np.max] * len(hazard_max))),
+    ]
+
+    # Update vegetation_stats_computations
+    vegetation_calc.update({k: v for d in hazard_calc for k, v in d.items()})
+
+    return cover_percents, hazard_others, vegetation_calc
+
+
+class Prototype:
+    METEX = METEX()
+
+    def __init__(self, trial_id, route_name, weather_category,
                  ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
                  shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
-                 model_type='logit', in_seasons=None, outlier_pctl=99):
+                 seasons=None, outlier_pctl=99, model_type='logit', **kwargs):
+        """
+        :param trial_id:
+        :param route_name:
+        :param weather_category:
+        :param ip_start_hrs:
+        :param ip_end_hrs:
+        :param nip_start_hrs:
+        :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
+            given that StartELR == EndELR, defaults to ``220``
+        :type shift_yards_same_elr: int or float
+        :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
+            given that StartELR != EndELR, defaults to ``220``
+        :type shift_yards_diff_elr: int or float
+        :param hazard_pctl: defaults to ``50``
+        :param seasons:
+        :param outlier_pctl:
+        :param model_type:
+        """
+        self.trial_id = str(trial_id)
 
-        self.Name = 'A prototype data model of predicting wind-related incidents.'
+        self.route_name = route_name
+        self.weather_category = weather_category
 
-        self.TrialID = "{}".format(trial_id)
+        self.ip_start_hrs = ip_start_hrs
+        self.ip_end_hrs = ip_end_hrs
+        self.nip_start_hrs = nip_start_hrs
 
-        self.METEx = METExLite(database_name='NR_METEx_20150331')
+        self.yards_shift_for_same_ELRs = shift_yards_same_elr
+        self.yards_shift_for_diff_ELRs = shift_yards_diff_elr
 
-        self.Route = 'Anglia'
-        self.WeatherCategory = 'Wind'
-
-        self.IP_StartHrs = ip_start_hrs
-        self.IP_EndHrs = ip_end_hrs
-        self.NIP_StartHrs = nip_start_hrs
-
-        self.ShiftYardsForSameELRs = shift_yards_same_elr
-        self.ShiftYardsForDiffELRs = shift_yards_diff_elr
-
-        self.HazardsPercentile = hazard_pctl
+        self.hazardous_tree_percentile = hazard_pctl
 
         # Get incident_location_furlongs
-        self.Furlongs = get_furlongs_data(route_name=self.Route, weather_category=None,
-                                          shift_yards_same_elr=self.ShiftYardsForSameELRs,
-                                          shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
+        self._furlong_handler = FurlongHandler()
+        self.furlongs = self._furlong_handler.get_furlongs_data(
+            route_name=self.route_name, weather_category=None,
+            shift_yards_same_elr=self.yards_shift_for_same_ELRs,
+            shift_yards_diff_elr=self.yards_shift_for_diff_ELRs)
 
-        def specify_veg_stats_calc():
-            """
-            Specify the statistics that need to be computed.
-            """
+        self.cover_percents, self.hazard_others, self.vegetation_calc = \
+            specify_vegetation_calc(self.furlongs)
 
-            features = self.Furlongs.columns
+        self.model_type = model_type
+        self.outlier_percentile = outlier_pctl
+        self.seasons = seasons
 
-            # "CoverPercent..."
-            cover_percents = [x for x in features if re.match('^CoverPercent[A-Z]', x)]
-            veg_stats_calc = dict(zip(cover_percents, [np.nansum] * len(cover_percents)))
-            veg_stats_calc.update({'AssetNumber': np.count_nonzero,
-                                   'TreeNumber': np.nansum,
-                                   'TreeNumberUp': np.nansum,
-                                   'TreeNumberDown': np.nansum,
-                                   'Electrified': np.any,
-                                   'DateOfMeasure': lambda x: tuple(x),
-                                   # 'AssetDesc1': np.all,
-                                   # 'IncidentReported': np.any
-                                   'HazardTreeNumber':
-                                       lambda x: np.nan if np.isnan(x).all() else np.nansum(x)})
-
-            # variables for hazardous trees
-            hazard_min = [x for x in features if re.match('^HazardTree.*min$', x)]
-            hazard_max = [x for x in features if re.match('^HazardTree.*max$', x)]
-            hazard_others = [x for x in features if re.match('^HazardTree[a-z]((?!_).)*$', x)]
-            # Computations for hazardous trees variables
-            hazard_calc = [dict(zip(hazard_others, [lambda x: tuple(x)] * len(hazard_others))),
-                           dict(zip(hazard_min, [np.min] * len(hazard_min))),
-                           dict(zip(hazard_max, [np.max] * len(hazard_max)))]
-
-            # Update vegetation_stats_computations
-            veg_stats_calc.update({k: v for d in hazard_calc for k, v in d.items()})
-
-            return cover_percents, hazard_others, veg_stats_calc
-
-        self.CoverPercents, self.HazardsOthers, self.VegStatsCalc_ = specify_veg_stats_calc()
-
-        self.ModelType = model_type
-        self.OutlierPercentile = outlier_pctl
-        self.Seasons = in_seasons
-
-        self.ExplanatoryVariables = [
+        self.variable_names = [
             # 'WindSpeed_max',
             # 'WindSpeed_avg',
             'WindGust_max',
@@ -158,87 +179,88 @@ class WindAttributedIncidents:
             # 'HazardTreeproxrailM_min'
         ]
 
-        self.WeatherStatsCalc = {'Temperature': (np.nanmax, np.nanmin, np.nanmean),
-                                 'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
-                                 'WindSpeed': np.nanmax,
-                                 'WindGust': np.nanmax,
-                                 'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
-                                 'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
+        self.weather_stats_calc = {
+            'Temperature': (np.nanmax, np.nanmin, np.nanmean),
+            'RelativeHumidity': (np.nanmax, np.nanmin, np.nanmean),
+            'WindSpeed': np.nanmax,
+            'WindGust': np.nanmax,
+            'Snowfall': (np.nanmax, np.nanmin, np.nanmean),
+            'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean),
+        }
 
-        mpl_preferences(font_name='Cambria')
         pd_preferences()
+        mpl_preferences(backend='TkAgg', font_name='Cambria')
 
-    @staticmethod
-    def cdd(*sub_dir, mkdir=False):
+    def cdd(self, *sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\wind" and subdirectories / a file.
+        Change to the data directory.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\wind" and subdirectories / a file
+        :return: absolute path to e.g. "models\\prototype\\wind" and subdirectories / a file
         :rtype: str
 
-        **Test**::
+        **Examples**::
 
+            >>> from src.modeller.prototype import Prototype
             >>> import os
-            >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
 
-            >>> os.path.relpath(w_model.cdd())
+            >>> os.path.relpath(prototype.cdd())
             'models\\prototype\\wind'
         """
 
-        path = cd_models("prototype", "wind", *sub_dir, mkdir=mkdir)
+        path = cd("models", "prototype", self.weather_category.lower(), *sub_dir, mkdir=mkdir)
 
         return path
 
     def cdd_trial(self, *sub_dir, mkdir=False):
         """
-        Change directory to "models\\prototype\\wind\\<trial_id>" and subdirectories / a file.
+        Change to <trial_id> directory under the data directory.
 
         :param sub_dir: name of directory or names of directories (and/or a filename)
         :type sub_dir: str
         :param mkdir: whether to create a directory, defaults to ``False``
         :type mkdir: bool
-        :return: absolute path to "models\\prototype\\wind\\<trial_id>" and subdirectories / a file
+        :return: absolute path to e.g. "models\\prototype\\wind\\<trial_id>" and subdirectories / a file
         :rtype: str
 
-        **Test**::
+        **Examples**::
 
+            >>> from src.modeller.prototype import Prototype
             >>> import os
-            >>> from modeller.prototype import WindAttributedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
 
-            >>> os.path.relpath(w_model.cdd_trial())
+            >>> os.path.relpath(prototype.cdd_trial())
             'models\\prototype\\wind\\0'
         """
 
-        path = self.cdd(self.TrialID, *sub_dir, mkdir=mkdir)
+        path = self.cdd(self.trial_id, *sub_dir, mkdir=mkdir)
 
         return path
 
     def get_weather_variable_names(self, temperature_dif=False, supplement=None):
         """
-        Get weather variable names.
+        Get Weather variable names.
 
         :param temperature_dif: whether to include ``'Temperature_dif'``, defaults to ``False``
         :type temperature_dif: bool
         :param supplement: e.g. ``'Hottest_Heretofore'``
         :type supplement: str or list or None
-        :return: a list of names of weather variables
+        :return: a list of names of Weather variables
         :rtype: list
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from src.modeller.prototype import Prototype
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
 
-            >>> w_model.get_weather_variable_names()
+            >>> prototype.get_weather_variable_names()
             ['Temperature_max',
              'Temperature_min',
              'Temperature_avg',
@@ -258,34 +280,35 @@ class WindAttributedIncidents:
         """
 
         weather_var_names = []
-        for k, v in self.WeatherStatsCalc.items():
-            if isinstance(v, tuple):
-                for v_ in v:
-                    weather_var_names.append('_'.join([
-                        k, v_.__name__.replace('mean', 'avg').replace('median', 'med')]).replace(
-                        '_nan', '_'))
+        for key, val in self.weather_stats_calc.items():
+            if isinstance(val, tuple):
+                for v in val:
+                    v_ = v.__name__.replace('mean', 'avg').replace('median', 'med')
+                    x = '_'.join([key, v_]).replace('_nan', '_')
+                    weather_var_names.append(x)
 
             else:
-                weather_var_names.append('_'.join([
-                    k, v.__name__.replace('mean', 'avg').replace('median', 'med')]).replace('_nan', '_'))
+                v = val.__name__.replace('mean', 'avg').replace('median', 'med')
+                x = '_'.join([key, v]).replace('_nan', '_')
+                weather_var_names.append(x)
 
         if temperature_dif:
             weather_var_names.insert(weather_var_names.index('Temperature_min') + 1, 'Temperature_dif')
 
+        wind_variable_names = ['WindSpeed_avg', 'WindDirection_avg']
         if supplement:
-            if isinstance(supplement, str):
-                supplement = [supplement]
-            wind_variable_names = weather_var_names + ['WindSpeed_avg', 'WindDirection_avg'] + supplement
-
+            supplement_ = [supplement] if isinstance(supplement, str) else supplement
         else:
-            wind_variable_names = weather_var_names + ['WindSpeed_avg', 'WindDirection_avg']
+            supplement_ = []
 
-        return wind_variable_names
+        weather_var_names += (wind_variable_names + supplement_)
 
-    # == Calculators ==================================================================================
+        return weather_var_names
+
+    # == Statistics calculators ====================================================================
 
     @staticmethod
-    def calc_average_wind(wind_speeds, wind_directions):
+    def calculate_average_wind(wind_speeds, wind_directions):
         """
         Calculate average wind speed and direction.
 
@@ -295,6 +318,13 @@ class WindAttributedIncidents:
         :type wind_directions: float or int
         :return: average wind speed and average wind direction
         :rtype: tuple
+        
+        **Examples**::
+        
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
         """
 
         u = - wind_speeds * np.sin(np.radians(wind_directions))  # component u, the zonal velocity
@@ -311,71 +341,398 @@ class WindAttributedIncidents:
 
         return average_wind_speed, average_wind_direction
 
-    def calc_weather_stats(self, weather_obs):
+    def calculate_weather_stats(self, weather_obs):
         """
-        Compute the statistics for all the Weather variables (except wind).
+        Calculate the statistics for Weather variables.
 
-        :param weather_obs: observed data of weather conditions
+        :param weather_obs: Observed data of Weather conditions.
         :type weather_obs: pandas.DataFrame
-        :return: statistics for weather conditions
+        :return: Statistics for Weather conditions.
         :rtype: list
 
         .. note::
 
-            Note: to get the n-th percentile, use percentile(n)
+            Note: to get the n-th percentile, use percentile(n).
 
-            This function also returns the Weather dataframe indices.
-            The corresponding Weather conditions in that WeatherCell might cause wind-related Incidents.
+            This function also returns the indices of Weather cells (i.e. 'WeatherCell'),
+            in which the Weather conditions might cause the Incidents.
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
         """
 
         if not weather_obs.empty:
             # Calculate the statistics
             weather_obs.fillna(value=np.nan, inplace=True)
-            stats = weather_obs.fillna(np.nan).groupby('WeatherCell').aggregate(self.WeatherStatsCalc)
-            stats['WindSpeed_avg'], stats['WindDirection_avg'] = \
-                self.calc_average_wind(weather_obs.WindSpeed, weather_obs.WindDirection)
+            stats = weather_obs.fillna(np.nan).groupby('WeatherCell').aggregate(self.weather_stats_calc)
 
-            weather_stats = stats.values[0].tolist()  # + [weather_obs.index.tolist()]
+            stats['WindSpeed_avg'], stats['WindDirection_avg'] = \
+                self.calculate_average_wind(weather_obs['WindSpeed'], weather_obs['WindDirection'])
+
+            weather_statistics = stats.values[0].tolist()  # + [weather_obs.index.tolist()]
 
         else:
-            weather_stats = [np.nan] * 10  # + [[None]]
+            weather_statistics = [np.nan] * 10
 
-        return weather_stats
+        return weather_statistics
+
+    # == Data integration ==========================================================================
+
+    def delimit_incident_periods(self, incidents):
+        """
+        Delimit the "incident period" for each incident location.
+
+        :param incidents: Records of Incidents.
+        :type incidents: pandas.DataFrame
+        :return: Records of Incidents with delimited incident periods.
+        :rtype: pandas.DataFrame
+
+        **Examples**::
+
+        """
+
+        dat = incidents.copy()
+
+        dat['Incident_Duration'] = dat['EndDateTime'] - dat['StartDateTime']
+
+        dat['Critical_StartDateTime'] = \
+            dat['StartDateTime'].map(datetime_truncate.truncate_hour) + \
+            pd.Timedelta(hours=self.ip_start_hrs)
+
+        dat['Critical_EndDateTime'] = \
+            dat['EndDateTime'].apply(datetime_truncate.truncate_hour) + \
+            pd.Timedelta(hours=self.ip_end_hrs)
+
+        # Specify the incident period (IP)
+        dat['Critical_Period'] = dat['Critical_EndDateTime'] - dat['Critical_StartDateTime']
+
+        # List critical variables for querying Weather data
+        critical_var_cols = ['WeatherCell', 'Critical_StartDateTime', 'Critical_EndDateTime']
+        dat['Critical_Variables'] = dat[critical_var_cols].values.tolist()
+
+        return dat
+
+    def _get_ip_weather_stats(self, critical_variables):
+        # noinspection PyShadowingNames
+        """
+        Get data of Weather conditions that were likely to cause an incident for a given location,
+        based on ``'WeatherCell'`` (i.e. the Weather cell ID),
+        ``'Critical_StartDateTime'`` (i.e. the start of an incident period) and
+        ``'Critical_EndDateTime'`` (i.e. the end of an incident period).
+
+        :param critical_variables:
+        :type critical_variables:
+        :return: a list of statistics
+        :rtype: list
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
+            >>> prototype.METEX.view_schedule8_cost_by_day_location_reason('Anglia', 'Wind')
+            >>> Incidents = prototype.METEX.schedule8_cost_by_day_location_reason.copy()
+            >>> Incidents = prototype.delimit_incident_periods(Incidents)
+
+            >>> i = 0
+            >>> critical_variables = Incidents.loc[i, 'Critical_Variables']
+            >>> ip_weather_stats = prototype._get_ip_weather_stats(critical_variables)
+
+        """
+
+        if self.METEX.db_instance is None:
+            self.METEX.db_instance = WxRailIncidentsPred(verbose=False)
+
+        weather_cell_id, ip_start, ip_end = critical_variables
+
+        # Get Weather data about where and when the incident occurred
+        ip_weather_obs = self.METEX.query_weather(
+            weather_cell_id=weather_cell_id, start_dt=ip_start, end_dt=ip_end)
+
+        # Get the max/min/avg Weather parameters for those incident periods
+        ip_weather_stats = self.calculate_weather_stats(weather_obs=ip_weather_obs)
+
+        return ip_weather_stats
+
+    def get_ip_weather_stats(self, incidents, num_of_processes=None):
+        # noinspection PyShadowingNames
+        """
+        Get data of Weather conditions that were likely to cause Incidents for each recorded location,
+        based on ``'WeatherCell'`` (i.e. the Weather cell ID),
+        ``'Critical_StartDateTime'`` (i.e. the start of an incident period) and
+        ``'Critical_EndDateTime'`` (i.e. the end of an incident period).
+
+        :param incidents: Records of Incidents with delimited incident periods.
+        :type incidents: pandas.DataFrame
+        :param num_of_processes: Number of CPU cores to be used.
+        :type num_of_processes: None or int
+        :return:
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
+            >>> prototype.METEX.view_schedule8_cost_by_day_location_reason('Anglia', 'Wind')
+            >>> Incidents = prototype.METEX.schedule8_cost_by_day_location_reason.copy()
+            >>> Incidents = prototype.delimit_incident_periods(Incidents)
+
+            >>> ip_weather_statistics = prototype.get_ip_weather_stats(Incidents)
+
+        """
+
+        if num_of_processes == -1:
+            num_of_processes = multiprocessing.cpu_count()
+        elif num_of_processes is None:
+            num_of_processes = multiprocessing.cpu_count() - 1
+
+        with multiprocessing.Pool(processes=num_of_processes) as p:
+            ip_stats = p.map(self._get_ip_weather_stats, incidents['Critical_Variables'])
+
+        ip_weather_stats = pd.DataFrame(
+            ip_stats, index=incidents.index, columns=self.get_weather_variable_names())
+
+        ip_weather_stats['Temperature_dif'] = \
+            ip_weather_stats['Temperature_max'] - ip_weather_stats['Temperature_min']
+
+        return ip_weather_stats
+
+    def delimit_non_incident_periods(self, incidents):
+        # noinspection PyShadowingNames
+        """
+        Delimit the "non-incident period" for each incident location.
+
+        :param incidents: Records of Incidents.
+        :type incidents: pandas.DataFrame
+        :return: Records of Incidents with delimited non-incident periods.
+        :rtype: pandas.DataFrame
+
+        .. note::
+
+            This method should be applied only after the method
+            :meth:`src.modeller.prototype.delimit_incident_periods` has been applied.
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
+            >>> prototype.METEX.view_schedule8_cost_by_day_location_reason('Anglia', 'Wind')
+            >>> Incidents = prototype.METEX.schedule8_cost_by_day_location_reason.copy()
+            >>> Incidents = prototype.delimit_incident_periods(Incidents)
+
+            >>> non_incidents = Incidents.copy()
+            >>> non_incidents = prototype.delimit_non_incident_periods(non_incidents)
+
+        """
+
+        assert all(x in incidents.columns for x in ['Critical_StartDateTime', 'Critical_EndDateTime'])
+
+        dat = incidents.copy()
+
+        # The end datetime of non-IP is set to be the start of the IP
+        dat['Critical_EndDateTime'] = dat['Critical_StartDateTime']
+
+        # The start of the non-IP is several hours before the end of the non-IP
+        dat['Critical_StartDateTime'] = \
+            dat['Critical_StartDateTime'] + pd.Timedelta(hours=self.nip_start_hrs)
+
+        # Specify the non-IP
+        dat['Critical_Period'] = dat['Critical_EndDateTime'] - dat['Critical_StartDateTime']
+
+        # List critical variables for querying Weather data
+        critical_var_cols = [
+            'WeatherCell', 'Critical_StartDateTime', 'Critical_EndDateTime', 'StanoxSection']
+        dat['Critical_Variables'] = dat[critical_var_cols].values.tolist()
+
+        return dat
+
+    def _get_non_ip_weather_stats(self, critical_variables, ip_data):
+        # noinspection PyShadowingNames
+        """
+        Get data of Weather conditions that were less likely to cause an incident for a given location,
+        based on ``'WeatherCell'`` (i.e. the Weather cell ID),
+        ``'Critical_StartDateTime'`` (i.e. the start of an incident period),
+        ``'Critical_EndDateTime'`` (i.e. the end of an incident period) and
+        ``'StanoxSection'`` (i.e. the STANOX of the given location/section).
+
+        :param critical_variables:
+        :type critical_variables: list
+        :param ip_data:
+        :type ip_data:
+        :return: a list of statistics
+        :rtype: list
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
+            >>> prototype.METEX.view_schedule8_cost_by_day_location_reason('Anglia', 'Wind')
+            >>> Incidents = prototype.METEX.schedule8_cost_by_day_location_reason.copy()
+            >>> Incidents = prototype.delimit_incident_periods(Incidents)
+
+            >>> non_incidents = Incidents.copy()
+            >>> non_incidents = prototype.delimit_non_incident_periods(non_incidents)
+
+            >>> i = 0
+            >>> critical_variables = non_incidents.loc[i, 'Critical_Variables']
+            >>> non_ip_weather_stats = prototype._get_non_ip_weather_stats(
+            ...     critical_variables, Incidents)
+
+        """
+
+        if self.METEX.db_instance is None:
+            self.METEX.db_instance = WxRailIncidentsPred(verbose=False)
+
+        weather_cell_id, nip_start, nip_end, stanox_section = critical_variables
+
+        # Get non-IP Weather data about where and when the incident occurred
+        non_ip_weather_obs = self.METEX.query_weather(
+            weather_cell_id=weather_cell_id, start_dt=nip_start, end_dt=nip_end)
+
+        # Get all incident period data on the same section
+        overlaps = ip_data[
+            (ip_data['StanoxSection'] == stanox_section) &
+            (((ip_data['Critical_StartDateTime'] <= nip_start) & (
+                    ip_data['Critical_EndDateTime'] >= nip_start)) |
+             ((ip_data['Critical_StartDateTime'] <= nip_end) & (
+                     ip_data['Critical_EndDateTime'] >= nip_end)))]
+
+        # Skip data of Weather causing Incidents at around the same time but
+        if not overlaps.empty:
+            non_ip_weather_obs = non_ip_weather_obs[
+                (non_ip_weather_obs['DateTime'] < np.min(overlaps['Critical_StartDateTime'])) |
+                (non_ip_weather_obs['DateTime'] > np.max(overlaps['Critical_EndDateTime']))]
+
+        # Get the max/min/avg Weather parameters for those incident periods
+        non_ip_weather_stats = self.calculate_weather_stats(weather_obs=non_ip_weather_obs)
+
+        return non_ip_weather_stats
+
+    def get_non_ip_weather_stats(self, incidents, ip_data, num_of_processes=None):
+        # noinspection PyShadowingNames
+        """
+
+        :param incidents:
+        :param ip_data:
+        :param num_of_processes:
+        :return:
+
+        **Examples**::
+
+            >>> from src.modeller.prototype import Prototype
+
+            >>> prototype = Prototype(trial_id=0, route_name='Anglia', weather_category='Wind')
+
+            >>> prototype.METEX.view_schedule8_cost_by_day_location_reason('Anglia', 'Wind')
+            >>> ip_data = prototype.METEX.schedule8_cost_by_day_location_reason.copy()
+            >>> ip_data = prototype.delimit_incident_periods(ip_data)
+
+            >>> Incidents = ip_data.copy()
+            >>> Incidents = prototype.delimit_non_incident_periods(Incidents)
+
+            >>> non_ip_weather_stats = prototype.get_non_ip_weather_stats(Incidents, ip_data)
+
+        """
+
+        if num_of_processes == -1:
+            num_of_processes = multiprocessing.cpu_count()
+        elif num_of_processes is None:
+            num_of_processes = multiprocessing.cpu_count() - 1
+
+        with multiprocessing.Pool(processes=num_of_processes) as p:
+            non_ip_stats = p.map(
+                functools.partial(self._get_non_ip_weather_stats, ip_data=ip_data),
+                incidents['Critical_Variables'])
+
+        non_ip_weather_stats = pd.DataFrame(
+            non_ip_stats, index=incidents.index, columns=self.get_weather_variable_names())
+
+        non_ip_weather_stats['Temperature_dif'] = \
+            non_ip_weather_stats['Temperature_max'] - non_ip_weather_stats['Temperature_min']
+
+        return non_ip_weather_stats
+
+
+class WindRelatedIncidents(Prototype):
+    """A prototype data model of predicting wind-related Incidents."""
+
+    ROUTE_NAME = 'Anglia'
+    WEATHER_CATEGORY = 'Wind'
+
+    def __init__(self, trial_id, ip_start_hrs=-12, ip_end_hrs=12, nip_start_hrs=-12,
+                 shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50,
+                 seasons=None, outlier_pctl=99, model_type='logit', **kwargs):
+        """
+        :param trial_id:
+        :param ip_start_hrs:
+        :param ip_end_hrs:
+        :param nip_start_hrs:
+        :param shift_yards_same_elr: yards by which the start/end mileage is shifted for adjustment,
+            given that StartELR == EndELR, defaults to ``220``
+        :type shift_yards_same_elr: int or float
+        :param shift_yards_diff_elr: yards by which the start/end mileage is shifted for adjustment,
+            given that StartELR != EndELR, defaults to ``220``
+        :type shift_yards_diff_elr: int or float
+        :param hazard_pctl: defaults to ``50``
+        :param seasons:
+        :param outlier_pctl:
+        :param model_type:
+        """
+
+        super().__init__(
+            trial_id, route_name=self.ROUTE_NAME, weather_category=self.WEATHER_CATEGORY,
+            ip_start_hrs=ip_start_hrs, ip_end_hrs=ip_end_hrs, nip_start_hrs=nip_start_hrs,
+            shift_yards_same_elr=shift_yards_same_elr, shift_yards_diff_elr=shift_yards_diff_elr,
+            hazard_pctl=hazard_pctl, seasons=seasons, outlier_pctl=outlier_pctl,
+            model_type=model_type,
+            **kwargs)
+
+    # == Calculators ===============================================================================
 
     @staticmethod
     def calc_overall_cover_percent_old(start_and_end_cover_percents, total_yards_adjusted):
         """
         Calculate the cover percents across two neighbouring ELRs.
 
-        :param start_and_end_cover_percents: vegetation cover percents of a start and an end ELR
+        :param start_and_end_cover_percents: Vegetation cover percents of a start and an end ELR
         :type start_and_end_cover_percents: tuple
         :param total_yards_adjusted: adjusted total yards
         :type total_yards_adjusted: tuple
-        :return: overall vegetation cover percent across two neighbouring ELRs
+        :return: overall Vegetation cover percent across two neighbouring ELRs
         :rtype: float or int
         """
 
         # (start * end) / (start + end)
-        multiplier = pd.np.prod(total_yards_adjusted) / pd.np.sum(total_yards_adjusted)
+        multiplier = np.prod(total_yards_adjusted) / np.sum(total_yards_adjusted)
         # 1/start, 1/end
         cp_start, cp_end = start_and_end_cover_percents
-        s_, e_ = pd.np.divide(1, total_yards_adjusted)
+        s_, e_ = np.divide(1, total_yards_adjusted)
         # numerator
         n = e_ * cp_start + s_ * cp_end
         # denominator
-        d = pd.np.sum(start_and_end_cover_percents) if pd.np.all(start_and_end_cover_percents) else 1
+        d = np.sum(start_and_end_cover_percents) if np.all(start_and_end_cover_percents) else 1
 
-        f = multiplier * pd.np.divide(n, d)
+        f = multiplier * np.divide(n, d)
 
         overall_cover_percent = f * d
 
         return overall_cover_percent
 
-    def calc_vegetation_stats(self, furlong_ids, start_elr, end_elr, total_yards_adjusted):
+    def calculate_vegetation_statistics(self, furlong_ids, start_elr, end_elr, total_yards_adjusted):
         """
-        Calculate stats of vegetation variables for each incident record
+        Calculate statistics of Vegetation variables for each incident record/location.
 
-        **Test**::
+        **Examples**::
 
             i = 337
 
@@ -388,24 +745,21 @@ class WindAttributedIncidents:
 
         """
 
-        # Get all column names as features
-        veg_feats = self.Furlongs.columns
-
         # Get features which would be filled with "0" and "inf", respectively
-        fill_0 = [x for x in veg_feats if re.match('.*height', x)] + ['HazardTreeNumber']
-        fill_inf = [x for x in veg_feats if re.match('^.*prox|.*diam', x)]
+        fill_0 = [x for x in self.furlongs.columns if re.match('.*height', x)] + ['HazardTreeNumber']
+        fill_inf = [x for x in self.furlongs.columns if re.match('^.*prox|.*diam', x)]
 
-        furlong_ids_ = [fid for fid in furlong_ids if fid in self.Furlongs.index]
+        furlong_ids_ = [fid for fid in furlong_ids if fid in self.furlongs.index]
 
         if not furlong_ids_:
-            veg_stats = list(np.empty(len(self.VegStatsCalc_) + 2) * np.nan)
+            veg_stats = list(np.empty(len(self.vegetation_calc) + 2) * np.nan)
 
         else:
-            vegetation_data = self.Furlongs.loc[furlong_ids_]
+            vegetation_data = self.furlongs.loc[furlong_ids_]
 
-            veg_stats = vegetation_data.groupby('ELR').aggregate(self.VegStatsCalc_)
-            veg_stats[self.CoverPercents] = \
-                veg_stats[self.CoverPercents].div(veg_stats.AssetNumber, axis=0).values
+            veg_stats = vegetation_data.groupby('ELR').aggregate(self.vegetation_calc)
+            veg_stats[self.cover_percents] = veg_stats[self.cover_percents].div(
+                veg_stats.AssetNumber, axis=0).values
 
             if start_elr == end_elr:
                 elr = veg_stats.index[0]
@@ -414,18 +768,18 @@ class WindAttributedIncidents:
                     veg_stats[fill_0] = 0.0
                     veg_stats[fill_inf] = 999999.0
                 else:
-                    assert 0 <= self.HazardsPercentile <= 100
+                    assert 0 <= self.hazardous_tree_percentile <= 100
 
                     def calc_percentile(x):
                         temp = tuple(itertools.chain(*pd.Series(x).dropna()))
                         if not temp:
                             pctl = np.nan
                         else:
-                            pctl = np.nanpercentile(temp, self.HazardsPercentile)
+                            pctl = np.nanpercentile(temp, self.hazardous_tree_percentile)
                         return pctl
 
-                    veg_stats[self.HazardsOthers] = \
-                        veg_stats[self.HazardsOthers].applymap(calc_percentile)
+                    veg_stats[self.hazard_others] = \
+                        veg_stats[self.hazard_others].applymap(calc_percentile)
                     # lambda x: np.nanpercentile(
                     #     tuple(itertools.chain(*pd.Series(x).dropna())), self.HazardsPercentile))
 
@@ -433,22 +787,22 @@ class WindAttributedIncidents:
                 if np.all(np.isnan(veg_stats.HazardTreeNumber.values)):
                     veg_stats[fill_0] = 0.0
                     veg_stats[fill_inf] = 999999.0
-                    calc_further = {k: lambda y: np.nanmean(y) for k in self.HazardsOthers}
+                    calc_further = {k: lambda y: np.nanmean(y) for k in self.hazard_others}
                 else:
-                    veg_stats[self.HazardsOthers] = veg_stats[self.HazardsOthers].applymap(
+                    veg_stats[self.hazard_others] = veg_stats[self.hazard_others].applymap(
                         lambda y: tuple(itertools.chain(*pd.Series(y).dropna())))
                     hazard_others_func = [
-                        lambda y: np.nanpercentile(np.sum(y), self.HazardsPercentile)]
+                        lambda y: np.nanpercentile(np.sum(y), self.hazardous_tree_percentile)]
                     calc_further = dict(
-                        zip(self.HazardsOthers, hazard_others_func * len(self.HazardsOthers)))
+                        zip(self.hazard_others, hazard_others_func * len(self.hazard_others)))
 
                 # Specify further calculations
                 calc_further.update({'AssetNumber': np.sum})
                 calc_further.update(dict(DateOfMeasure=lambda y: tuple(itertools.chain(*y))))
-                calc_further.update({k: lambda y: tuple(y) for k in self.CoverPercents})
+                calc_further.update({k: lambda y: tuple(y) for k in self.cover_percents})
 
                 # noinspection PyAttributeOutsideInit
-                self.VegStatsCalc = self.VegStatsCalc_.copy()
+                self.VegStatsCalc = self.vegetation_calc.copy()
 
                 self.VegStatsCalc.update(calc_further)
 
@@ -468,12 +822,12 @@ class WindAttributedIncidents:
                         cp = cp[0]
                     return cp
 
-                veg_stats[self.CoverPercents] = veg_stats[self.CoverPercents].applymap(calc_cp)
+                veg_stats[self.cover_percents] = veg_stats[self.cover_percents].applymap(calc_cp)
 
             # Calculate tree densities (number of trees per furlong)
-            veg_stats['TreeDensity'] = veg_stats.TreeNumber.div(
+            veg_stats['TreeDensity'] = veg_stats['TreeNumber'].div(
                 np.nansum(total_yards_adjusted) / 220.0)
-            veg_stats['HazardTreeDensity'] = veg_stats.HazardTreeNumber.div(
+            veg_stats['HazardTreeDensity'] = veg_stats['HazardTreeNumber'].div(
                 np.nansum(total_yards_adjusted) / 220.0)
 
             # Rearrange the order of features
@@ -481,11 +835,11 @@ class WindAttributedIncidents:
 
         return veg_stats
 
-    # == Data integration =============================================================================
+    # == Data integration ==========================================================================
 
     def get_incident_location_weather(self, update=False, pickle_it=False, verbose=False):
         """
-        Get TRUST data and the weather conditions for each incident location.
+        Get TRUST data and the Weather conditions for each incident location.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -493,192 +847,73 @@ class WindAttributedIncidents:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
-        :return: weather conditions of incident locations
+        :return: Weather conditions of incident locations
         :rtype: pandas.DataFrame or None
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from src.modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> wri = WindRelatedIncidents(trial_id=0)
             
-            >>> incid_loc_weather = w_model.get_incident_location_weather()
-
-            >>> incid_loc_weather.tail()
-                  FinancialYear       StartDateTime  ... Temperature_dif IncidentReported
-            3318           2018 2019-01-27 20:04:00  ...             3.0                1
-            3319           2018 2019-01-27 20:08:00  ...             4.0                1
-            3320           2018 2019-01-27 23:13:00  ...             6.0                1
-            3321           2018 2019-01-29 23:00:00  ...             6.0                1
-            3322           2018 2019-01-30 05:21:00  ...             6.0                1
-            [5 rows x 54 columns]
+            >>> incid_loc_weather = wri.get_incident_location_weather()
+            >>> incid_loc_weather.shape
+            (3496, 55)
         """
 
         pickle_filename = make_filename(
-            "weather", self.Route, self.WeatherCategory,
-            self.IP_StartHrs, self.IP_EndHrs, self.NIP_StartHrs, save_as=".pickle")
+            "Weather", self.route_name, self.weather_category,
+            self.ip_start_hrs, self.ip_end_hrs, self.nip_start_hrs, save_as=".pkl")
         path_to_pickle = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
             incident_location_weather = load_pickle(path_to_pickle)
 
         else:
+            if verbose:
+                print("Getting Weather conditions", end=" ... ")
+
             try:
                 # Getting Weather data for all incident locations
-                incidents = self.METEx.view_schedule8_costs_by_datetime_location_reason(
-                    self.Route, self.WeatherCategory)
-                # Drop non-weather-related incident records
-                if self.WeatherCategory is None:
-                    incidents = incidents[incidents.WeatherCategory != '']
+                self.METEX.view_schedule8_cost_by_day_location_reason(
+                    route_name=self.route_name, weather_category=self.weather_category)
+                incidents = self.METEX.schedule8_cost_by_day_location_reason.copy()
+
                 # Get data for the specified "Incident Periods"
-                incidents['Incident_Duration'] = incidents.EndDateTime - incidents.StartDateTime
-                incidents['Critical_StartDateTime'] = \
-                    incidents.StartDateTime.map(datetime_truncate.truncate_hour) + \
-                    pd.Timedelta(hours=self.IP_StartHrs)
-                incidents['Critical_EndDateTime'] = \
-                    incidents.EndDateTime.apply(datetime_truncate.truncate_hour) + \
-                    pd.Timedelta(hours=self.IP_EndHrs)
-                incidents['Critical_Period'] = \
-                    incidents.Critical_EndDateTime - incidents.Critical_StartDateTime
-
-                def get_ip_weather_stats(weather_cell_id, ip_start, ip_end):
-                    """
-                    Processing weather data for IP.
-                    (Get data of weather conditions that led to Incidents for each record.)
-
-                    :param weather_cell_id: weather cell ID
-                    :type weather_cell_id: int
-                    :param ip_start: start of an incident period
-                    :type ip_start: pandas.Timestamp
-                    :param ip_end: end of an incident period
-                    :type ip_end: pandas.Timestamp
-                    :return: a list of statistics
-                    :rtype: list
-
-                    **Test**::
-
-                        i = 1
-
-                        weather_cell_id = incidents.WeatherCell[i]
-                        ip_start = incidents.StartDateTime[i]
-                        ip_end = incidents.EndDateTime[i]
-                    """
-
-                    # Get Weather data about where and when the incident occurred
-                    ip_weather_obs = self.METEx.query_weather_by_id_datetime(
-                        weather_cell_id, ip_start, ip_end, pickle_it=False)
-
-                    # Get the max/min/avg Weather parameters for those incident periods
-                    weather_stats = self.calc_weather_stats(ip_weather_obs)
-
-                    return weather_stats
+                incidents = self.delimit_incident_periods(incidents=incidents)
 
                 # Get data for the specified IP
-                # noinspection PyTypeChecker
-                ip_stats = incidents.apply(
-                    lambda x: get_ip_weather_stats(
-                        x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime),
-                    axis=1)
+                ip_weather_statistics = self.get_ip_weather_stats(incidents=incidents)
 
-                ip_statistics = pd.DataFrame(
-                    ip_stats.to_list(), index=ip_stats.index, columns=self.get_weather_variable_names())
-
-                ip_statistics['Temperature_dif'] = \
-                    ip_statistics.Temperature_max - ip_statistics.Temperature_min
-
-                #
-                ip_data = incidents.join(ip_statistics.dropna(), how='inner')
+                ip_data = pd.concat([incidents, ip_weather_statistics], axis=1)
                 ip_data['IncidentReported'] = 1
 
-                # Processing Weather data for non-IP
-                nip_data = incidents.copy(deep=True)
-                nip_data.Critical_EndDateTime = nip_data.Critical_StartDateTime  # + .timedelta(hours=0)
-                nip_data.Critical_StartDateTime = \
-                    nip_data.Critical_StartDateTime + pd.Timedelta(hours=self.NIP_StartHrs)
-                nip_data.Critical_Period = \
-                    nip_data.Critical_EndDateTime - nip_data.Critical_StartDateTime
-
-                # Get data of Weather which did not cause Incidents for each record
-                def get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section):
-                    """
-                    Processing weather data for non-IP.
-                    (Get data of weather conditions that were less likely to lead to incidents.)
-
-                    :param weather_cell_id: weather cell ID
-                    :type weather_cell_id: int
-                    :param nip_start: start of a non-incident period
-                    :type nip_start: pandas.Timestamp
-                    :param nip_end: end of a non-incident period
-                    :type nip_end: pandas.Timestamp
-                    :param stanox_section: STANOX section
-                    :type stanox_section: str
-                    :return: a list of statistics
-                    :rtype: list
-
-                    **Test**::
-
-                        i = 1000
-
-                        weather_cell_id = nip_data.WeatherCell.iloc[i]
-                        nip_start = nip_data.StartDateTime.iloc[i]
-                        nip_end = nip_data.EndDateTime.iloc[i]
-                        stanox_section = nip_data.StanoxSection.iloc[i]
-                    """
-
-                    # Get non-IP Weather data about where and when the incident occurred
-                    non_ip_weather_obs = self.METEx.query_weather_by_id_datetime(
-                        weather_cell_id, nip_start, nip_end, pickle_it=False)
-
-                    # Get all incident period data on the same section
-                    overlaps = ip_data[
-                        (ip_data.StanoxSection == stanox_section) &
-                        (((ip_data.Critical_StartDateTime <= nip_start) & (
-                                ip_data.Critical_EndDateTime >= nip_start)) |
-                         ((ip_data.Critical_StartDateTime <= nip_end) & (
-                                 ip_data.Critical_EndDateTime >= nip_end)))]
-
-                    # Skip data of Weather causing Incidents at around the same time but
-                    if not overlaps.empty:
-                        non_ip_weather_obs = non_ip_weather_obs[
-                            (non_ip_weather_obs.DateTime < np.min(overlaps.Critical_StartDateTime)) |
-                            (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
-
-                    # Get the max/min/avg Weather parameters for those incident periods
-                    non_ip_weather_stats = self.calc_weather_stats(non_ip_weather_obs)
-
-                    return non_ip_weather_stats
-
                 # Get stats data for the specified "Non-Incident Periods"
-                # noinspection PyTypeChecker
-                nip_stats = nip_data.apply(
-                    lambda x: get_non_ip_weather_stats(
-                        x.WeatherCell, x.Critical_StartDateTime, x.Critical_EndDateTime,
-                        x.StanoxSection),
-                    axis=1)
-                nip_statistics = pd.DataFrame(
-                    nip_stats.tolist(), index=nip_stats.index, columns=self.get_weather_variable_names())
-                nip_statistics['Temperature_dif'] = \
-                    nip_statistics.Temperature_max - nip_statistics.Temperature_min
+                incidents = self.delimit_non_incident_periods(incidents=incidents)
+                non_ip_weather_stats = self.get_non_ip_weather_stats(incidents, ip_data)
 
-                #
-                nip_data = nip_data.join(nip_statistics.dropna(), how='inner')
+                nip_data = pd.concat([incidents, non_ip_weather_stats], axis=1)
                 nip_data['IncidentReported'] = 0
 
-                # Merge "ip_data" and "nip_data" into one DataFrame
+                # Concatenate `ip_data` and `nip_data`
                 incident_location_weather = pd.concat([nip_data, ip_data], axis=0, ignore_index=True)
 
+                if verbose:
+                    print("Done.")
+
                 if pickle_it:
-                    save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
+                    save_data(incident_location_weather, path_to_file=path_to_pickle, verbose=verbose)
 
             except Exception as e:
-                print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
+                if verbose:
+                    print(f"Failed. {e}.")
                 incident_location_weather = None
 
         return incident_location_weather
 
     def get_incident_location_vegetation(self, update=False, pickle_it=False, verbose=False):
         """
-        Get vegetation conditions of incident locations.
+        Get Vegetation conditions of incident locations.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -686,19 +921,19 @@ class WindAttributedIncidents:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
-        :return: vegetation conditions of incident locations
+        :return: Vegetation conditions of incident locations
         :rtype: pandas.DataFrame or None
 
         .. note::
 
             Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended
-            when furlong_data was read. Check the function ``get_furlong_data()``.
+            when Furlongs was read. Check the function ``get_furlong_data()``.
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> incid_loc_vegetation = w_model.get_incident_location_vegetation()
 
@@ -713,9 +948,10 @@ class WindAttributedIncidents:
         """
 
         pickle_filename = make_filename(
-            "vegetation", self.Route, None,
-            self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile,
-            save_as=".pickle")
+            "Vegetation", self.route_name, None,
+            self.yards_shift_for_same_ELRs, self.yards_shift_for_diff_ELRs,
+            self.hazardous_tree_percentile,
+            save_as=".pkl")
         path_to_pickle = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
@@ -725,41 +961,40 @@ class WindAttributedIncidents:
             try:
                 """
                 # Get data of furlong Vegetation coverage and hazardous trees
-                from mssqlserver.vegetation import view_vegetation_condition_per_furlong
+                from mssqlserver.Vegetation import view_vegetation_condition_per_furlong
                 furlong_vegetation_data = view_vegetation_condition_per_furlong()
                 furlong_vegetation_data.set_index('FurlongID', inplace=True)
                 """
 
-                incident_location_furlongs = get_incident_location_furlongs(
-                    route_name=self.Route, weather_category=None,
-                    shift_yards_same_elr=self.ShiftYardsForSameELRs,
-                    shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
+                incident_location_furlongs = self._furlong_handler.get_incident_location_furlongs(
+                    route_name=self.route_name, weather_category=None,
+                    shift_yards_same_elr=self.yards_shift_for_same_ELRs,
+                    shift_yards_diff_elr=self.yards_shift_for_diff_ELRs)
                 incident_location_furlongs.dropna(inplace=True)
 
-                # Compute Vegetation stats for each incident record
-                # noinspection PyTypeChecker
-                vegetation_statistics = incident_location_furlongs.apply(
-                    lambda x: pd.Series(self.calc_vegetation_stats(
+                # Calculate Vegetation stats for each incident location
+                vegetation_stats = incident_location_furlongs.apply(
+                    lambda x: pd.Series(self.calculate_vegetation_statistics(
                         x.Critical_FurlongIDs, x.StartELR, x.EndELR, x.Section_Length_Adj)),
                     axis=1)
 
-                vegetation_statistics.columns = sorted(
-                    list(self.VegStatsCalc_.keys()) + ['TreeDensity', 'HazardTreeDensity'])
+                vegetation_stats.columns = sorted(
+                    list(self.vegetation_calc.keys()) + ['TreeDensity', 'HazardTreeDensity'])
                 veg_percent = [
-                    x for x in self.CoverPercents if re.match('^CoverPercent*.[^Open|thr]', x)]
-                vegetation_statistics['CoverPercentVegetation'] = \
-                    vegetation_statistics[veg_percent].apply(np.sum, axis=1)
+                    x for x in self.cover_percents if re.match('^CoverPercent*.[^Open|thr]', x)]
+                vegetation_stats['CoverPercentVegetation'] = vegetation_stats[veg_percent].apply(
+                    np.sum, axis=1)
 
                 hazard_others_pctl = [
-                    ''.join([x, '_%s' % self.HazardsPercentile]) for x in self.HazardsOthers]
-                rename_features = dict(zip(self.HazardsOthers, hazard_others_pctl))
+                    ''.join([x, '_%s' % self.hazardous_tree_percentile]) for x in self.hazard_others]
+                rename_features = dict(zip(self.hazard_others, hazard_others_pctl))
                 rename_features.update({'AssetNumber': 'AssetCount'})
-                vegetation_statistics.rename(columns=rename_features, inplace=True)
+                vegetation_stats.rename(columns=rename_features, inplace=True)
 
-                incident_location_vegetation = incident_location_furlongs.join(vegetation_statistics)
+                incident_location_vegetation = incident_location_furlongs.join(vegetation_stats)
 
                 if pickle_it:
-                    save_pickle(incident_location_vegetation, path_to_pickle, verbose=verbose)
+                    save_data(incident_location_vegetation, path_to_file=path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
@@ -768,8 +1003,9 @@ class WindAttributedIncidents:
         return incident_location_vegetation
 
     def integrate_data(self, update=False, pickle_it=False, verbose=False):
+        # noinspection GrazieInspection
         """
-        Integrate the weather and vegetation conditions for incident locations.
+        Integrate the Weather and Vegetation conditions for incident locations.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -780,11 +1016,11 @@ class WindAttributedIncidents:
         :return: integrated data set for modelling
         :rtype: pandas.DataFrame or None
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> integrated_data_set = w_model.integrate_data()
 
@@ -799,9 +1035,10 @@ class WindAttributedIncidents:
         """
 
         pickle_filename = make_filename(
-            "dataset", self.Route, self.WeatherCategory,
-            self.IP_StartHrs, self.IP_EndHrs, self.NIP_StartHrs,
-            self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile)
+            "dataset", self.route_name, self.weather_category,
+            self.ip_start_hrs, self.ip_end_hrs, self.nip_start_hrs,
+            self.yards_shift_for_same_ELRs, self.yards_shift_for_diff_ELRs,
+            self.hazardous_tree_percentile)
         path_to_file = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_file) and not update:
@@ -809,9 +1046,9 @@ class WindAttributedIncidents:
 
         else:
             try:
-                # Get information of Schedule 8 incident and the relevant weather conditions
+                # Get information of Schedule 8 incident and the relevant Weather conditions
                 incident_location_weather = self.get_incident_location_weather()
-                # Get information of vegetation conditions for the incident locations
+                # Get information of Vegetation conditions for the incident locations
                 incident_location_vegetation = self.get_incident_location_vegetation()
                 # incident_location_vegetation.drop(
                 #     labels=['IncidentCount', 'DelayCost', 'DelayMinutes'], axis=1, inplace=True)
@@ -823,12 +1060,12 @@ class WindAttributedIncidents:
                     how='inner', on=common_feats)
 
                 # Electrified
-                integrated_weather_vegetation.Electrified = \
-                    integrated_weather_vegetation.Electrified.astype(int)
+                integrated_weather_vegetation['Electrified'] = \
+                    integrated_weather_vegetation['Electrified'].astype(int)
 
                 # Categorize average wind directions into 4 quadrants
                 wind_direction = pd.cut(
-                    integrated_weather_vegetation.WindDirection_avg.values,
+                    integrated_weather_vegetation['WindDirection_avg'].values,
                     [0, 90, 180, 270, 360], right=False)
 
                 integrated_data = integrated_weather_vegetation.join(
@@ -836,7 +1073,7 @@ class WindAttributedIncidents:
                     pd.get_dummies(wind_direction, prefix='WindDirection_avg'))
 
                 if pickle_it:
-                    save_pickle(integrated_data, path_to_file, verbose=verbose)
+                    save_data(integrated_data, path_to_file, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}".format(pickle_filename, e))
@@ -844,17 +1081,17 @@ class WindAttributedIncidents:
 
         return integrated_data
 
-    # == Model training ===============================================================================
+    # == Model training ============================================================================
 
     def prep_training_and_test_sets(self, add_const=True):
         """
         Further process the integrated data set and split it into a training set and a test set.
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> _, training_data, test_data = w_model.prep_training_and_test_sets()
         """
@@ -864,11 +1101,11 @@ class WindAttributedIncidents:
 
         # Select season data: 'spring', 'summer', 'autumn', 'winter'
         processed_data = get_data_by_meteorological_seasons(
-            integrated_dat, in_seasons=self.Seasons, datetime_col='StartDate')
+            integrated_dat, seasons=self.seasons, datetime_col='StartDate')
 
         # Remove outliers
-        if 95 <= self.OutlierPercentile <= 100:
-            upper_limit = np.percentile(processed_data.DelayMinutes, self.OutlierPercentile)
+        if 95 <= self.outlier_percentile <= 100:
+            upper_limit = np.percentile(processed_data.DelayMinutes, self.outlier_percentile)
             processed_data = processed_data[processed_data.DelayMinutes <= upper_limit]
             # from pyhelpers.ops import get_extreme_outlier_bounds
             # l, u = get_extreme_outlier_bounds(integrated_data.DelayMinutes, k=1.5)
@@ -897,7 +1134,7 @@ class WindAttributedIncidents:
         outcome_columns = ['DelayMinutes', 'DelayCost', 'IncidentCount']
         processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
 
-        # Select data before 2014 as training data set, with the rest being test set
+        # Select data before 2014 as the training data set, and the rest the test set
         training_set = processed_data[processed_data.FinancialYear < 2014]
         test_set = processed_data[processed_data.FinancialYear == 2014]
 
@@ -917,11 +1154,11 @@ class WindAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> w_model.describe_training_set(save_as=None)
         """
@@ -1019,11 +1256,11 @@ class WindAttributedIncidents:
         :return: estimated model and relevant results
         :rtype: tuple
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> output = w_model.logistic_regression(random_state=0)
         """
@@ -1031,17 +1268,20 @@ class WindAttributedIncidents:
         _, training_set, test_set = self.prep_training_and_test_sets(add_const=add_intercept)
 
         if add_intercept:
-            explanatory_variables = ['const'] + self.ExplanatoryVariables
+            explanatory_variables = ['const'] + self.variable_names
         else:
-            explanatory_variables = self.ExplanatoryVariables.copy()
+            explanatory_variables = self.variable_names.copy()
 
         try:
             np.random.seed(random_state)
 
-            if self.ModelType == 'logit':
-                mod = sm_dcm.Logit(training_set.IncidentReported, training_set[explanatory_variables])
+            if self.model_type == 'logit':
+                mod = sm_dcm.Logit(
+                    training_set.IncidentReported, training_set[explanatory_variables])
             else:
-                mod = sm_dcm.Probit(training_set.IncidentReported, training_set[explanatory_variables])
+                mod = sm_dcm.Probit(
+                    training_set.IncidentReported, training_set[explanatory_variables])
+
             result_summary = mod.fit(method='newton', maxiter=1000, full_output=True, disp=False)
 
             if verbose:
@@ -1068,7 +1308,7 @@ class WindAttributedIncidents:
             self.__setattr__('AUC', auc)
             self.__setattr__('Threshold', threshold)
 
-            # prediction accuracy
+            # Prediction accuracy
             test_set['incident_prediction'] = test_set.incident_prob.apply(
                 lambda x: 1 if x >= threshold else 0)
             test = pd.Series(test_set.IncidentReported == test_set.incident_prediction)
@@ -1076,7 +1316,7 @@ class WindAttributedIncidents:
             if verbose:
                 print("\nAccuracy: %f" % mod_accuracy)
 
-            # incident prediction accuracy
+            # Incident prediction accuracy
             incid_only = test_set[test_set.IncidentReported == 1]
             test_acc = pd.Series(incid_only.IncidentReported == incid_only.incident_prediction)
             incid_accuracy = np.divide(sum(test_acc), len(test_acc))
@@ -1139,12 +1379,12 @@ class WindAttributedIncidents:
             var_names = ['training_set', 'test_set',
                          'result_summary', 'mod_accuracy', 'incid_accuracy', 'threshold']
             resources = {k: repo[k] for k in list(var_names)}
-            result_pickle = make_filename("result", self.Route, self.WeatherCategory,
-                                          self.IP_StartHrs, self.IP_EndHrs, self.NIP_StartHrs,
-                                          self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs,
-                                          self.HazardsPercentile)
+            result_pickle = make_filename("result", self.route_name, self.weather_category,
+                                          self.ip_start_hrs, self.ip_end_hrs, self.nip_start_hrs,
+                                          self.yards_shift_for_same_ELRs, self.yards_shift_for_diff_ELRs,
+                                          self.hazardous_tree_percentile)
 
-            save_pickle(resources, self.cdd_trial(result_pickle), verbose=verbose)
+            save_data(resources, self.cdd_trial(result_pickle), verbose=verbose)
 
         return result_summary, mod_accuracy, incid_accuracy, threshold
 
@@ -1159,11 +1399,11 @@ class WindAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``True``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> _ = w_model.logistic_regression(pickle_it=False)
             >>> w_model.plot_roc(save_as=None)
@@ -1207,11 +1447,11 @@ class WindAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``True``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> _ = w_model.logistic_regression(pickle_it=False)
             >>> w_model.plot_pred_likelihood(save_as=None)
@@ -1255,11 +1495,11 @@ class WindAttributedIncidents:
         :return: summary of the evaluation results
         :rtype: pandas.DataFrame
 
-        **Test**::
+        **Examples**::
 
-            >>> from modeller.prototype import WindAttributedIncidents
+            >>> from modeller.prototype import WindRelatedIncidents
 
-            >>> w_model = WindAttributedIncidents(trial_id=2)
+            >>> w_model = WindRelatedIncidents(trial_id=2)
 
             >>> eval_summary = w_model.evaluate_prototype_model()
         """
@@ -1296,12 +1536,12 @@ class WindAttributedIncidents:
                 counter += 1
                 print("\tParameter set {} / {}".format(counter, total_no), end=" ... ")
 
-            (self.IP_StartHrs,
-             self.IP_EndHrs,
-             self.NIP_StartHrs,
-             self.ShiftYardsForSameELRs,
-             self.ShiftYardsForDiffELRs,
-             self.HazardsPercentile) = params
+            (self.ip_start_hrs,
+             self.ip_end_hrs,
+             self.nip_start_hrs,
+             self.yards_shift_for_same_ELRs,
+             self.yards_shift_for_diff_ELRs,
+             self.hazardous_tree_percentile) = params
 
             result, mod_acc, incid_acc, threshold = self.logistic_regression(
                 add_intercept=add_intercept, pickle_it=pickle_each_run, verbose=False)
@@ -1348,8 +1588,8 @@ class WindAttributedIncidents:
             ['PredAcc', 'PredAcc_Incid', 'AIC', 'BIC'], ascending=[False, False, True, True],
             inplace=True)
 
-        save_pickle(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
-        save_pickle(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
+        save_data(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
+        save_data(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
 
         if verbose:
             print("\nTotal elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))
@@ -1365,9 +1605,9 @@ class WindAttributedIncidents:
         """
 
         result_pickle = make_filename(
-            "result", self.Route, self.WeatherCategory, self.IP_StartHrs, self.IP_EndHrs,
-            self.NIP_StartHrs, self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs,
-            self.HazardsPercentile)
+            "result", self.route_name, self.weather_category, self.ip_start_hrs, self.ip_end_hrs,
+            self.nip_start_hrs, self.yards_shift_for_same_ELRs, self.yards_shift_for_diff_ELRs,
+            self.hazardous_tree_percentile)
 
         path_to_pickle = self.cdd_trial(result_pickle)
 
@@ -1384,18 +1624,26 @@ class WindAttributedIncidents:
         return results
 
 
-class HeatAttributedIncidents:
+class HeatAttributedIncidents(Prototype):
+    """A prototype data model of predicting heat-related Incidents."""
 
-    def __init__(self, trial_id,
-                 ip_start_hrs=-24, lp_days=-8, nip_start_hrs=-24,
-                 shift_yards_same_elr=220, shift_yards_diff_elr=220,
-                 hazard_pctl=50, outlier_pctl=99,
-                 model_type='logit', in_seasons='summer'):
-        self.Name = 'A prototype data model of predicting heat-related incidents.'
+    ROUTE_NAME = 'Anglia'
+    WEATHER_CATEGORY = 'Heat'
 
-        self.TrialID = "{}".format(trial_id)
+    def __init__(self, trial_id, ip_start_hrs=-24, lp_days=-8, nip_start_hrs=-24,
+                 shift_yards_same_elr=220, shift_yards_diff_elr=220, hazard_pctl=50, outlier_pctl=99,
+                 model_type='logit', seasons='summer'):
 
-        self.METEx = METExLite(database_name='NR_METEx_20150331')
+        super().__init__(
+            trial_id, route_name=self.ROUTE_NAME, weather_category=self.WEATHER_CATEGORY,
+            ip_start_hrs=ip_start_hrs, ip_end_hrs=ip_end_hrs, nip_start_hrs=nip_start_hrs,
+            shift_yards_same_elr=shift_yards_same_elr, shift_yards_diff_elr=shift_yards_diff_elr,
+            hazard_pctl=hazard_pctl, seasons=seasons, outlier_pctl=outlier_pctl,
+            model_type=model_type)
+
+        self.trial_id = str(trial_id)
+
+        self.METEx = METEX(use_old_db=True)
 
         self.Route = 'Anglia'
         self.WeatherCategory = 'Heat'
@@ -1416,9 +1664,10 @@ class HeatAttributedIncidents:
                                  'TotalPrecipitation': (np.nanmax, np.nanmin, np.nanmean)}
 
         # Get incident_location_furlongs
-        self.Furlongs = get_furlongs_data(route_name=self.Route, weather_category=None,
-                                          shift_yards_same_elr=self.ShiftYardsForSameELRs,
-                                          shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
+        self.Furlongs = self._furlong_handler.get_furlongs_data(
+            route_name=self.Route, weather_category=None,
+            shift_yards_same_elr=self.ShiftYardsForSameELRs,
+            shift_yards_diff_elr=self.ShiftYardsForDiffELRs)
 
         def specify_veg_stats_calc():
             """
@@ -1458,7 +1707,7 @@ class HeatAttributedIncidents:
         self.CoverPercents, self.HazardsOthers, self.VegStatsCalc_ = specify_veg_stats_calc()
 
         self.ModelType = model_type
-        self.Seasons = in_seasons
+        self.Seasons = seasons
         self.OutlierPercentile = outlier_pctl
 
         self.ExplanatoryVariables = [
@@ -1541,7 +1790,7 @@ class HeatAttributedIncidents:
         :return: absolute path to "models\\prototype\\heat" and subdirectories / a file
         :rtype: str
 
-        **Test**::
+        **Examples**::
 
             >>> import os
             >>> from modeller.prototype import HeatAttributedIncidents
@@ -1552,7 +1801,7 @@ class HeatAttributedIncidents:
             'models\\prototype\\heat'
         """
 
-        path = cd_models("prototype", "heat", *sub_dir, mkdir=mkdir)
+        path = cd("models", "prototype", "heat", *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -1567,7 +1816,7 @@ class HeatAttributedIncidents:
         :return: absolute path to "models\\prototype\\heat\\<trial_id>" and subdirectories / a file
         :rtype: str
 
-        **Test**::
+        **Examples**::
 
             >>> import os
             >>> from modeller.prototype import HeatAttributedIncidents
@@ -1578,19 +1827,19 @@ class HeatAttributedIncidents:
             'models\\prototype\\heat\\0'
         """
 
-        path = self.cdd(self.TrialID, *sub_dir, mkdir=mkdir)
+        path = self.cdd(self.trial_id, *sub_dir, mkdir=mkdir)
 
         return path
 
     def get_weather_variable_names(self, temperature_dif=False, supplement=None):
         """
-        Get weather variable names.
+        Get Weather variable names.
 
         :param temperature_dif: whether to include 'Temperature_dif', defaults to ``False``
         :type temperature_dif: bool
         :param supplement: e.g. 'Hottest_Heretofore'
         :type supplement: str, list, None
-        :return: a list of names of weather variables
+        :return: a list of names of Weather variables
         :rtype: list
         """
 
@@ -1619,10 +1868,10 @@ class HeatAttributedIncidents:
 
         return wind_variable_names
 
-    # == Calculators ==================================================================================
+    # == Calculators ===============================================================================
 
     @staticmethod
-    def calc_average_wind(wind_speeds, wind_directions):
+    def calculate_average_wind(wind_speeds, wind_directions):
         """
         Calculate average wind speed and direction.
 
@@ -1648,13 +1897,13 @@ class HeatAttributedIncidents:
 
         return average_wind_speed, average_wind_direction
 
-    def calc_weather_stats(self, weather_obs):
+    def calculate_weather_stats(self, weather_obs):
         """
         Compute the statistics for all the Weather variables (except wind).
 
-        :param weather_obs: observed data of weather conditions
+        :param weather_obs: Observed data of Weather conditions.
         :type weather_obs: pandas.DataFrame
-        :return: statistics for weather conditions
+        :return: Statistics for Weather conditions.
         :rtype: list
 
         .. note::
@@ -1670,7 +1919,7 @@ class HeatAttributedIncidents:
             weather_obs.fillna(value=np.nan, inplace=True)
             stats = weather_obs.fillna(np.nan).groupby('WeatherCell').aggregate(self.WeatherStatsCalc)
             stats['WindSpeed_avg'], stats['WindDirection_avg'] = \
-                self.calc_average_wind(weather_obs.WindSpeed, weather_obs.WindDirection)
+                self.calculate_average_wind(weather_obs.WindSpeed, weather_obs.WindDirection)
 
             weather_stats = stats.values[0].tolist()  # + [weather_obs.index.tolist()]
 
@@ -1681,9 +1930,9 @@ class HeatAttributedIncidents:
 
     def calc_vegetation_stats(self, furlong_ids, start_elr, end_elr, total_yards_adjusted):
         """
-        Calculate stats of vegetation variables for each incident record
+        Calculate stats of Vegetation variables for each incident record
 
-        **Test**::
+        **Examples**::
 
             i = 337
 
@@ -1789,12 +2038,12 @@ class HeatAttributedIncidents:
 
         return veg_stats
 
-    # == Data integration =============================================================================
+    # == Data integration ==========================================================================
 
     def get_incident_location_weather(self, update=False, pickle_it=False, verbose=False):
         # noinspection GrazieInspection
         """
-        Get TRUST data and the weather conditions for each incident location.
+        Get TRUST data and the Weather conditions for each incident location.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -1802,10 +2051,10 @@ class HeatAttributedIncidents:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
-        :return: weather conditions of incident locations
+        :return: Weather conditions of incident locations
         :rtype: pandas.DataFrame or None
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -1824,7 +2073,7 @@ class HeatAttributedIncidents:
         """
 
         pickle_filename = make_filename(
-            "weather", self.Route, self.WeatherCategory, self.IP_StartHrs, self.LP, self.NIP_StartHrs,
+            "Weather", self.Route, self.WeatherCategory, self.IP_StartHrs, self.LP, self.NIP_StartHrs,
             save_as=".pickle")
         path_to_pickle = self.cdd_trial(pickle_filename)
 
@@ -1834,7 +2083,7 @@ class HeatAttributedIncidents:
         else:
             try:
                 # Getting incident data for all incident locations
-                incidents = self.METEx.view_schedule8_costs_by_datetime_location_reason(
+                incidents = self.METEx.view_schedule8_cost_by_day_location_reason(
                     self.Route, self.WeatherCategory)
                 # Drop non-Weather-related incident records
                 if self.WeatherCategory is None:
@@ -1850,7 +2099,7 @@ class HeatAttributedIncidents:
 
                 if incidents.WeatherCell.dtype != 'int64':
                     # Rectify the records for which Weather cell id is empty
-                    weather_cell = self.METEx.get_weather_cell()
+                    weather_cell = self.METEx.read_weather_cell()
                     ll = [shapely.geometry.Point(xy) for xy in
                           zip(weather_cell.ll_Longitude, weather_cell.ll_Latitude)]
                     ul = [shapely.geometry.Point(xy) for xy in
@@ -1881,10 +2130,10 @@ class HeatAttributedIncidents:
 
                 def get_ip_weather_stats(weather_cell_id, ip_start, ip_end):
                     """
-                    Processing weather data for IP.
-                    (Get data of weather conditions that led to Incidents for each record.)
+                    Processing Weather data for IP.
+                    (Get data of Weather conditions that led to Incidents for each record.)
 
-                    :param weather_cell_id: weather cell ID
+                    :param weather_cell_id: Weather cell ID
                     :type weather_cell_id: int
                     :param ip_start: start of an incident period
                     :type ip_start: pandas.Timestamp
@@ -1893,23 +2142,23 @@ class HeatAttributedIncidents:
                     :return: a list of statistics
                     :rtype: list
 
-                    **Test**::
+                    **Examples**::
 
                         i = 100
 
-                        weather_cell_id = incidents.WeatherCell.iloc[i]
-                        ip_start = incidents.StartDateTime.iloc[i]
-                        ip_end = incidents.EndDateTime.iloc[i]
+                        weather_cell_id = Incidents.WeatherCell.iloc[i]
+                        ip_start = Incidents.StartDateTime.iloc[i]
+                        ip_end = Incidents.EndDateTime.iloc[i]
 
                         get_ip_weather_stats(weather_cell_id, ip_start, ip_end)
                     """
 
                     # Get Weather data about where and when the incident occurred
-                    ip_weather_obs = self.METEx.query_weather_by_id_datetime(
+                    ip_weather_obs = self.METEx.query_weather(
                         weather_cell_id, ip_start, ip_end, pickle_it=False)
 
                     # Get the max/min/avg Weather parameters for those incident periods
-                    weather_stats_data = self.calc_weather_stats(ip_weather_obs)
+                    weather_stats_data = self.calculate_weather_stats(ip_weather_obs)
 
                     return weather_stats_data
 
@@ -1940,10 +2189,10 @@ class HeatAttributedIncidents:
 
                 def get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section):
                     """
-                    Processing weather data for non-IP.
-                    (Get data of weather conditions that were less likely to lead to incidents.)
+                    Processing Weather data for non-IP.
+                    (Get data of Weather conditions that were less likely to lead to Incidents.)
 
-                    :param weather_cell_id: weather cell ID
+                    :param weather_cell_id: Weather cell ID
                     :type weather_cell_id: int
                     :param nip_start: start of a non-incident period
                     :type nip_start: pandas.Timestamp
@@ -1954,7 +2203,7 @@ class HeatAttributedIncidents:
                     :return: a list of statistics
                     :rtype: list
 
-                    **Test**::
+                    **Examples**::
 
                         i = 100
 
@@ -1963,11 +2212,11 @@ class HeatAttributedIncidents:
                         nip_end = nip_data.EndDateTime.iloc[i]
                         stanox_section = nip_data.StanoxSection.iloc[i]
 
-                        get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section)
+                        _get_non_ip_weather_stats(weather_cell_id, nip_start, nip_end, stanox_section)
                     """
 
                     # Get non-IP Weather data about where and when the incident occurred
-                    non_ip_weather_obs = self.METEx.query_weather_by_id_datetime(
+                    non_ip_weather_obs = self.METEx.query_weather(
                         weather_cell_id, nip_start, nip_end, pickle_it=False)
 
                     # Get all incident period data on the same section
@@ -1985,7 +2234,7 @@ class HeatAttributedIncidents:
                             (non_ip_weather_obs.DateTime > np.max(overlaps.Critical_EndDateTime))]
 
                     # Get the max/min/avg Weather parameters for those incident periods
-                    non_ip_weather_stats = self.calc_weather_stats(non_ip_weather_obs)
+                    non_ip_weather_stats = self.calculate_weather_stats(non_ip_weather_obs)
 
                     return non_ip_weather_stats
 
@@ -2033,7 +2282,7 @@ class HeatAttributedIncidents:
                     pd.get_dummies(temperature_category))
 
                 if pickle_it:
-                    save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
+                    save_data(incident_location_weather, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}\". {}.".format(os.path.splitext(pickle_filename)[0], e))
@@ -2057,7 +2306,7 @@ class HeatAttributedIncidents:
         :type verbose: bool or int
         :return:
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2122,7 +2371,7 @@ class HeatAttributedIncidents:
 
     def get_incident_location_vegetation(self, update=False, pickle_it=False, verbose=False):
         """
-        Get vegetation conditions of incident locations.
+        Get Vegetation conditions of incident locations.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -2130,15 +2379,15 @@ class HeatAttributedIncidents:
         :type pickle_it: bool
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
-        :return: vegetation conditions of incident locations
+        :return: Vegetation conditions of incident locations
         :rtype: pandas.DataFrame or None
 
         .. note::
 
             Note that the "CoverPercent..." in ``furlong_vegetation_data`` has been amended
-            when furlong_data was read. Check the function ``get_furlong_data()``.
+            when Furlongs was read. Check the function ``get_furlong_data()``.
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2157,7 +2406,7 @@ class HeatAttributedIncidents:
         """
 
         pickle_filename = make_filename(
-            "vegetation", self.Route, None,
+            "Vegetation", self.Route, None,
             self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile,
             save_as=".pickle")
         path_to_pickle = self.cdd_trial(pickle_filename)
@@ -2169,7 +2418,7 @@ class HeatAttributedIncidents:
             try:
                 """
                 # Get data of furlong Vegetation coverage and hazardous trees
-                from mssqlserver.vegetation import view_vegetation_condition_per_furlong
+                from mssqlserver.Vegetation import view_vegetation_condition_per_furlong
                 furlong_vegetation_data = view_vegetation_condition_per_furlong()
                 furlong_vegetation_data.set_index('FurlongID', inplace=True)
                 """
@@ -2203,7 +2452,7 @@ class HeatAttributedIncidents:
                 incident_location_vegetation = incident_location_furlongs.join(vegetation_statistics)
 
                 if pickle_it:
-                    save_pickle(incident_location_vegetation, path_to_pickle, verbose=verbose)
+                    save_data(incident_location_vegetation, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
@@ -2213,7 +2462,7 @@ class HeatAttributedIncidents:
 
     def integrate_data(self, update=False, pickle_it=False, verbose=False):
         """
-        Integrate the weather and vegetation conditions for incident locations.
+        Integrate the Weather and Vegetation conditions for incident locations.
 
         :param update: whether to do an update check, defaults to ``False``
         :type update: bool
@@ -2224,7 +2473,7 @@ class HeatAttributedIncidents:
         :return: integrated data set for modelling
         :rtype: pandas.DataFrame or None
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2266,7 +2515,7 @@ class HeatAttributedIncidents:
                     how='inner', on=common_features)
 
                 if pickle_it:
-                    save_pickle(integrated_data, path_to_pickle, verbose=verbose)
+                    save_data(integrated_data, path_to_pickle, verbose=verbose)
 
             except Exception as e:
                 print("Failed to get \"{}.\" {}.".format(os.path.splitext(pickle_filename)[0], e))
@@ -2274,13 +2523,13 @@ class HeatAttributedIncidents:
 
         return integrated_data
 
-    # == Model training ===============================================================================
+    # == Model training ============================================================================
 
     def prep_training_and_test_sets(self, add_intercept=True):
         """
         Further process the integrated data set and split it into a training set and a test set.
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2312,7 +2561,7 @@ class HeatAttributedIncidents:
 
         # Select season data: 'spring', 'summer', 'autumn', 'winter'
         processed_data = get_data_by_meteorological_seasons(
-            integrated_data, in_seasons=self.Seasons, datetime_col='StartDateTime')
+            integrated_data, seasons=self.Seasons, datetime_col='StartDateTime')
 
         # Remove outliers
         if 95 <= self.OutlierPercentile <= 100:
@@ -2331,7 +2580,7 @@ class HeatAttributedIncidents:
         outcome_columns = ['DelayMinutes', 'DelayCost', 'IncidentCount']
         processed_data.loc[processed_data.IncidentReported == 0, outcome_columns] = 0
 
-        # Select data before 2014 as training data set, with the rest being test set
+        # Select data before 2014 as the training data set, and the rest the test set
         training_set = processed_data[processed_data.FinancialYear < 2014]
         test_set = processed_data[processed_data.FinancialYear == 2014]
 
@@ -2351,7 +2600,7 @@ class HeatAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``False``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2441,7 +2690,7 @@ class HeatAttributedIncidents:
         :return: estimated model and relevant results
         :rtype: tuple
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2518,7 +2767,7 @@ class HeatAttributedIncidents:
                 self.IP_StartHrs, self.LP, self.NIP_StartHrs,
                 self.ShiftYardsForSameELRs, self.ShiftYardsForDiffELRs, self.HazardsPercentile)
 
-            save_pickle(resources, self.cdd_trial(result_pickle), verbose=verbose)
+            save_data(resources, self.cdd_trial(result_pickle), verbose=verbose)
 
         return result_summary, model_accuracy, incident_accuracy, threshold
 
@@ -2533,7 +2782,7 @@ class HeatAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``True``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2581,7 +2830,7 @@ class HeatAttributedIncidents:
         :param verbose: whether to print relevant information in console, defaults to ``True``
         :type verbose: bool or int
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2630,7 +2879,7 @@ class HeatAttributedIncidents:
         :return: summary of the evaluation results
         :rtype: pandas.DataFrame
 
-        **Test**::
+        **Examples**::
 
             >>> from modeller.prototype import HeatAttributedIncidents
 
@@ -2713,8 +2962,8 @@ class HeatAttributedIncidents:
             ['PredAcc', 'PredAcc_Incid', 'AIC', 'BIC'], ascending=[False, False, True, True],
             inplace=True)
 
-        save_pickle(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
-        save_pickle(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
+        save_data(results, self.cdd_trial("evaluation_results.pickle"), verbose=verbose)
+        save_data(evaluation_summary, self.cdd_trial("evaluation_summary.pickle"), verbose=verbose)
 
         if verbose:
             print("\nTotal elapsed time: %.2f hrs." % ((time.time() - start_time) / 3600))

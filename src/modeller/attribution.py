@@ -1,228 +1,331 @@
-""" Weather attribution of Incidents """
+"""Attribution / classification of different Weather-related Incidents."""
 
-import numpy as np
+import gc
+import os
+
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from preprocessor import METExLite, Schedule8IncidentReports
-
-metex = METExLite()
+from src.preprocessor import METEX, Schedule8IncidentReports
 
 
-# == Task 1: Broad classification of incidents into weather-related and non-weather-related ===========
+class _Base:
 
-def get_task_1_train_test_data(random_state=0, test_size=0.2):
-    """
-    Get training and test data sets for Task 1.
+    def __init__(self, random_state=0):
+        self.random_state = random_state
+        self.metex = METEX()
 
-    :param random_state: a random seed number, defaults to ``0``
-    :type random_state: int, None
-    :param test_size: size of test data set, defaults to ``0.2``
-    :type test_size: int, float
-    :return: training and test data sets
-    :rtype: tuple - (dict, dict)
+        self.training_set = None
+        self.test_set = None
+        self.model = None
+        self.score = None
 
-    **Test**::
+        self.features = [
+            'FinancialYear',
+            'IncidentDescription',
+            'IncidentReasonCode',
+            'IncidentReasonName',
+            'IncidentReasonDescription',
+            'IncidentJPIPCategory',
+            'IncidentCategory',
+            'IncidentCategoryDescription',
+            'IncidentCategorySuperGroupCode',
+            'WeatherCategory',
+        ]
 
-        from models.prototype.weather_attr import get_task_1_train_test_data
+    @classmethod
+    def compile_descriptions(cls, data):
+        temp = \
+            data['IncidentDescription'].astype(str) + ' ' + \
+            data['IncidentReasonCode'] + ' ' + \
+            data['IncidentReasonName'] + ' ' + \
+            data['IncidentReasonDescription'] + ' ' + \
+            data['IncidentJPIPCategory'] + ' ' + \
+            data['IncidentCategory'] + ' ' + \
+            data['IncidentCategoryDescription'] + ' ' + \
+            data['IncidentCategorySuperGroupCode']
+        temp.name = 'descriptions'
+        data = pd.concat([data, temp], axis=1)
 
-        random_state = 0
-        test_size = 0.2
+        del temp
+        gc.collect()
 
-        train_set, test_set = get_task_1_train_test_data(random_state, test_size)
+        vectorizer = CountVectorizer()
+        word_counter = vectorizer.fit_transform(data['descriptions'].values)
 
-        print(train_set)
-        # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
-        print(test_set)
-        # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
-    """
+        # data['word_count'] = csr_matrix_to_dict(word_counter, vectorizer)
 
-    dat = metex.view_schedule8_costs_by_datetime_location_reason()
-    dat['weather_related'] = dat.WeatherCategory.map(lambda x: 0 if x == '' else 1)
-
-    features = ['FinancialYear',
-                'IncidentDescription',
-                'IncidentReasonCode',
-                'IncidentReasonName',
-                'IncidentReasonDescription',
-                'IncidentJPIPCategory',
-                'IncidentCategory',
-                'IncidentCategoryDescription',
-                'IncidentCategorySuperGroupCode',
-                'WeatherCategory']
-
-    data = dat[['weather_related'] + features]
-    data['descriptions'] = \
-        data.IncidentDescription.astype(str) + ' ' + \
-        data.IncidentReasonCode + ' ' + \
-        data.IncidentReasonName + ' ' + \
-        data.IncidentReasonDescription + ' ' + \
-        data.IncidentJPIPCategory + ' ' + \
-        data.IncidentCategory + ' ' + \
-        data.IncidentCategoryDescription + ' ' + \
-        data.IncidentCategorySuperGroupCode
-
-    vectorizer = CountVectorizer()
-    word_counter = vectorizer.fit_transform(np.array(data.descriptions))
-
-    if random_state is None:
-        train_data, test_data = data[data.FinancialYear < 2018], data[data.FinancialYear == 2018]
-    else:
-        # 'random_state' must be an integer
-        non_weather_related_dat = data[dat.weather_related == 0]
-        weather_related_dat = data[dat.weather_related == 1]
-
-        train_dat_non, test_dat_non = train_test_split(
-            non_weather_related_dat, random_state=random_state, test_size=test_size)
-        train_dat, test_dat = train_test_split(
-            weather_related_dat, random_state=random_state, test_size=test_size)
-
-        train_data = pd.concat([train_dat_non, train_dat], axis=0)
-        test_data = pd.concat([test_dat_non, test_dat], axis=0)
-
-    idx_train, idx_test = np.array(train_data.index), np.array(test_data.index)
-
-    train_set = dict(zip(['word_counter', 'data_frame'], [word_counter[idx_train], train_data]))
-    test_set = dict(zip(['word_counter', 'data_frame'], [word_counter[idx_test], test_data]))
-
-    return train_set, test_set
+        return data, word_counter
 
 
-def classification_model_for_identifying_weather_related_incidents(random_state=0, test_size=0.2):
-    """
-    Fit model for Task 1.
+class IncidentsIdentification(_Base):
+    """Broad classification of Incidents into Weather-related and non-Weather-related."""
 
-    :param random_state: a random seed number, defaults to ``0``
-    :type random_state: int, None
-    :param test_size: size of test data set, defaults to ``0.2``
-    :type test_size: int, float
-    :return: trained model
-    :rtype: sklearn.linear_model.logistic.LogisticRegression
+    def __init__(self, random_state=0):
+        """
 
-    Testing e.g.
+        :param random_state:
+        :type random_state: int
+        """
 
-        from models.prototype.weather_attr import \
-            classification_model_for_identifying_weather_related_incidents
+        super().__init__(random_state=random_state)
 
-        random_state = 0
-        test_size = 0.2
+        self.test_size = 0.2
 
-        model = classification_model_for_identifying_weather_related_incidents(
-            random_state, test_size)
-    """
+    def get_training_test_data(self, random_state=0, ret_data=False):
+        # noinspection PyShadowingNames
+        """
+        Get training and test data sets for Task 1.
 
-    train_set, test_set = get_task_1_train_test_data(random_state, test_size)
-    model = LogisticRegression(penalty='l2', dual=False, tol=1e-4, C=1.0, fit_intercept=True,
-                               intercept_scaling=1, class_weight=None, random_state=random_state,
-                               solver='saga', max_iter=1000, multi_class='ovr',
-                               verbose=True,
-                               warm_start=False, n_jobs=1)
-    model.fit(train_set['word_counter'], train_set['data_frame'].weather_related)
+        :param random_state: a random seed number, defaults to ``0``
+        :type random_state: int | None
+        :param ret_data: defaults to ``False``
+        :type ret_data: bool
+        :return: training and test data sets
+        :rtype: tuple[dict, dict]
 
-    # model.score(test_set['word_counter'], test_set['data_frame'].weather_related)
-    # test_set['data_frame']['weather_related_predicted'] = model.predict(test_set['word_counter'])
-    return model
+        **Examples**::
+
+            >>> from src.modeller.attribution import IncidentsIdentification
+
+            >>> incid_ident = IncidentsIdentification()
+
+            >>> incid_ident.get_training_test_data(random_state=0)
+            >>> list(incid_ident.training_set.keys())
+            ['word_counter', 'data_frame']
+            >>> list(incid_ident.test_set.keys())
+            ['word_counter', 'data_frame']
+        """
+
+        self.metex.view_schedule8_cost_by_day_location_reason()
+        dat = self.metex.schedule8_cost_by_day_location_reason.copy()
+        dat['weather_related'] = dat['WeatherCategory'].map(lambda x: 0 if x == '' else 1)
+
+        data = dat[['weather_related'] + self.features]
+        data, word_counter = self.compile_descriptions(data)
+
+        if random_state == 0:
+            training_data = data[data['FinancialYear'] < 2019]
+            test_data = data[data['FinancialYear'] == 2019]
+
+        else:
+            non_weather_related_dat = data[dat['weather_related'] == 0]
+            weather_related_dat = data[dat['weather_related'] == 1]
+
+            training_dat_non, test_dat_non = train_test_split(
+                non_weather_related_dat, random_state=self.random_state, test_size=self.test_size)
+            training_dat, test_dat = train_test_split(
+                weather_related_dat, random_state=self.random_state, test_size=self.test_size)
+
+            training_data = pd.concat([training_dat_non, training_dat], axis=0)
+            test_data = pd.concat([test_dat_non, test_dat], axis=0)
+
+        training_idx, test_idx = training_data.index, test_data.index
+
+        keys = ['word_counter', 'data_frame']
+        training_set = dict(zip(keys, [word_counter[training_idx], training_data]))
+        test_set = dict(zip(keys, [word_counter[test_idx], test_data]))
+
+        self.training_set, self.test_set = training_set, test_set
+
+        if ret_data:
+            return self.training_set, self.test_set
+
+    def identify_weather_related_incidents(self, test_size=0.2, random_state=0, verbose=True,
+                                           ret_model=False):
+        # noinspection PyShadowingNames
+        """
+        A classification model for identifying Weather-related Incidents.
+
+        :param test_size: Size of test data set; defaults to ``0.2``.
+        :type test_size: int | float
+        :param random_state: A random seed number; defaults to ``0``.
+        :type random_state: int | None
+        :param verbose:
+        :type verbose:
+        :param ret_model:
+        :type ret_model:
+        :return: trained model
+        :rtype: sklearn.linear_model.logistic.LogisticRegression
+
+        Testing e.g.
+
+            >>> from src.modeller.attribution import IncidentsIdentification
+
+            >>> incid_ident = IncidentsIdentification()
+
+            >>> incid_ident.identify_weather_related_incidents()
+
+            >>> incid_ident.score
+            0.9993649617654063
+        """
+
+        if self.test_size != test_size:
+            self.test_size = test_size
+
+        assert isinstance(random_state, int)  # 'random_state' must be an integer
+        self.random_state = random_state
+
+        if self.training_set is None or self.test_set is None:
+            self.get_training_test_data(random_state=self.random_state)
+
+        model = LogisticRegression(
+            penalty='l2', dual=False, tol=1e-4, C=1.0, fit_intercept=True, intercept_scaling=1,
+            class_weight=None, solver='saga', max_iter=1000, multi_class='ovr', verbose=verbose,
+            random_state=self.random_state, warm_start=False, n_jobs=os.cpu_count() - 1)
+
+        X_train = self.training_set['word_counter']
+        y_train = self.training_set['data_frame']['weather_related']
+        model.fit(X_train, y_train)
+
+        X_test = self.test_set['word_counter']
+        y_test = self.test_set['data_frame']['weather_related']
+        # test_weather_related_predicted = model.predict(X_test)
+        self.score = model.score(X_test, y_test)
+
+        self.model = model
+
+        if ret_model:
+            return self.model
 
 
-# == Task 2: Classification of weather-related incidents into different categories ====================
+class WeatherRelatedIncidentsAttribution(_Base):
+    """Classification of Weather-related Incidents into different categories."""
 
-def get_task_2_train_test_data():
-    """
-    Get training and test data sets for Task 2.
+    def __init__(self, random_state=0):
+        """
 
-    :return: training and test data sets
-    :rtype: tuple - (dict, dict)
+        :param random_state:
+        :type random_state: int | None
+        """
 
-    **Test**::
+        super().__init__(random_state=random_state)
 
-        from models.prototype.weather_attr import get_task_2_train_test_data
+        self.sir = Schedule8IncidentReports()
 
-        train_set, test_set = get_task_2_train_test_data()
+    def get_training_test_data(self, ret_data=False):
+        # noinspection PyShadowingNames
+        """
+        Get training and test data sets for Task 2.
 
-        print(train_set)
-        # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
-        print(test_set)
-        # {'word_counter': <scipy.sparse.csr_matrix>, 'data_frame': <pandas.DataFrame>}
-    """
+        :param ret_data: defaults to ``False``
+        :type ret_data: bool
+        :return: training and test data sets
+        :rtype: tuple - (dict, dict)
 
-    reports = Schedule8IncidentReports()
+        **Examples**::
 
-    schedule8_weather_incidents = reports.get_schedule8_weather_incidents_02062006_31032014()
-    schedule8_weather_incidents = schedule8_weather_incidents['Data']
-    schedule8_weather_incidents.rename(
-        columns={'Year': 'FinancialYear', 'IncidentReason': 'IncidentReasonCode'},
-        inplace=True)
+            >>> from src.modeller.attribution import WeatherRelatedIncidentsAttribution
 
-    dat = metex.view_schedule8_costs_by_datetime_location_reason()
-    dat.WeatherCategory.fillna('', inplace=True)
+            >>> wia = WeatherRelatedIncidentsAttribution()
 
-    features = ['FinancialYear',
-                'IncidentDescription',
-                'IncidentReasonCode',
-                'IncidentReasonName',
-                'IncidentReasonDescription',
-                'IncidentJPIPCategory',
-                'IncidentCategory',
-                'IncidentCategoryDescription',
-                'IncidentCategorySuperGroupCode',
-                'WeatherCategory']
+            >>> wia.get_training_test_data()
 
-    dat_train = schedule8_weather_incidents[['WeatherCategory'] + features]
-    dat_test = dat[
-        (dat.FinancialYear == 2014) & (dat.WeatherCategory != '')][['WeatherCategory'] + features]
+            >>> list(wia.training_set.keys())
+            ['word_counter', 'data_frame']
+            >>> list(wia.test_set.keys())
+            ['word_counter', 'data_frame']
+        """
 
-    data = pd.DataFrame(pd.concat([dat_train, dat_test], ignore_index=True))
+        self.sir.read_schedule8_weather_incidents_02062006_31032014()
+        ref_dat_dict = self.sir.schedule8_weather_incidents_02062006_31032014.copy()
+        ref_dat = ref_dat_dict['Schedule8WeatherIncidents_02062006_31032014']
+        ref_dat.rename(columns={'IncidentReason': 'IncidentReasonCode'}, inplace=True)
 
-    data['descriptions'] = \
-        data.IncidentDescription.astype(str) + ' ' + \
-        data.IncidentReasonCode + ' ' + \
-        data.IncidentReasonName + ' ' + \
-        data.IncidentReasonDescription + ' ' + \
-        data.IncidentJPIPCategory + ' ' + \
-        data.IncidentCategory + ' ' + \
-        data.IncidentCategoryDescription + ' ' + \
-        data.IncidentCategorySuperGroupCode
+        self.metex.view_schedule8_cost_by_day_location_reason()
+        dat = self.metex.schedule8_cost_by_day_location_reason.copy()
+        # dat['WeatherCategory'].fillna('', inplace=True)
 
-    vectorizer = CountVectorizer()
-    word_counter = vectorizer.fit_transform(np.array(data.descriptions))
-    # data['word_count'] = csr_matrix_to_dict(word_counter, vectorizer)
+        dat_train = ref_dat[self.features]
 
-    train_data, test_data = data[data.FinancialYear < 2014], data[data.FinancialYear == 2014]
-    idx_train, idx_test = train_data.index, test_data.index
+        test_mask = (dat['FinancialYear'] == 2014) & (dat['WeatherCategory'] != '')
+        dat_test = dat[test_mask][self.features]
 
-    train_set = dict(zip(
-        ['word_counter', 'data_frame'], [word_counter[0:max(idx_train) + 1], train_data]))
-    test_set = dict(zip(['word_counter', 'data_frame'], [word_counter[min(idx_test):], test_data]))
+        data = pd.DataFrame(pd.concat([dat_train, dat_test], ignore_index=True))
+        data, word_counter = self.compile_descriptions(data)
 
-    return train_set, test_set
+        training_data = data[data['FinancialYear'] < 2014]
+        test_data = data[data['FinancialYear'] == 2014]
+        training_idx, test_idx = training_data.index, test_data.index
+
+        keys = ['word_counter', 'data_frame']
+        training_set = dict(zip(keys, [word_counter[0:max(training_idx) + 1], training_data]))
+        test_set = dict(zip(keys, [word_counter[min(test_idx):], test_data]))
+
+        self.training_set, self.test_set = training_set, test_set
+
+        if ret_data:
+            return self.training_set, self.test_set
+
+    def classify_weather_related_incidents(self, random_state=0, verbose=True, ret_model=False):
+        # noinspection PyShadowingNames
+        """
+        Fit model for Task 2.
+
+        :param random_state: a random seed number, defaults to ``0``
+        :type random_state: int or None
+        :param verbose:
+        :type verbose:
+        :param ret_model:
+        :type ret_model:
+        :return: trained model
+        :rtype: sklearn.linear_model.logistic.LogisticRegression
+
+        **Examples**::
+
+            >>> from src.modeller.attribution import WeatherRelatedIncidentsAttribution
+
+            >>> wia = WeatherRelatedIncidentsAttribution()
+
+            >>> wia.classify_weather_related_incidents()
+
+            >>> wia.score
+            0.9819918796274182
+        """
+
+        if self.training_set is None or self.test_set is None:
+            self.get_training_test_data()
+
+        if random_state != self.random_state:
+            self.random_state = random_state
+
+        model = LogisticRegression(
+            penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1,
+            class_weight=None, solver='saga', max_iter=1000, multi_class='multinomial',
+            random_state=self.random_state, verbose=verbose, warm_start=False,
+            n_jobs=os.cpu_count() - 1)
+
+        X_train = self.training_set['word_counter']
+        y_train = self.training_set['data_frame']['WeatherCategory']
+        model.fit(X_train, y_train)
+
+        self.model = model
+
+        X_test = self.test_set['word_counter']
+        y_test = self.test_set['data_frame']['WeatherCategory']
+
+        self.score = self.model.score(X_test, y_test)
+        # test_set['data_frame']['predicted_weather_category'] = model.predict(y_test)
+
+        if ret_model:
+            return self.model
 
 
-def classification_model_for_weather_related_incidents(random_state=0):
-    """
-    Fit model for Task 2.
+if __name__ == '__main__':
+    incid_ident = IncidentsIdentification()
 
-    :param random_state: a random seed number, defaults to ``0``
-    :type random_state: int, None
-    :return: trained model
-    :rtype: sklearn.linear_model.logistic.LogisticRegression
+    incid_ident.get_training_test_data(random_state=0)
+    assert list(incid_ident.training_set.keys()) == ['word_counter', 'data_frame']
+    assert list(incid_ident.test_set.keys()) == ['word_counter', 'data_frame']
+    incid_ident.identify_weather_related_incidents()
+    print(incid_ident.score)
 
-    Testing e.g.
+    wia = WeatherRelatedIncidentsAttribution()
 
-        from models.prototype.weather_attr import classification_model_for_weather_related_incidents
-
-        model = classification_model_for_weather_related_incidents(random_state, test_size)
-    """
-
-    train_set, test_set = get_task_2_train_test_data()
-    model = LogisticRegression(penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True,
-                               intercept_scaling=1, class_weight=None, random_state=random_state,
-                               solver='saga', max_iter=1000, multi_class='multinomial',
-                               verbose=True,
-                               warm_start=False, n_jobs=1)
-    model.fit(train_set['word_counter'], train_set['data_frame'].WeatherCategory)
-
-    # test_set['data_frame']['predicted_weather_category'] = model.predict(test_set['word_counter'])
-
-    return model
+    wia.get_training_test_data()
+    assert list(wia.training_set.keys()) == ['word_counter', 'data_frame']
+    assert list(wia.test_set.keys()) == ['word_counter', 'data_frame']
+    wia.classify_weather_related_incidents()
+    print(wia.score)
