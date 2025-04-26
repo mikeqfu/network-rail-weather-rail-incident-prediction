@@ -2,11 +2,12 @@
 Modeller.
 """
 
-from .prototype import HeatAttributedIncidents, WindAttributedIncidents
+from .attribution import IncidentsIdentification, WeatherRelatedIncidentsAttribution
+from .prototype import HeatAttributedIncidents, WindRelatedIncidents
 from .prototype_ext import HeatAttributedIncidentsPlus
 
 __all__ = [
-    'attribution',
-    'prototype', 'WindAttributedIncidents', 'HeatAttributedIncidents',
+    'attribution', 'IncidentsIdentification', 'WeatherRelatedIncidentsAttribution',
+    'prototype', 'WindRelatedIncidents', 'HeatAttributedIncidents',
     'prototype_ext', 'HeatAttributedIncidentsPlus',
 ]

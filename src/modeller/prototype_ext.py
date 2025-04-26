@@ -1,6 +1,5 @@
-# noinspection GrazieInspection
 """
-An extended version of the prototype model in the context of heat-related rail incidents.
+An extended version of the prototype model in the context of heat-related rail Incidents.
 
 'IR' - Broken/cracked/twisted/buckled/flawed rail
 'XH' - Severe heat affecting infrastructure the responsibility of Network Rail
@@ -9,7 +8,7 @@ An extended version of the prototype model in the context of heat-related rail i
 'JH' - Critical Rail Temperature speeds, (other than buckled rails)
 # 'IZ' - Other infrastructure causes INF OTHER
 # 'XW' - High winds affecting infrastructure the responsibility of Network
-# 'IS' - Track defects (other than rail defects) inc. fish plates, wet beds etc.
+# 'IS' - Track defects (other than rail defects) incl. fishplates, wet beds etc.
 
 0. 'IR'
 1. 'XH'
@@ -24,22 +23,22 @@ More:
 IncidentReason | IncidentReasonName | IncidentReasonDescription
 -------------- | ------------------ | -----------------------------------------------------------
 IQ             |   TRACK SIGN       | Trackside sign blown down/light out etc.
-IW             |   COLD             | Non severe - Snow/Ice/Frost affecting infr equipment, ...
+IW             |   COLD             | Non-severe - Snow/Ice/Frost affecting infr equipment, ...
 OF             |   HEAT/WIND        | Blanket speed restriction for extreme heat or high wind ...
 Q1             |   TKB PUMPS        | Takeback Pumps
 X4             |   BLNK REST        | Blanket speed restriction for extreme heat or high wind
-XW             |   WEATHER          | Severe weather not snow affecting infrastructure, resp. ...
-XX             |   MISC OBS         | Msc items on line (incl. trees) due to weather, resp. of...
+XW             |   WEATHER          | Severe Weather not snow affecting infrastructure, resp. ...
+XX             |   MISC OBS         | Msc items on line (incl. trees) due to Weather, resp. of...
 -------------- | ------------------ | -----------------------------------------------------------
 """
 
 import datetime
+import functools
 import itertools
+import multiprocessing
 import os
-import warnings
 
 import descartes
-import geopandas as gpd
 import matplotlib.cbook
 import matplotlib.font_manager
 import matplotlib.pyplot as plt
@@ -47,135 +46,113 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 import shapely.geometry
+import shapely.geometry
 import shapely.ops
-from pyhelpers.geom import get_geometric_midpoint, wgs84_to_osgb36
+from pyhelpers.dirs import cd
+from pyhelpers.geom import wgs84_to_osgb36
 from pyhelpers.settings import mpl_preferences, pd_preferences
 from pyhelpers.store import load_pickle, save_fig, save_pickle
-from scipy.stats import norm
 from sklearn import metrics
 
-from coordinator.feature import categorise_temperatures, categorise_track_orientations, \
-    get_data_by_meteorological_seasons
-from coordinator.geometry import create_weather_grid_buffer, find_closest_met_stn, \
-    find_intersecting_weather_grid
-from preprocessor import METExLite, MIDAS, UKCP09
-from utils import cd_models, make_filename
-
-
-# noinspection PyPep8Naming
-def calc_p_value(lr, X_train):
-    """
-    Calculate z-scores for sklearn LogisticRegression.
-
-    Source:
-    https://stackoverflow.com/questions/25122999/scikit-learn-how-to-check-coefficients-significance
-    """
-
-    p = lr.predict_proba(X_train)
-    n = len(p)
-    m = len(lr.coef_[0]) + 1
-
-    coefficients = np.concatenate([lr.intercept_, lr.coef_[0]])
-
-    x_full = np.matrix(np.insert(np.array(X_train), 0, 1, axis=1))
-    ans = np.zeros((m, m))
-
-    for i in range(n):
-        ans = ans + np.dot(np.transpose(x_full[i, :]), x_full[i, :]) * p[i, 1] * p[i, 0]
-
-    vcov = np.linalg.inv(np.matrix(ans))
-    se = np.sqrt(np.diag(vcov))
-    t = coefficients / se
-
-    p = (1 - norm.cdf(abs(t))) * 2
-
-    return p
+from src.preprocessor.metex import METEX
+from src.preprocessor.weather import MIDAS, UKCP09
+from src.shaft.feature import (categorise_temperatures, categorise_track_orientations,
+                               get_data_by_meteorological_seasons)
+from src.shaft.geometry import (create_weather_grid_buffer, find_closest_met_stn,
+                                find_intersecting_weather_grid)
+from src.utils import make_filename, points_from_xy
 
 
 class HeatAttributedIncidentsPlus:
-    """
-    A data model for heat-attributed rail incidents.
+    """A data model for heat-attributed rail Incidents."""
 
-    :param trial_id: ID number of a trial to be run
-    :type trial_id: int or str
-    :param route_name: name of a NR Route
-    :type route_name: str or list or None
-    :param weather_category: weather category
-    :type weather_category: str or None
-    :param seasons: season(s)
-    :type seasons: str or list or None
-    :param reason_codes: incident reason code(s)
-    :type reason_codes: str or list or None
-    :param pip_start_hrs: how many hours prior to the recorded start of an incident
-    :type pip_start_hrs: int or float
-    :param nip_start_hrs: how many hours prior to the defined start of a prior-incident period
-    :type nip_start_hrs: int or float
-    :param lp_days: number of days of a latent period between a prior-incident and a non-incident period
-    :type lp_days: int or float or None
-    :param sample_only: whether to test on a subset only
-    :type sample_only: bool or int
-    :param outlier_pctl: percentile threshold to exclude those incident records regarded as outliters
-    :type outlier_pctl: int
-    :param model_type: 'logit' or 'probit'
-    :type model_type: str
+    NAME = ''
 
-    **Test**::
+    METEx = METEX()
+    UKCP09 = UKCP09()
+    MIDAS = MIDAS()
 
-        >>> from modeller import HeatAttributedIncidentsPlus
+    def __init__(self, trial_id, route_names=None, weather_category='Heat',
+                 seasons=None, reason_codes=None, pip_start_hrs=-24, nip_start_hrs=-24, lp_days=None,
+                 sample_only=False, outlier_pctl=100, model_type='LogisticRegression',
+                 random_state=0):
+        """
+        A data model for heat-attributed rail Incidents.
 
-        >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
+        :param trial_id: ID number of a trial to be run
+        :type trial_id: int or str
+        :param route_names: name of a NR Route
+        :type route_names: str or list or None
+        :param weather_category: Weather category
+        :type weather_category: str or None
+        :param seasons: season(s)
+        :type seasons: str or list or None
+        :param reason_codes: incident reason code(s)
+        :type reason_codes: str or list or None
+        :param pip_start_hrs: how many hours prior to the recorded start of an incident
+        :type pip_start_hrs: int or float
+        :param nip_start_hrs: how many hours prior to the defined start of a prior-incident period
+        :type nip_start_hrs: int or float
+        :param lp_days: number of days of a latent period between prior-incident and non-incident period
+        :type lp_days: int or float or None
+        :param sample_only: whether to test on a subset only
+        :type sample_only: bool or int
+        :param outlier_pctl: percentile threshold to exclude those incident records regarded as outliters
+        :type outlier_pctl: int
+        :param model_type: 'logit' or 'probit'
+        :type model_type: str
 
+        **Test**::
 
-    """
+            >>> from modeller import HeatAttributedIncidentsPlus
 
-    def __init__(self, trial_id, route_name=None, weather_category='Heat',
-                 seasons=None, reason_codes=None,
-                 pip_start_hrs=-24, nip_start_hrs=-24, lp_days=None,
-                 sample_only=False, outlier_pctl=100, model_type='LogisticRegression'):
+            >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=0)
 
-        self.Name = ''
+        """
 
-        self.TrialID = "{}".format(trial_id)
+        # Settings
+        pd_preferences()
+        mpl_preferences(backend='TkAgg', font_name='Times New Roman')
+        # warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
-        self.METEx = METExLite(database_name='NR_METEx_20190203')
-        self.UKCP = UKCP09()
-        self.MIDAS = MIDAS()
+        self.trial_id = f"{trial_id}"
 
-        if route_name is None:
-            route_name = ['Anglia', 'Wessex', 'Wales', 'North and East']
-        self.Route = [route_name] if isinstance(route_name, str) else route_name
+        if route_names is None:
+            route_names = ['Anglia', 'Wessex', 'Wales', 'North and East']
+        self.route_names = [route_names] if isinstance(route_names, str) else route_names
 
-        self.WeatherCategory = weather_category
+        self.weather_category = weather_category
 
         if seasons is None:
             seasons = ['summer']
-        self.Seasons = [seasons] if isinstance(seasons, str) else seasons
+        self.seasons = [seasons] if isinstance(seasons, str) else seasons
 
         if reason_codes is None:
             reason_codes = ['IR', 'XH', 'IB', 'JH']
-        self.ReasonCodes = reason_codes if isinstance(reason_codes, list) else [reason_codes]
+        self.reason_codes = reason_codes if isinstance(reason_codes, list) else [reason_codes]
 
-        self.PIP_StartHrs = pip_start_hrs
-        self.NIP_StartHrs = nip_start_hrs
-        self.LP = lp_days
+        self.pip_start_hrs = pip_start_hrs
+        self.nip_start_hrs = nip_start_hrs
+        self.lp_days = lp_days
 
-        self.LP_Anglia = lambda x: -20 if x in range(24, 29) else (-13 if x > 28 else 0)
-        self.LP_Wessex = lambda x: -30 if x in range(24, 29) else (-25 if x > 28 else 0)
-        self.LP_NE = lambda x: -18 if x in range(24, 29) else (-16 if x > 28 else 0)
-        self.LP_Wales = lambda x: -19 if x in range(24, 29) else (-5 if x > 28 else 0)
+        self.lp_Anglia = lambda x: -20 if x in range(24, 29) else (-13 if x > 28 else 0)
+        self.lp_Wessex = lambda x: -30 if x in range(24, 29) else (-25 if x > 28 else 0)
+        self.lp_NorthAndEast = lambda x: -18 if x in range(24, 29) else (-16 if x > 28 else 0)
+        self.lp_Wales = lambda x: -19 if x in range(24, 29) else (-5 if x > 28 else 0)
 
-        self.SamplesOnly = sample_only
-        if isinstance(self.SamplesOnly, bool):
-            self.SampleSize = 10
-        elif isinstance(self.SamplesOnly, int):
-            self.SampleSize = self.SamplesOnly
+        self.samples_only = sample_only
+        if isinstance(self.samples_only, bool):
+            self.sample_size = 10
+        elif isinstance(self.samples_only, int):
+            self.sample_size = self.samples_only
 
-        self.OutlierPercentile = outlier_pctl
+        self.outlier_percentile = outlier_pctl
 
         def mode(x):
+            # noinspection PyUnresolvedReferences
             return scipy.stats.mode(np.around(x))[0]
 
-        self.UKCP09StatsCalc = {
+        self.UKCP09_stats_calc = {
             'Maximum_Temperature': (
                 np.nanmax, np.nanmin, np.nanmedian, np.nanmean, np.nanstd, mode),
             'Minimum_Temperature': (
@@ -183,19 +160,21 @@ class HeatAttributedIncidentsPlus:
             'Temperature_Change': (
                 np.nanmax, np.nanmedian, np.nanmean, np.nanstd, mode),
             'Precipitation': (
-                np.nansum, np.nanmax, np.nanmin, np.nanmedian, np.nanmean, np.nanstd, mode)}
+                np.nansum, np.nanmax, np.nanmin, np.nanmedian, np.nanmean, np.nanstd, mode),
+        }
 
-        self.RADTOBStatsCalc = {
-            'GLBL_IRAD_AMT': np.nansum}
+        self.RADTOB_stats_calc = {
+            'GLBL_IRAD_AMT': np.nansum,
+        }
 
         ukcp09_variable_names_ = [
             [k, [i.__name__.replace('nan', '') for i in v] if isinstance(v, tuple) else [
                 v.__name__.replace('nan', '')]]
-            for k, v in self.UKCP09StatsCalc.items()]
+            for k, v in self.UKCP09_stats_calc.items()]
         ukcp09_variable_names = [['_'.join([x, z]) for z in y] for x, y in ukcp09_variable_names_]
-        self.UKCP09VariableNames = list(itertools.chain.from_iterable(ukcp09_variable_names))
+        self.ukcp09_variable_names = list(itertools.chain.from_iterable(ukcp09_variable_names))
 
-        self.ExplanatoryVariables = [
+        self.variable_names = [
             # 'Maximum_Temperature_max',
             # 'Maximum_Temperature_min',
             # 'Maximum_Temperature_median',
@@ -243,13 +222,9 @@ class HeatAttributedIncidentsPlus:
             # 'Maximum_Temperature_median [30.0, inf)°C',
         ]
 
-        self.ModelType = model_type
+        self.model_type = model_type
 
-        # -- Settings ---------------------------------------------------------------------------------
-        pd_preferences()
-        mpl_preferences(font_name='Times New Roman')
-
-        warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
+        self.random_state = random_state
 
     @staticmethod
     def cdd(*sub_dir, mkdir=False):
@@ -274,7 +249,7 @@ class HeatAttributedIncidentsPlus:
             'models\\prototype_ext\\heat'
         """
 
-        path = cd_models("prototype_ext", "heat", *sub_dir, mkdir=mkdir)
+        path = cd("models", "prototype_ext", "heat", *sub_dir, mkdir=mkdir)
 
         return path
 
@@ -300,19 +275,19 @@ class HeatAttributedIncidentsPlus:
             'models\\prototype_ext\\heat\\0'
         """
 
-        path = self.cdd(self.TrialID, *sub_dir, mkdir=mkdir)
+        path = self.cdd(self.trial_id, *sub_dir, mkdir=mkdir)
 
         return path
 
-    # == Set Prior-IP, LP and Non-IP ==================================================================
+    # == Set Prior-IP, LP and Non-IP ===============================================================
 
-    def get_pip_records(self, incidents):
+    def get_pip_records(self, incident_data):
         """
         Prior-incident periods.
 
-        :param incidents: data of incident records
-        :type incidents: pandas.DataFrame
-        :return: incidents records together with defined prior-incident periods
+        :param incident_data: data of incident records
+        :type incident_data: pandas.DataFrame
+        :return: Incidents records together with defined prior-incident periods
         :rtype: pandas.DataFrame
 
         **Test**::
@@ -321,22 +296,22 @@ class HeatAttributedIncidentsPlus:
 
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
 
-            >>> incident_data = h_model_plus.get_processed_incident_records()
+            >>> incident_records = h_model_plus.get_processed_incident_data()
 
-            >>> dat = h_model_plus.get_pip_records(incident_data)
+            >>> dat = h_model_plus.get_pip_records(incident_records)
         """
 
-        data = incidents.copy()
+        data = incident_data.copy()
 
-        data['Incident_Duration'] = data.EndDateTime - data.StartDateTime
+        data['Incident_Duration'] = data['EndDateTime'] - data['StartDateTime']
 
         # End date and time of the prior IP
-        data['Critical_EndDateTime'] = data.StartDateTime.dt.round('H')
+        data['Critical_EndDateTime'] = data['StartDateTime'].dt.round('H')
 
         # Start date and time of the prior IP
-        critical_start_dt = data.Critical_EndDateTime.map(
+        critical_start_dt = data['Critical_EndDateTime'].map(
             lambda x: x + pd.Timedelta(
-                hours=self.PIP_StartHrs if x.time() > datetime.time(9) else self.PIP_StartHrs * 2))
+                hours=self.pip_start_hrs if x.time() > datetime.time(9) else self.pip_start_hrs * 2))
         data.insert(
             data.columns.get_loc('Critical_EndDateTime'), 'Critical_StartDateTime', critical_start_dt)
 
@@ -361,7 +336,7 @@ class HeatAttributedIncidentsPlus:
         """
 
         if route_name == 'Anglia':
-            lp = self.LP_Anglia(ip_max_temp_max)
+            lp = self.lp_Anglia(ip_max_temp_max)
             # if 24 <= ip_max_temp_max <= 28:
             #     lp = -20
             # elif ip_max_temp_max > 28:
@@ -369,7 +344,7 @@ class HeatAttributedIncidentsPlus:
             # else:
             #     lp = 0
         elif route_name == 'Wessex':
-            lp = self.LP_Wessex(ip_max_temp_max)
+            lp = self.lp_Wessex(ip_max_temp_max)
             # if 24 <= ip_max_temp_max <= 28:
             #     lp = -30
             # elif ip_max_temp_max > 28:
@@ -377,7 +352,7 @@ class HeatAttributedIncidentsPlus:
             # else:
             #     lp = 0
         elif route_name == 'North and East':
-            lp = self.LP_NE(ip_max_temp_max)
+            lp = self.lp_NorthAndEast(ip_max_temp_max)
             # if 24 <= ip_max_temp_max <= 28:
             #     lp = -18
             # elif ip_max_temp_max > 28:
@@ -385,7 +360,7 @@ class HeatAttributedIncidentsPlus:
             # else:
             #     lp = 0
         else:  # route_name == 'Wales':
-            lp = self.LP_Wales(ip_max_temp_max)
+            lp = self.lp_Wales(ip_max_temp_max)
             # if 24 <= ip_max_temp_max <= 28:
             #     lp = -19
             # elif ip_max_temp_max > 28:
@@ -395,7 +370,7 @@ class HeatAttributedIncidentsPlus:
 
         critical_end_dt = ip_start_dt + pd.Timedelta(days=lp)
 
-        critical_start_dt = critical_end_dt + pd.Timedelta(hours=self.NIP_StartHrs)
+        critical_start_dt = critical_end_dt + pd.Timedelta(hours=self.nip_start_hrs)
 
         critical_period = pd.interval_range(critical_start_dt, critical_end_dt)
 
@@ -409,7 +384,7 @@ class HeatAttributedIncidentsPlus:
         :type incidents: pandas.DataFrame
         :param prior_ip_data:
         :type prior_ip_data:
-        :return: incidents records together with defined prior-incident periods
+        :return: incident records and their associated prior-incident periods
         :rtype: pandas.DataFrame
 
         **Test**::
@@ -418,40 +393,40 @@ class HeatAttributedIncidentsPlus:
 
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
 
-            >>> incident_data = h_model_plus.get_processed_incident_records()
+            >>> incident_data = h_model_plus.get_processed_incident_data()
 
             >>> dat = h_model_plus.get_pip_records(incident_data)
         """
 
-        non_ip_data = incidents.copy()  # Get weather data that did not cause any incident
+        non_ip_data = incidents.copy()  # Get Weather data that did not cause any incident
 
-        if self.LP is None:
+        if self.lp_days is None:
             col_names = ['Critical_StartDateTime', 'Critical_EndDateTime', 'Critical_Period']
             non_ip_data[col_names] = prior_ip_data.apply(
-                lambda x: pd.Series(
-                    self.set_lp_and_nip(x.Route, x.Maximum_Temperature_max, x.Critical_StartDateTime)),
+                lambda x: pd.Series(self.set_lp_and_nip(
+                    x['route_names'], x['Maximum_Temperature_max'], x['Critical_StartDateTime'])),
                 axis=1)
 
         else:
             non_ip_data.Critical_EndDateTime = \
-                non_ip_data.Critical_StartDateTime + pd.Timedelta(days=self.LP)
+                non_ip_data.Critical_StartDateTime + pd.Timedelta(days=self.lp_days)
             non_ip_data.Critical_StartDateTime = \
-                non_ip_data.Critical_EndDateTime + pd.Timedelta(hours=self.NIP_StartHrs)
+                non_ip_data.Critical_EndDateTime + pd.Timedelta(hours=self.nip_start_hrs)
             non_ip_data.Critical_Period = \
                 non_ip_data[['Critical_StartDateTime', 'Critical_EndDateTime']].apply(
                     lambda x: pd.interval_range(x[0], x[1]), axis=1)
 
         return non_ip_data
 
-    # == UKCP09 =======================================================================================
+    # == UKCP09 ====================================================================================
 
     def calculate_ukcp09_stats(self, weather_data):
         """
-        Calculate the statistics for the weather variables (except radiation).
+        Calculate the statistics for the Weather variables (except radiation).
 
-        :param weather_data: data set of weather observations (for a certain period)
+        :param weather_data: data set of Weather observations (for a certain period)
         :type weather_data: pandas.DataFrame
-        :return: some statistics of the UKCP09 data in the data set of weather observations
+        :return: some statistics of the UKCP09 data in the data set of Weather observations
         :rtype: list
 
         **Test**::
@@ -462,12 +437,12 @@ class HeatAttributedIncidentsPlus:
         """
 
         if weather_data.empty:
-            weather_stats_info = [np.nan] * sum(map(np.count_nonzero, self.UKCP09StatsCalc.values()))
+            weather_stats_info = [np.nan] * sum(map(np.count_nonzero, self.UKCP09_stats_calc.values()))
 
         else:
             # Create a pseudo id for groupby() & aggregate()
             weather_data['Pseudo_ID'] = 0
-            weather_stats = weather_data.groupby('Pseudo_ID').aggregate(self.UKCP09StatsCalc)
+            weather_stats = weather_data.groupby('Pseudo_ID').aggregate(self.UKCP09_stats_calc)
             # a, b = [list(x) for x in weather_stats.columns.levels]
             # weather_stats.columns = ['_'.join(x) for x in itertools.product(a, b)]
             # if not weather_stats.empty:
@@ -481,27 +456,28 @@ class HeatAttributedIncidentsPlus:
 
     def integrate_pip_ukcp09_data(self, grids, period, pickle_it=True):
         """
-        Gather gridded weather observations of the given period for each incident record.
+        Gather gridded Weather observations of the given period for each incident record.
 
-        :param grids: e.g. grids = incidents.Weather_Grid.iloc[0]
-        :param period: e.g. period = incidents.Critical_Period.iloc[0]
+        :param grids: e.g. grids = Incidents.Weather_Grid.iloc[0]
+        :param period: e.g. period = Incidents.Critical_Period.iloc[0]
         :param pickle_it:
         :return:
 
         **Test**::
 
-            grids = incidents.Weather_Grid.iloc[1]
-            period = incidents.Critical_Period.iloc[1]
+            grids = Incidents.Weather_Grid.iloc[1]
+            period = Incidents.Critical_Period.iloc[1]
 
         """
 
-        # Find weather data for the specified period
-        prior_ip_weather = self.UKCP.query_by_grid_datetime(grids, period, pickle_it=pickle_it)
-        # Calculate the max/min/avg for weather parameters during the period
-        weather_stats = self.calculate_ukcp09_stats(prior_ip_weather)
+        # Find Weather data for the specified period
+        pip_weather = self.UKCP09.query_by_datetime_grid(period=period, grids=grids, pickle_it=pickle_it)
+        # Calculate the max/min/avg for Weather parameters during the period
+        weather_stats = self.calculate_ukcp09_stats(pip_weather)
 
         # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-        obs_by_far = self.UKCP.query_by_grid_datetime_(grids, period, pickle_it=pickle_it)
+        obs_by_far = self.UKCP09.query_by_grid_datetime_heretofore(
+            period=period, grids=grids, pickle_it=pickle_it)
         weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
         return weather_stats
@@ -509,13 +485,13 @@ class HeatAttributedIncidentsPlus:
     def get_pip_ukcp09_stats(self, incidents, weather_grid_col='Weather_Grid',
                              critical_period_col='Critical_Period'):
         """
-        Get prior-IP statistics of weather variables for each incident.
+        Get prior-IP statistics of Weather variables for each incident.
 
-        :param incidents: data of incidents
+        :param incidents: data of Incidents
         :type incidents: pandas.DataFrame
         :param weather_grid_col:
         :param critical_period_col:
-        :return: statistics of weather observation data for each incident record during the prior IP
+        :return: statistics of Weather observation data for each incident record during the prior IP
         :rtype: pandas.DataFrame
 
         **Test**::
@@ -524,26 +500,24 @@ class HeatAttributedIncidentsPlus:
             critical_period_col = 'Critical_Period'
         """
 
-        prior_ip_weather_stats = incidents[[weather_grid_col, critical_period_col]].apply(
+        pip_weather_stats = incidents[[weather_grid_col, critical_period_col]].apply(
             lambda x: pd.Series(self.integrate_pip_ukcp09_data(x[0], x[1])), axis=1)
 
-        w_col_names = self.UKCP09VariableNames + ['Hottest_Heretofore']
+        w_col_names = self.ukcp09_variable_names + ['Hottest_Heretofore']
 
-        prior_ip_weather_stats.columns = w_col_names
+        pip_weather_stats.columns = w_col_names
 
-        prior_ip_weather_stats['Temperature_Change_max'] = \
-            abs(prior_ip_weather_stats.Maximum_Temperature_max -
-                prior_ip_weather_stats.Minimum_Temperature_min)
+        pip_weather_stats['Temperature_Change_max'] = abs(
+            pip_weather_stats['Maximum_Temperature_max'] - pip_weather_stats['Minimum_Temperature_min'])
 
-        prior_ip_weather_stats['Temperature_Change_min'] = \
-            abs(prior_ip_weather_stats.Maximum_Temperature_min -
-                prior_ip_weather_stats.Minimum_Temperature_max)
+        pip_weather_stats['Temperature_Change_min'] = abs(
+            pip_weather_stats['Maximum_Temperature_min'] - pip_weather_stats['Minimum_Temperature_max'])
 
-        return prior_ip_weather_stats
+        return pip_weather_stats
 
     def integrate_nip_ukcp09_data(self, grids, period, stanox_section, pip_data, pickle_it=True):
         """
-        Gather gridded weather observations of the corresponding non-incident period
+        Gather gridded Weather observations of the corresponding non-incident period
         for each incident record.
 
         :param grids:
@@ -560,8 +534,8 @@ class HeatAttributedIncidentsPlus:
             stanox_section = nip_data_.StanoxSection.iloc[0]
         """
 
-        # Get non-IP weather data about where and when the incident occurred
-        nip_weather = self.UKCP.query_by_grid_datetime(grids, period, pickle_it=pickle_it)
+        # Get non-IP Weather data about where and when the incident occurred
+        nip_weather = self.UKCP09.query_by_datetime_grid(period=period, grids=grids, pickle_it=pickle_it)
 
         # Get all incident period data on the same section
         ip_overlap = pip_data[
@@ -570,25 +544,25 @@ class HeatAttributedIncidentsPlus:
               (pip_data.Critical_EndDateTime >= period.left.to_pydatetime()[0])) |
              ((pip_data.Critical_StartDateTime <= period.right.to_pydatetime()[0]) &
               (pip_data.Critical_EndDateTime >= period.right.to_pydatetime()[0])))]
-        # Skip data of weather causing Incidents at around the same time; but
+        # Skip data of Weather causing Incidents at around the same time; but
         if not ip_overlap.empty:
             nip_weather = nip_weather[
                 (nip_weather.Date < min(ip_overlap.Critical_StartDateTime)) |
                 (nip_weather.Date > max(ip_overlap.Critical_EndDateTime))]
-        # Get the max/min/avg weather parameters for those incident periods
+        # Get the max/min/avg Weather parameters for those incident periods
         weather_stats = self.calculate_ukcp09_stats(nip_weather)
 
         # Whether "max_temp = weather_stats[0]" is the hottest of year so far
-        obs_by_far = self.UKCP.query_by_grid_datetime_(grids, period, pickle_it=pickle_it)
+        obs_by_far = self.UKCP09.query_by_grid_datetime_heretofore(
+            period=period, grids=grids, pickle_it=pickle_it)
         weather_stats.append(1 if weather_stats[0] > obs_by_far.Maximum_Temperature.max() else 0)
 
         return weather_stats
 
     def get_nip_ukcp09_stats(self, nip_data_, pip_data, weather_grid_col='Weather_Grid',
-                             critical_period_col='Critical_Period',
-                             stanox_section_col='StanoxSection'):
+                             critical_period_col='Critical_Period', stanox_section_col='StanoxSection'):
         """
-        Get prior-IP statistics of weather variables for each incident.
+        Get prior-IP statistics of Weather variables for each incident.
 
         :param nip_data_: non-IP data
         :type nip_data_: pandas.DataFrame
@@ -611,7 +585,7 @@ class HeatAttributedIncidentsPlus:
             nip_data_[[weather_grid_col, critical_period_col, stanox_section_col]].apply(
                 lambda x: pd.Series(self.integrate_nip_ukcp09_data(x[0], x[1], x[2], pip_data)), axis=1)
 
-        non_ip_weather_stats.columns = self.UKCP09VariableNames + ['Hottest_Heretofore']
+        non_ip_weather_stats.columns = self.ukcp09_variable_names + ['Hottest_Heretofore']
 
         non_ip_weather_stats['Temperature_Change_max'] = \
             non_ip_weather_stats.Maximum_Temperature_max - non_ip_weather_stats.Minimum_Temperature_min
@@ -620,7 +594,7 @@ class HeatAttributedIncidentsPlus:
 
         return non_ip_weather_stats
 
-    # == RADTOB =======================================================================================
+    # == RADTOB ====================================================================================
 
     def calculate_radtob_stats(self, midas_radtob):
         """
@@ -636,7 +610,7 @@ class HeatAttributedIncidentsPlus:
 
         # Solar irradiation amount (Kjoules/ sq metre over the observation period)
         if midas_radtob.empty:
-            # stats_info = [np.nan] * (sum(map(np.count_nonzero, self.RADTOBStatsCalc.values())))
+            # stats_info = [np.nan] * (sum(Map(np.count_nonzero, self.RADTOBStatsCalc.values())))
             stats_info = np.nan
 
         else:
@@ -650,27 +624,25 @@ class HeatAttributedIncidentsPlus:
                 temp = midas_radtob[midas_radtob.OB_HOUR_COUNT == 24]
                 midas_radtob = pd.concat([temp, midas_radtob.loc[temp.last_valid_index() + 1:]])
 
-            radtob_stats = midas_radtob.groupby('SRC_ID').aggregate(self.RADTOBStatsCalc)
+            radtob_stats = midas_radtob.groupby('SRC_ID').aggregate(self.RADTOB_stats_calc)
             stats_info = radtob_stats.values.flatten()[0]
 
         return stats_info
 
-    def integrate_pip_radtob(self, met_stn_id, period, route_name, use_suppl_dat, pickle_it=True):
+    def integrate_pip_radtob(self, met_stn_id, period, route_name):
         """
         Gather solar radiation of the given period for each incident record.
 
         :param met_stn_id:
         :param period:
         :param route_name:
-        :param use_suppl_dat:
-        :param pickle_it:
         :return:
 
         **Test**::
 
-            met_stn_id = incidents.Met_SRC_ID.iloc[4]
-            period = incidents.Critical_Period.iloc[4]
-            route_name = incidents.Route.iloc[4]
+            met_stn_id = Incidents.Met_SRC_ID.iloc[4]
+            period = Incidents.Critical_Period.iloc[4]
+            route_name = Incidents.Route.iloc[4]
             use_suppl_dat = True
         """
 
@@ -681,36 +653,32 @@ class HeatAttributedIncidentsPlus:
         # except KeyError:
         #     prior_ip_radtob = pd.DataFrame()
 
-        prior_ip_radtob = self.MIDAS.query_radtob_by_grid_datetime(
-            met_stn_id, period, route_name, use_suppl_dat, pickle_it=pickle_it)
+        prior_ip_radtob = self.MIDAS.query_radtob_by_grid_datetime(met_stn_id, period, route_name)
 
         radtob_stats = self.calculate_radtob_stats(prior_ip_radtob)
 
         return radtob_stats
 
     def get_pip_radtob_stats(self, incidents, met_stn_id_col='Met_SRC_ID',
-                             critical_period_col='Critical_Period', route_name_col='Route',
-                             use_suppl_dat=True):
+                             critical_period_col='Critical_Period', route_name_col='Route'):
         """
         Get prior-IP statistics of radiation data for each incident.
 
-        :param incidents: data of incidents
+        :param incidents: data of Incidents
         :type incidents: pandas.DataFrame
         :param met_stn_id_col:
         :param critical_period_col:
         :param route_name_col:
-        :param use_suppl_dat:
-        :type use_suppl_dat:
         :return: statistics of radiation data for each incident record during the prior IP
         :rtype: pandas.DataFrame
 
         **Test**::
 
-            incidents
+            Incidents
         """
 
         prior_ip_radtob_stats = incidents[[met_stn_id_col, critical_period_col, route_name_col]].apply(
-            lambda x: pd.Series(self.integrate_pip_radtob(x[0], x[1], x[2], use_suppl_dat)), axis=1)
+            lambda x: pd.Series(self.integrate_pip_radtob(x[0], x[1], x[2])), axis=1)
 
         # r_col_names = specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
         # r_col_names += ['GLBL_IRAD_AMT_total']
@@ -718,18 +686,15 @@ class HeatAttributedIncidentsPlus:
 
         return prior_ip_radtob_stats
 
-    def integrate_nip_radtob(self, met_stn_id, period, route_name, use_suppl_dat, prior_ip_data,
-                             stanox_section, pickle_it=True):
+    def integrate_nip_radtob(self, met_stn_id, period, route_name, prior_ip_data, stanox_section):
         """
         Gather solar radiation of the corresponding non-incident period for each incident record.
 
         :param met_stn_id: e.g. met_stn_id = nip_data_.Met_SRC_ID.iloc[1]
         :param period: e.g. period = nip_data_.Critical_Period.iloc[1]
         :param route_name:
-        :param use_suppl_dat:
         :param stanox_section: e.g. location = nip_data_.StanoxSection.iloc[0]
         :param prior_ip_data:
-        :param pickle_it:
         :return:
         """
 
@@ -740,8 +705,7 @@ class HeatAttributedIncidentsPlus:
         # except KeyError:
         #     non_ip_radtob = pd.DataFrame()
 
-        non_ip_radtob = self.MIDAS.query_radtob_by_grid_datetime(
-            met_stn_id, period, route_name, use_suppl_dat, pickle_it=pickle_it)
+        non_ip_radtob = self.MIDAS.query_radtob_by_grid_datetime(met_stn_id, period, route_name)
 
         # Get all incident period data on the same section
         ip_overlap = prior_ip_data[
@@ -750,7 +714,7 @@ class HeatAttributedIncidentsPlus:
               (prior_ip_data.Critical_EndDateTime >= period.left.to_pydatetime()[0])) |
              ((prior_ip_data.Critical_StartDateTime <= period.right.to_pydatetime()[0]) &
               (prior_ip_data.Critical_EndDateTime >= period.right.to_pydatetime()[0])))]
-        # Skip data of weather causing Incidents at around the same time; but
+        # Skip data of Weather causing Incidents at around the same time; but
         if not ip_overlap.empty:
             non_ip_radtob = non_ip_radtob[
                 (non_ip_radtob.OB_END_DATE < min(ip_overlap.Critical_StartDateTime)) |
@@ -762,7 +726,7 @@ class HeatAttributedIncidentsPlus:
 
     def get_nip_radtob_stats(self, non_ip_data, prior_ip_data, met_stn_id_col='Met_SRC_ID',
                              critical_period_col='Critical_Period', route_name_col='Route',
-                             stanox_section_col='StanoxSection', use_suppl_dat=True):
+                             stanox_section_col='StanoxSection'):
         """
         Get prior-IP statistics of radiation data for each incident.
 
@@ -774,16 +738,13 @@ class HeatAttributedIncidentsPlus:
         :param critical_period_col:
         :param route_name_col:
         :param stanox_section_col:
-        :param use_suppl_dat:
-        :type use_suppl_dat:
         :return: statistics of radiation data for each incident record during the non-incident period
         :rtype: pandas.DataFrame
         """
 
         cols = [met_stn_id_col, critical_period_col, route_name_col, stanox_section_col]
         non_ip_radtob_stats = non_ip_data[cols].apply(
-            lambda x: pd.Series(
-                self.integrate_nip_radtob(x[0], x[1], x[2], use_suppl_dat, prior_ip_data, x[3])),
+            lambda x: pd.Series(self.integrate_nip_radtob(x[0], x[1], x[2], prior_ip_data, x[3])),
             axis=1)
 
         # r_col_names = specify_weather_variable_names(integrator.specify_radtob_stats_calculations())
@@ -792,9 +753,100 @@ class HeatAttributedIncidentsPlus:
 
         return non_ip_radtob_stats
 
-    # == Data of weather conditions ===================================================================
+    # == Data of Weather conditions ================================================================
 
-    def get_processed_incident_records(self, update=False, random_state=1):
+    def _prep_incident_data(self, reason_codes=None, seasons=None, start_datetime=None):
+        """
+
+        :param reason_codes:
+        :param seasons:
+        :param start_datetime:
+        :return:
+        """
+        self.METEx.view_schedule8_cost_by_day_location_reason(
+            route_name=self.route_names, weather_category=self.weather_category)
+        dat = self.METEx.schedule8_cost_by_day_location_reason.copy()
+
+        dat['StartDateTime'], dat['EndDateTime'] = map(
+            pd.to_datetime, [dat['StartDateTime'], dat['EndDateTime']])
+
+        if reason_codes is None:
+            reason_codes = self.reason_codes
+        dat = dat[dat['IncidentReasonCode'].isin(reason_codes) & (dat['WeatherCategory'] != 'Cold')]
+
+        if seasons is None:
+            seasons = self.seasons
+        data_by_season = get_data_by_meteorological_seasons(
+            data=dat, seasons=seasons, datetime_col='StartDateTime')
+
+        if start_datetime is None:
+            start_datetime = datetime.datetime(2006, 4, 1)
+        data = data_by_season[(data_by_season['StartDateTime'] >= start_datetime)]
+
+        if self.samples_only:  # For testing purpose only
+            data = data.sample(n=self.sample_size, random_state=self.random_state)
+
+        data['StartEasting'], data['StartNorthing'] = wgs84_to_osgb36(
+            data['StartLongitude'], data['StartLatitude'])
+        data['EndEasting'], data['EndNorthing'] = wgs84_to_osgb36(
+            data['EndLongitude'], data['EndLatitude'])
+
+        # Add 'Start_XY' column
+        if 'Start_XY' not in data.columns:
+            data['Start_XY'] = points_from_xy(data[['StartEasting', 'StartNorthing']])
+        # Add 'End_XY' column
+        if 'End_XY' not in data.columns:
+            data['End_XY'] = points_from_xy(data[['EndEasting', 'EndNorthing']])
+        # Add 'Midpoint_XY' column
+        # Incidents['Midpoint_XY'] = Incidents[['Start_XY', 'End_XY']].apply(
+        #     lambda xy: get_geometric_midpoint(xy[0], xy[1], as_geom=True), axis=1)
+        data['Midpoint_XY'] = data[['Start_XY', 'End_XY']].apply(
+            lambda xy: shapely.geometry.LineString((xy[0], xy[1])).centroid, axis=1)
+
+        # Get radiation stations
+        self.MIDAS.read_radiation_monitoring_stations()  # Met station locations
+        met_stations = self.MIDAS.radiation_monitoring_stations.copy()
+        met_stations_geom = shapely.geometry.MultiPoint(list(met_stations['XY']))
+
+        # Find the closest radiation stations to each of the midpoints of incident location
+        with multiprocessing.Pool(processes=os.cpu_count() - 1) as p:
+            data['Met_SRC_ID'] = p.map(
+                functools.partial(
+                    find_closest_met_stn, met_stations=met_stations,
+                    met_stations_geom=met_stations_geom),
+                data['Midpoint_XY'])
+            met_src_id_ = p.map(
+                functools.partial(
+                    find_closest_met_stn, met_stations=met_stations,
+                    met_stations_geom=met_stations_geom),
+                data['Start_XY'])
+
+        data['Met_SRC_ID'] += pd.Series(met_src_id_)
+        data['Met_SRC_ID'] = data['Met_SRC_ID'].map(lambda x: list(dict.fromkeys(x)))
+
+        # Make a buffer zone for Weather data aggregation
+        data['Buffer_Zone'] = data[['Start_XY', 'End_XY', 'Midpoint_XY']].apply(
+            lambda x: create_weather_grid_buffer(x[0], x[1], x[2], min_radius=500, whisker=500),
+            axis=1)
+
+        # Get Weather observation grids
+        self.UKCP09.read_observation_grids()  # Grids for observing Weather conditions
+        obs_grids = self.UKCP09.observation_grids.copy()
+        obs_grids_geom = shapely.geometry.MultiPolygon(list(obs_grids['Grid_XY']))
+
+        # Find UKCP09 grids that intersect with the buffer zones for each incident location
+        with multiprocessing.Pool(processes=os.cpu_count() - 1) as p:
+            data['Weather_Grid'] = p.map(
+                functools.partial(
+                    find_intersecting_weather_grid, obs_grids=obs_grids,
+                    obs_grids_geom=obs_grids_geom),
+                data['Buffer_Zone'])
+            # data['Weather_Grid'] = data['Buffer_Zone'].Map(
+            #     lambda x: find_intersecting_weather_grid(x, obs_grids, obs_grids_geom))
+
+        return data
+
+    def get_processed_incident_data(self, update=False, random_state=1):
         """
 
         **Test**::
@@ -805,125 +857,50 @@ class HeatAttributedIncidentsPlus:
 
             >>> # Regional; heat
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, sample_only=True)
-            >>> incident_records = h_model_plus.get_processed_incident_records(update=True)
+            >>> incident_records = h_model_plus.get_processed_incident_data(update=True)
 
-            >>> # Regional; heat and null weather category
+            >>> # Regional; heat and null Weather category
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, weather_category=None,
             ...                                            sample_only=True)
-            >>> incident_records = h_model_plus.get_processed_incident_records(update=True)
+            >>> incident_records = h_model_plus.get_processed_incident_data(update=True)
 
             >>> # -- The whole data set ---------------------------------------------------------------
 
             >>> # Regional; heat
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
-            >>> incident_records = h_model_plus.get_processed_incident_records(update=True)
+            >>> incident_records = h_model_plus.get_processed_incident_data(update=True)
 
-            >>> # Regional; heat and null weather category
+            >>> # Regional; heat and null Weather category
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, weather_category=None)
-            >>> incident_records = h_model_plus.get_processed_incident_records(update=True)
+            >>> incident_records = h_model_plus.get_processed_incident_data(update=True)
         """
 
-        self.__setattr__('RandomState', random_state)
+        if self.random_state != random_state:
+            self.random_state = random_state
 
         pickle_filename = make_filename(
-            "incidents", self.Route, self.WeatherCategory,
-            # "" if self.Seasons is None else "_".join(self.Seasons),
-            "_".join(self.ReasonCodes),
-            "sample_rs{}".format(self.__getattribute__('RandomState')) if self.SamplesOnly else "",
+            "Incidents", self.route_names, self.weather_category,
+            # "" if self.seasons is None else "_".join(self.seasons),
+            "_".join(self.reason_codes),
+            "sample" if self.samples_only else "",
             sep="_")
 
         path_to_pickle = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
-            incidents = load_pickle(path_to_pickle)
+            data = load_pickle(path_to_pickle)
 
         else:
-            metex_incident_records = self.METEx.view_schedule8_costs_by_datetime_location_reason(
-                route_name=self.Route, weather_category=self.WeatherCategory)
+            data = self._prep_incident_data()
 
-            metex_incident_records = metex_incident_records[
-                metex_incident_records.IncidentReasonCode.isin(self.ReasonCodes) &
-                ~metex_incident_records.WeatherCategory.isin(['Cold'])]
+            save_pickle(data, path_to_pickle, verbose=True)
 
-            # incidents_all.rename(columns={'Year': 'FinancialYear'}, inplace=True)
-            incidents_by_season = get_data_by_meteorological_seasons(
-                incident_records=metex_incident_records, in_seasons=self.Seasons,
-                datetime_col='StartDateTime')
-
-            incidents = incidents_by_season[
-                (incidents_by_season.StartDateTime >= datetime.datetime(2006, 4, 1))]
-
-            if self.SamplesOnly:  # For testing purpose only
-                incidents = incidents.sample(n=self.SampleSize, random_state=random_state)
-
-            incidents['StartEasting'], incidents['StartNorthing'] = \
-                wgs84_to_osgb36(incidents.StartLongitude.values, incidents.StartLatitude.values)
-            incidents['EndEasting'], incidents['EndNorthing'] = \
-                wgs84_to_osgb36(incidents.EndLongitude.values, incidents.EndLatitude.values)
-
-            # Add 'MidpointXY' column
-            if 'StartXY' not in incidents.columns:
-                # incidents['StartLongLat'] = gpd.points_from_xy(
-                #     incidents.StartLongitude, incidents.StartLatitude)
-                incidents['StartXY'] = gpd.points_from_xy(
-                    incidents.StartEasting, incidents.StartNorthing)
-            if 'EndXY' not in incidents.columns:
-                # incidents['EndLongLat'] = gpd.points_from_xy(
-                #     incidents.EndLongitude, incidents.EndLatitude)
-                incidents['EndXY'] = gpd.points_from_xy(
-                    incidents.EndEasting, incidents.EndNorthing)
-            incidents['MidpointXY'] = incidents[['StartXY', 'EndXY']].apply(
-                lambda x: get_geometric_midpoint(x[0], x[1], as_geom=True), axis=1)
-
-            # Get radiation stations
-            met_stations = self.MIDAS.get_radiation_stations()  # Met station locations
-            met_stations_geom = shapely.geometry.MultiPoint(list(met_stations.EN_GEOM))
-
-            # Find the closest radiation stations to each of the midpoints of incident location
-            incidents['Met_SRC_ID'] = incidents.MidpointXY.map(
-                lambda x: find_closest_met_stn(x, met_stations, met_stations_geom))
-            incidents.Met_SRC_ID += incidents.StartXY.map(  # Start
-                lambda x: find_closest_met_stn(x, met_stations, met_stations_geom))
-            incidents.Met_SRC_ID = incidents.Met_SRC_ID.map(lambda x: list(dict.fromkeys(x)))
-
-            # Make a buffer zone for weather data aggregation
-            incidents['Buffer_Zone'] = incidents[['StartXY', 'EndXY', 'MidpointXY']].apply(
-                lambda x: create_weather_grid_buffer(x[0], x[1], x[2], min_radius=500, whisker=500),
-                axis=1)
-
-            # Get weather observation grids
-            obs_grids = self.UKCP.get_observation_grids()  # Grids for observing weather conditions
-            obs_grids_geom = shapely.geometry.MultiPolygon(list(obs_grids.Grid))
-
-            # Find UKCP09 grids that intersect with the buffer zones for each incident location
-            incidents['Weather_Grid'] = incidents.Buffer_Zone.map(
-                lambda x: find_intersecting_weather_grid(x, obs_grids, obs_grids_geom))
-
-            # obs_centroid_geom = shapely.geometry.MultiPoint(list(obs_grids.Centroid_XY))
-
-            # incidents['Start_Pseudo_Grid_ID'] = incidents.StartXY.map(  # Start
-            #     lambda x: find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
-            # incidents = incidents.join(obs_grids, on='Start_Pseudo_Grid_ID')
-            #
-            # incidents['End_Pseudo_Grid_ID'] = incidents.EndXY.map(  # End
-            #     lambda x: find_closest_weather_grid(x, obs_grids, obs_centroid_geom))
-            # incidents = incidents.join(
-            #     obs_grids, on='End_Pseudo_Grid_ID', lsuffix='_Start', rsuffix='_End')
-            #
-            # # Modify column names
-            # for p in ['Start', 'End']:
-            #     a = [c for c in incidents.columns if c.endswith(p)]
-            #     b = [p + '_' + c if c == 'Grid' else p + '_Grid_' + c for c in obs_grids.columns]
-            #     incidents.rename(columns=dict(zip(a, b)), inplace=True)
-
-            save_pickle(incidents, path_to_pickle, verbose=True)
-
-        return incidents
+        return data
 
     def get_incident_location_weather(self, random_state=1, update=False, pickle_it=False,
                                       verbose=True):
         """
-        Process data of weather conditions for each incident location.
+        Process data of Weather conditions for each incident location.
 
         :param random_state:
         :param update: whether to do an update check, defaults to ``False``
@@ -937,7 +914,7 @@ class HeatAttributedIncidentsPlus:
         .. note::
 
             Note that the ``'Critical_EndDateTime'`` would be based on the ``'Critical_StartDateTime'``
-            if we consider the weather conditions on the day of incident occurrence;
+            if we consider the Weather conditions on the day of incident occurrence;
             ``'StartDateTime'`` otherwise.
 
         **Test**::
@@ -956,7 +933,7 @@ class HeatAttributedIncidentsPlus:
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, sample_only=True)
             >>> dat = h_model_plus.get_incident_location_weather(update=True, pickle_it=True)
 
-            >>> # Regional; heat and null weather category
+            >>> # Regional; heat and null Weather category
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, weather_category=None,
             ...                                            sample_only=True)
             >>> dat = h_model_plus.get_incident_location_weather(update=True, pickle_it=True)
@@ -967,19 +944,20 @@ class HeatAttributedIncidentsPlus:
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
             >>> dat = h_model_plus.get_incident_location_weather(update=True, pickle_it=True)
 
-            >>> # Regional; heat and null weather category
+            >>> # Regional; heat and null Weather category
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2, weather_category=None)
             >>> dat = h_model_plus.get_incident_location_weather(update=True, pickle_it=True)
         """
 
-        self.__setattr__('RandomState', random_state)
+        if self.random_state != random_state:
+            self.random_state = random_state
 
         pickle_filename = make_filename(
-            "weather", self.Route, self.WeatherCategory,
+            "Weather", self.route_names, self.weather_category,
             # "_".join([self.Seasons] if isinstance(self.Seasons, str) else self.Seasons),
-            str(self.PIP_StartHrs) + 'h', str(self.LP) + 'd' if self.LP else '-xd',
-            str(self.NIP_StartHrs) + 'h',
-            "sample-rs{}".format(random_state) if self.SamplesOnly else "", sep="_")
+            str(self.pip_start_hrs) + 'h', str(self.lp_days) + 'd' if self.lp_days else '-xd',
+            str(self.nip_start_hrs) + 'h',
+            "sample" if self.samples_only else "", sep="_")
         path_to_pickle = self.cdd_trial(pickle_filename)
 
         if os.path.isfile(path_to_pickle) and not update:
@@ -989,20 +967,20 @@ class HeatAttributedIncidentsPlus:
             try:
                 # -- Incidents data -------------------------------------------------------------------
 
-                incidents = self.get_processed_incident_records(update=False, random_state=random_state)
+                incidents = self.get_processed_incident_data(update=False, random_state=random_state)
 
                 # -- Data integration for the specified prior-IP --------------------------------------
 
                 incidents = self.get_pip_records(incidents)
 
-                # Get prior-IP statistics of weather variables for each incident.
+                # Get prior-IP statistics of Weather variables for each incident.
                 pip_ukcp09_stats = self.get_pip_ukcp09_stats(
                     incidents, weather_grid_col='Weather_Grid', critical_period_col='Critical_Period')
 
                 # Get prior-IP statistics of radiation data for each incident.
                 pip_radtob_stats = self.get_pip_radtob_stats(
                     incidents, met_stn_id_col='Met_SRC_ID', critical_period_col='Critical_Period',
-                    route_name_col='Route', use_suppl_dat=True)
+                    route_name_col='Route')
 
                 pip_data = incidents.join(pip_ukcp09_stats).join(pip_radtob_stats)
 
@@ -1019,7 +997,7 @@ class HeatAttributedIncidentsPlus:
                 nip_radtob_stats = self.get_nip_radtob_stats(
                     nip_data_, pip_data, met_stn_id_col='Met_SRC_ID',
                     critical_period_col='Critical_Period', route_name_col='Route',
-                    stanox_section_col='StanoxSection', use_suppl_dat=True)
+                    stanox_section_col='StanoxSection')
 
                 nip_data = nip_data_.join(nip_ukcp09_stats).join(nip_radtob_stats)
 
@@ -1042,15 +1020,15 @@ class HeatAttributedIncidentsPlus:
                     save_pickle(incident_location_weather, path_to_pickle, verbose=verbose)
 
             except Exception as e:
-                print("Failed to get weather conditions for the incident locations. {}.".format(e))
+                print("Failed to get Weather conditions for the incident locations. {}.".format(e))
                 incident_location_weather = None
 
         return incident_location_weather
 
-    def illustrate_weather_grid_buffer(self, single_point=True, save_as=".tif", dpi=600,
+    def illustrate_weather_grid_buffer(self, single_point=True, save_as=".svg", dpi=600,
                                        verbose=True):
         """
-        Plot a weather-grid-buffer circle.
+        Plot a Weather-grid-buffer circle.
 
         :param single_point:
         :type single_point: bool
@@ -1080,7 +1058,7 @@ class HeatAttributedIncidentsPlus:
             >>> h_model_plus.illustrate_weather_grid_buffer(single_point=False, save_as=".png", dpi=1200)
         """
 
-        incidents = self.get_processed_incident_records()
+        incidents = self.get_processed_incident_data()
 
         # Illustration of the buffer circle
         if single_point:
@@ -1093,7 +1071,7 @@ class HeatAttributedIncidentsPlus:
         bf_circle = create_weather_grid_buffer(
             start_point, end_point, midpoint, min_radius=500, whisker=500)
 
-        obs_grids = self.UKCP.get_observation_grids()  # Grids for observing weather conditions
+        obs_grids = self.UKCP09.read_observation_grids()  # Grids for observing Weather conditions
         obs_grids_geom = shapely.geometry.MultiPolygon(list(obs_grids.Grid))
 
         i_obs_grids = find_intersecting_weather_grid(
@@ -1118,7 +1096,7 @@ class HeatAttributedIncidentsPlus:
                 ex, ey, '#16697a', marker='o', markersize=9, linestyle='None', label='End location',
                 zorder=4)
 
-        # -- Plot the weather observation grid --------------------------------------------------------
+        # -- Plot the Weather observation grid --------------------------------------------------------
         for g in i_obs_grids:
             x, y = g.exterior.xy
             ax.plot(x, y, color='#707070', linewidth=0.5, zorder=0)
@@ -1161,7 +1139,7 @@ class HeatAttributedIncidentsPlus:
             path_to_fig = self.cdd_trial(fig_filename + save_as)
             save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
-    def plot_temperature_deviation(self, lp_span=14, err_bar=True, save_as=".tif", dpi=600,
+    def plot_temperature_deviation(self, lp_span=14, err_bar=True, save_as=".svg", dpi=600,
                                    update=False, pickle_it=False, verbose=True):
         """
         Plot temperature deviation.
@@ -1190,7 +1168,7 @@ class HeatAttributedIncidentsPlus:
             >>> h_model_plus.plot_temperature_deviation(save_as=".png", dpi=1200)
         """
 
-        default_lp = self.LP
+        default_lp = self.lp_days
 
         data_sets = []
 
@@ -1256,11 +1234,11 @@ class HeatAttributedIncidentsPlus:
 
         if save_as:
             fig_filename = "temperature_deviation"
-            if self.WeatherCategory:
-                if isinstance(self.WeatherCategory, str):
-                    fig_filename += "_{}".format(self.WeatherCategory.lower())
-                elif isinstance(self.WeatherCategory, list):
-                    fig_filename += "_{}".format("_".join(self.WeatherCategory).lower())
+            if self.weather_category:
+                if isinstance(self.weather_category, str):
+                    fig_filename += "_{}".format(self.weather_category.lower())
+                elif isinstance(self.weather_category, list):
+                    fig_filename += "_{}".format("_".join(self.weather_category).lower())
             path_to_fig = self.cdd_trial(fig_filename + save_as)
 
             save_fig(path_to_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
@@ -1303,8 +1281,8 @@ class HeatAttributedIncidentsPlus:
         processed_data.GLBL_IRAD_AMT_total = processed_data.GLBL_IRAD_AMT_total / 1000
 
         # Remove outliers
-        if 95 <= self.OutlierPercentile <= 100:
-            upper_limit = np.percentile(processed_data.DelayMinutes, self.OutlierPercentile)
+        if 95 <= self.outlier_percentile <= 100:
+            upper_limit = np.percentile(processed_data.DelayMinutes, self.outlier_percentile)
             processed_data = processed_data[processed_data.DelayMinutes <= upper_limit]
         # from pyhelpers.ops import get_extreme_outlier_bounds
         # l, u = get_extreme_outlier_bounds(processed_data.DelayMinutes, k=1.5)
@@ -1315,7 +1293,7 @@ class HeatAttributedIncidentsPlus:
         outcome_columns = ['DelayMinutes', 'DelayCost', 'IncidentCount']
         processed_data.loc[processed_data.Incident_Reported == 0, outcome_columns] = 0
 
-        # Select data before 2014 as training data set, with the rest being test set
+        # Select data before 2014 as the training data set, with the rest the test set
         training_set = processed_data[processed_data.StartDateTime < datetime.datetime(2016, 1, 1)]
         training_set.index = range(len(training_set))
         test_set = processed_data[processed_data.StartDateTime >= datetime.datetime(2016, 1, 1)]
@@ -1326,7 +1304,7 @@ class HeatAttributedIncidentsPlus:
 
         return processed_data, training_set, test_set
 
-    def describe_training_set(self, save_as=".tif", dpi=600, verbose=True):
+    def describe_training_set(self, save_as=".svg", dpi=600, verbose=True):
         """
         Describe basic statistics about the main explanatory variables.
 
@@ -1411,18 +1389,48 @@ class HeatAttributedIncidentsPlus:
 
         if save_as:
             fig_filename = "training_set_variables_description"
-            if self.WeatherCategory:
-                if isinstance(self.WeatherCategory, str):
-                    fig_filename += "_{}".format(self.WeatherCategory.lower())
-                elif isinstance(self.WeatherCategory, list):
-                    fig_filename += "_{}".format("_".join(self.WeatherCategory).lower())
+            if self.weather_category:
+                if isinstance(self.weather_category, str):
+                    fig_filename += "_{}".format(self.weather_category.lower())
+                elif isinstance(self.weather_category, list):
+                    fig_filename += "_{}".format("_".join(self.weather_category).lower())
             path_to_fig_file = self.cdd_trial(fig_filename + save_as)
 
             save_fig(path_to_fig_file, dpi, verbose=verbose, conv_svg_to_emf=True)
 
+    @staticmethod
+    def _p_value(lr, X_train):
+        """
+        Calculate z-scores for sklearn LogisticRegression.
+
+        Source:
+        https://stackoverflow.com/questions/25122999/scikit-learn-how-to-check-coefficients-significance
+        """
+
+        p = lr.predict_proba(X_train)
+        n = len(p)
+        m = len(lr.coef_[0]) + 1
+
+        coefficients = np.concatenate([lr.intercept_, lr.coef_[0]])
+
+        x_full = np.matrix(np.insert(np.array(X_train), 0, 1, axis=1))
+        ans = np.zeros((m, m))
+
+        for i in range(n):
+            ans = ans + np.dot(np.transpose(x_full[i, :]), x_full[i, :]) * p[i, 1] * p[i, 0]
+
+        vcov = np.linalg.inv(np.matrix(ans))
+        se = np.sqrt(np.diag(vcov))
+        t = coefficients / se
+
+        # noinspection PyUnresolvedReferences
+        p = (1 - scipy.stats.norm.cdf(abs(t))) * 2
+
+        return p
+
     def logistic_regression(self, add_intercept=True, random_state=1, pickle_it=False, verbose=True):
         """
-        Train/test a logistic regression model for predicting heat-related incidents.
+        Train/test a logistic regression model for predicting heat-related Incidents.
 
         **Test**::
 
@@ -1431,30 +1439,30 @@ class HeatAttributedIncidentsPlus:
             >>> h_model_plus = HeatAttributedIncidentsPlus(trial_id=2)
 
             >>> # Regional; heat: Anglia, Wessex, Wales and North & East
-            >>> h_model_plus.Route = ['Anglia', 'Wessex', 'Wales', 'North and East']
+            >>> h_model_plus.route_names = ['Anglia', 'Wessex', 'Wales', 'North and East']
             >>> region_results = h_model_plus.logistic_regression(pickle_it=True)
 
             >>> # Regional; heat: Anglia
-            >>> h_model_plus.Route = ['Anglia']
+            >>> h_model_plus.route_names = ['Anglia']
             >>> anglia_results = h_model_plus.logistic_regression(pickle_it=True)
 
             >>> # Regional; heat: Wessex
-            >>> h_model_plus.Route = ['Wessex']
+            >>> h_model_plus.route_names = ['Wessex']
             >>> wessex_results = h_model_plus.logistic_regression(pickle_it=True)
 
             >>> # Regional; heat: Wales
-            >>> h_model_plus.Route = ['Wales']
+            >>> h_model_plus.route_names = ['Wales']
             >>> wales_results = h_model_plus.logistic_regression(pickle_it=True)
 
             >>> # Regional; heat: North & East
-            >>> h_model_plus.Route = ['North and East']
+            >>> h_model_plus.route_names = ['North and East']
             >>> ne_results = h_model_plus.logistic_regression(pickle_it=True)
         """
 
         # Get data for modelling
         _, training_set, test_set = self.prep_training_and_test_sets()
 
-        X_train, X_test = training_set[self.ExplanatoryVariables], test_set[self.ExplanatoryVariables]
+        X_train, X_test = training_set[self.variable_names], test_set[self.variable_names]
         y_train, y_test = training_set.Incident_Reported, test_set.Incident_Reported
 
         # import statsmodels.discrete.discrete_model as sm_dcm
@@ -1495,12 +1503,12 @@ class HeatAttributedIncidentsPlus:
         lr.fit(X_train, y_train)
 
         coefficients = lr.intercept_.tolist() + lr.coef_[0].tolist()
-        p_values = [np.round(x, 4) for x in calc_p_value(lr, X_train)]
+        p_values = [np.round(x, 4) for x in self._p_value(lr, X_train)]
         odds_ratios = np.exp(coefficients).tolist()
 
         lr_summary = pd.DataFrame(
             {'Coefficient': coefficients, 'P-value': p_values, 'OddsRatio': odds_ratios},
-            index=['constant'] + self.ExplanatoryVariables)
+            index=['constant'] + self.variable_names)
 
         if verbose:
             print("\n{}".format(lr_summary))
@@ -1554,15 +1562,15 @@ class HeatAttributedIncidentsPlus:
                      'lr', 'lr_summary', 'threshold', 'accuracy', 'incidents_recall_score']
             resources = {k: repo[k] for k in list(names)}
             result_pickle = make_filename(
-                "result", self.Route, self.WeatherCategory,
-                str(self.PIP_StartHrs) + 'h', str(self.LP) + 'd' if self.LP else '-xd',
-                str(self.NIP_StartHrs) + 'h', sep="_")
+                "result", self.route_names, self.weather_category,
+                str(self.pip_start_hrs) + 'h', str(self.lp_days) + 'd' if self.lp_days else '-xd',
+                str(self.nip_start_hrs) + 'h', sep="_")
 
             save_pickle(resources, self.cdd_trial(result_pickle), verbose=verbose)
 
         return training_set, test_set, lr, lr_summary, threshold, accuracy, incidents_recall_score
 
-    def plot_roc(self, simplified=False, save_as=".tif", dpi=600, verbose=True):
+    def plot_roc(self, simplified=False, save_as=".svg", dpi=600, verbose=True):
         """
         Plot ROC.
 
@@ -1592,7 +1600,7 @@ class HeatAttributedIncidentsPlus:
             lr = self.__getattribute__('Model')
             test_set = self.__getattribute__('TestSet')
 
-            X_test, y_test = test_set[self.ExplanatoryVariables], test_set.Incident_Reported
+            X_test, y_test = test_set[self.variable_names], test_set.Incident_Reported
 
             metrics.plot_roc_curve(lr, X_test, y_test)
 
@@ -1626,16 +1634,16 @@ class HeatAttributedIncidentsPlus:
             fig_filename = "roc_curve"
             if simplified:
                 fig_filename += "_simplified"
-            if self.WeatherCategory:
-                if isinstance(self.WeatherCategory, str):
-                    fig_filename += "_{}".format(self.WeatherCategory.lower())
-                elif isinstance(self.WeatherCategory, list):
-                    fig_filename += "_{}".format("_".join(self.WeatherCategory).lower())
+            if self.weather_category:
+                if isinstance(self.weather_category, str):
+                    fig_filename += "_{}".format(self.weather_category.lower())
+                elif isinstance(self.weather_category, list):
+                    fig_filename += "_{}".format("_".join(self.weather_category).lower())
             path_to_roc_fig = self.cdd_trial(fig_filename + save_as)
 
             save_fig(path_to_roc_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
-    def plot_pred_likelihood(self, save_as=".tif", dpi=600, verbose=True):
+    def plot_pred_likelihood(self, save_as=".svg", dpi=600, verbose=True):
         """
         Plot incident delay minutes against predicted probabilities
 
@@ -1664,7 +1672,7 @@ class HeatAttributedIncidentsPlus:
         threshold = self.__getattribute__('Threshold')
 
         lr = self.__getattribute__('Model')
-        incident_prob = lr.predict_proba(X=test_set[self.ExplanatoryVariables])[:, 1]
+        incident_prob = lr.predict_proba(X=test_set[self.variable_names])[:, 1]
 
         incident_idx = test_set[test_set.Incident_Reported == 1].index.tolist()
 
@@ -1696,24 +1704,23 @@ class HeatAttributedIncidentsPlus:
 
         if save_as:
             fig_filename = "pred_likelihood"
-            if self.WeatherCategory:
-                if isinstance(self.WeatherCategory, str):
-                    fig_filename += "_{}".format(self.WeatherCategory.lower())
-                elif isinstance(self.WeatherCategory, list):
-                    fig_filename += "_{}".format("_".join(self.WeatherCategory).lower())
+            if self.weather_category:
+                if isinstance(self.weather_category, str):
+                    fig_filename += "_{}".format(self.weather_category.lower())
+                elif isinstance(self.weather_category, list):
+                    fig_filename += "_{}".format("_".join(self.weather_category).lower())
             path_to_pred_fig = self.cdd_trial(fig_filename + save_as)
 
             save_fig(path_to_pred_fig, dpi=dpi, verbose=verbose, conv_svg_to_emf=True)
 
 
-if __name__ == '__main__':
-
-    from modeller import HeatAttributedIncidentsPlus
-
-    h_mod_plus = HeatAttributedIncidentsPlus(trial_id=2)
-
-    h_mod_plus_results = h_mod_plus.logistic_regression()
-
-    h_mod_plus.plot_roc(save_as=None)
-
-    h_mod_plus.plot_pred_likelihood(save_as=None)
+# if __name__ == '__main__':
+#     from modeller import HeatAttributedIncidentsPlus
+#
+#     h_mod_plus = HeatAttributedIncidentsPlus(trial_id=2)
+#
+#     h_mod_plus_results = h_mod_plus.logistic_regression()
+#
+#     h_mod_plus.plot_roc(save_as=None)
+#
+#     h_mod_plus.plot_pred_likelihood(save_as=None)
